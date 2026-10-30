@@ -49,8 +49,10 @@ class PanoramicCameraManipulator : CameraGestureDetector.CameraManipulator {
 @Composable
 fun RoomScene(
     room: RoomSpec,
+    target: Float3,
     yawAngleDegrees: Float,
     pitchAngleDegrees: Float = 0f,
+    distance: Float = 2.45f,
     modifier: Modifier = Modifier,
 ) {
     val parts = remember(room) { RoomGeometryBuilder.build(room) }
@@ -61,39 +63,46 @@ fun RoomScene(
 
     // Room center coordinates and human eye height (1.40 m)
     val centerX = room.clearWidthMm * 0.5f * MM_TO_M
-    val eyeY = 1.40f // 1.40 m from finished floor
+    val eyeY = 1.40f
     val centerZ = room.clearDepthMm * 0.5f * MM_TO_M
 
-    // Un paso suave hacia atrás (0.65 m) respecto a la pared activa, continuo e imperceptible
-    val backOffset = 0.65f.coerceAtMost(minOf(centerX, centerZ) * 0.45f)
-
-    val manipulator = remember(centerX, centerZ) {
+    val manipulator = remember {
         PanoramicCameraManipulator().apply {
-            eye = Float3(centerX, eyeY, centerZ)
-            target = Float3(centerX, eyeY, centerZ + 1f)
+            eye = Float3(centerX, eyeY, centerZ - distance)
+            this.target = Float3(centerX, eyeY, centerZ)
         }
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val aspect = (maxWidth.value / maxHeight.value.coerceAtLeast(1f)).toDouble()
 
-        LaunchedEffect(room, yawAngleDegrees, pitchAngleDegrees, cameraNode, aspect) {
+        LaunchedEffect(room, target, yawAngleDegrees, pitchAngleDegrees, distance, cameraNode, aspect) {
             val yawRad = Math.toRadians(yawAngleDegrees.toDouble()).toFloat()
             val pitchRad = Math.toRadians(pitchAngleDegrees.toDouble()).toFloat()
 
-            // Vector de dirección de la mirada
+            // Vector unitario de dirección de la mirada (desde eye hacia target)
             val dirX = sin(yawRad) * cos(pitchRad)
             val dirY = sin(pitchRad)
             val dirZ = -cos(yawRad) * cos(pitchRad)
 
-            // Posición con retroceso dinámico suave (órbita circular interior imperceptible)
-            val eye = Float3(
-                centerX - (sin(yawRad) * backOffset),
-                eyeY,
-                centerZ - (-cos(yawRad) * backOffset),
+            // Posición de la cámara orbitando a distancia 'distance' del objetivo focal
+            val rawEye = Float3(
+                target.x - dirX * distance,
+                target.y - dirY * distance,
+                target.z - dirZ * distance,
             )
 
-            val target = Float3(eye.x + dirX, eye.y + dirY, eye.z + dirZ)
+            // Confinar la cámara dentro del espacio interior para que nunca traspase las paredes al vacío exterior
+            val margin = 0.20f
+            val roomW = room.clearWidthMm * MM_TO_M
+            val roomH = room.clearHeightMm * MM_TO_M
+            val roomD = room.clearDepthMm * MM_TO_M
+
+            val eye = Float3(
+                rawEye.x.coerceIn(margin, roomW - margin),
+                rawEye.y.coerceIn(margin, roomH - margin),
+                rawEye.z.coerceIn(margin, roomD - margin),
+            )
 
             manipulator.eye = eye
             manipulator.target = target
@@ -106,6 +115,7 @@ fun RoomScene(
                 86.0 to Camera.Fov.HORIZONTAL
             }
 
+            android.util.Log.d("RoomScene", "aspect=$aspect fov=$fov dir=$direction eye=$eye target=$target dist=$distance")
             try {
                 cameraNode.setProjection(
                     fov,
@@ -114,7 +124,9 @@ fun RoomScene(
                     50.0,
                     direction,
                 )
-            } catch (_: Throwable) {}
+            } catch (t: Throwable) {
+                android.util.Log.e("RoomScene", "setProjection error", t)
+            }
         }
 
         SceneView(
@@ -130,7 +142,7 @@ fun RoomScene(
             LightNode(
                 type = LightManager.Type.POINT,
                 position = Float3(centerX, (room.clearHeightMm - 100f) * MM_TO_M, centerZ),
-                intensity = 250_000f,
+                intensity = 220_000f,
                 color = Float4(1f, 0.98f, 0.94f, 1f),
             )
 
@@ -138,7 +150,15 @@ fun RoomScene(
             LightNode(
                 type = LightManager.Type.POINT,
                 position = Float3(centerX, eyeY, centerZ),
-                intensity = 150_000f,
+                intensity = 120_000f,
+                color = Float4(1f, 1f, 1f, 1f),
+            )
+
+            // Directional fill light so exterior faces are illuminated during 360° orbit
+            LightNode(
+                type = LightManager.Type.DIRECTIONAL,
+                direction = Float3(-0.4f, -0.8f, -0.4f),
+                intensity = 40_000f,
                 color = Float4(1f, 1f, 1f, 1f),
             )
 
