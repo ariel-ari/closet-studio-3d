@@ -127,6 +127,7 @@ fun RoomScene(
             cameraManipulator = manipulator,
             autoCenterContent = false,
             autoFitContent = false,
+            isOpaque = false,
         ) {
             // High-intensity central interior light (ceiling lamp)
             LightNode(
