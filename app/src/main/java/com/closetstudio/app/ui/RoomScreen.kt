@@ -215,9 +215,10 @@ fun RoomScreen() {
 
                             val panScale = distanceAnim.value * 0.0016f
 
-                            val deltaX = rightX * (panX * panScale) - upX * (panY * panScale)
-                            val deltaY = -upY * (panY * panScale)
-                            val deltaZ = rightZ * (panX * panScale) - upZ * (panY * panScale)
+                            // Inverted 2-finger pan: camera translates directly with finger direction
+                            val deltaX = -rightX * (panX * panScale) + upX * (panY * panScale)
+                            val deltaY = upY * (panY * panScale)
+                            val deltaZ = -rightZ * (panX * panScale) + upZ * (panY * panScale)
 
                             coroutineScope.launch {
                                 targetXAnim.snapTo(targetXAnim.value + deltaX)
