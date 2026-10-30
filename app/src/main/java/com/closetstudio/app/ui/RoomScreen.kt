@@ -154,7 +154,7 @@ fun RoomScreen() {
 
     val yawAnim = remember { Animatable(180f) }
     val pitchAnim = remember { Animatable(0f) }
-    val distanceAnim = remember { Animatable(2.45f) }
+    val distanceAnim = remember { Animatable(3.40f) }
 
     fun switchWall(newStep: Int) {
         wallStep.intValue = newStep
@@ -163,7 +163,7 @@ fun RoomScreen() {
         coroutineScope.launch {
             launch { yawAnim.animateTo(targetYaw, tween(400, easing = FastOutSlowInEasing)) }
             launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
-            launch { distanceAnim.animateTo(2.45f, tween(300, easing = FastOutSlowInEasing)) }
+            launch { distanceAnim.animateTo(3.40f, tween(300, easing = FastOutSlowInEasing)) }
             launch { targetXAnim.animateTo(targetPos.x, tween(400, easing = FastOutSlowInEasing)) }
             launch { targetYAnim.animateTo(targetPos.y, tween(400, easing = FastOutSlowInEasing)) }
             launch { targetZAnim.animateTo(targetPos.z, tween(400, easing = FastOutSlowInEasing)) }
@@ -176,7 +176,7 @@ fun RoomScreen() {
         coroutineScope.launch {
             launch { yawAnim.animateTo(targetYaw, tween(300, easing = FastOutSlowInEasing)) }
             launch { pitchAnim.animateTo(0f, tween(250, easing = FastOutSlowInEasing)) }
-            launch { distanceAnim.animateTo(2.45f, tween(250, easing = FastOutSlowInEasing)) }
+            launch { distanceAnim.animateTo(3.40f, tween(250, easing = FastOutSlowInEasing)) }
             launch { targetXAnim.animateTo(targetPos.x, tween(300, easing = FastOutSlowInEasing)) }
             launch { targetYAnim.animateTo(targetPos.y, tween(300, easing = FastOutSlowInEasing)) }
             launch { targetZAnim.animateTo(targetPos.z, tween(300, easing = FastOutSlowInEasing)) }

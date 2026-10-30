@@ -97,12 +97,12 @@ fun RoomScene(
             manipulator.eye = eye
             manipulator.target = target
 
-            // En tablet/horizontal (aspect >= 1.0) fijamos FOV VERTICAL (74°) para que se vean techo y piso con aire
-            // En celular/vertical (aspect < 1.0) fijamos FOV HORIZONTAL (86°) para que entre el ancho de pared
+            // Lente arquitectónico natural (48° vertical en horizontal, 58° horizontal en vertical)
+            // Elimina la deformación de gran angular en las esquinas (elimina el "ojo de pez")
             val (fov, direction) = if (aspect >= 1.0) {
-                74.0 to Camera.Fov.VERTICAL
+                48.0 to Camera.Fov.VERTICAL
             } else {
-                86.0 to Camera.Fov.HORIZONTAL
+                58.0 to Camera.Fov.HORIZONTAL
             }
 
             android.util.Log.d("RoomScene", "aspect=$aspect fov=$fov dir=$direction eye=$eye target=$target dist=$distance")
