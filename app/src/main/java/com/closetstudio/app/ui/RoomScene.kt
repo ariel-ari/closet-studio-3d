@@ -85,7 +85,7 @@ fun RoomScene(
         try {
             cameraNode.setProjection(
                 80.0,
-                cameraNode.viewPortAspect,
+                1.0,
                 0.05,
                 50.0,
                 Camera.Fov.VERTICAL,
