@@ -6,44 +6,28 @@ import kotlin.test.assertEquals
 class ProjectCodecTest {
 
     @Test
-    fun `a project round trips through json`() {
-        val project = ClosetProject(
-            name = "Master bedroom",
-            room = RoomSpec(clearWidthMm = 2600f, clearHeightMm = 2300f, clearDepthMm = 620f),
-            modules = listOf(
-                ModuleSpec(id = "m1", widthMm = 900f, heightMm = 2300f, shelfCount = 4),
-                ModuleSpec(id = "m2", kind = ModuleKind.FILLER, widthMm = 120f, heightMm = 2300f),
-            ),
-        )
+    fun `room dimensions round trip through json`() {
+        val original = RoomSpec(clearWidthMm = 3200f, clearHeightMm = 2600f, clearDepthMm = 650f)
+        val text = ProjectCodec.encode(original)
+        val recovered = ProjectCodec.decode(text)
 
-        val restored = ProjectCodec.decode(ProjectCodec.encode(project))
-
-        assertEquals(project, restored)
+        assertEquals(original, recovered)
     }
 
     @Test
-    fun `unknown fields from a newer version are ignored`() {
-        val text = """
+    fun `unknown fields from newer versions are ignored`() {
+        val jsonWithExtra = """
             {
-              "name": "Legacy",
-              "room": { "clearWidthMm": 2000.0, "clearHeightMm": 2200.0, "clearDepthMm": 580.0 },
-              "futureField": "ignore me"
+                "clearWidthMm": 2000.0,
+                "clearHeightMm": 2200.0,
+                "clearDepthMm": 500.0,
+                "futureProperty": "ignoredValue"
             }
         """.trimIndent()
 
-        val project = ProjectCodec.decode(text)
-
-        assertEquals("Legacy", project.name)
-        assertEquals(2000f, project.room.clearWidthMm)
-        assertEquals(18f, project.panels.thicknessMm)
-        assertEquals(emptyList(), project.modules)
-    }
-
-    @Test
-    fun `defaults describe a buildable closet`() {
-        val project = ClosetProject()
-
-        assertEquals(1, project.schemaVersion)
-        assertEquals(600f, project.finish.uvScaleMm)
+        val room = ProjectCodec.decode(jsonWithExtra)
+        assertEquals(2000f, room.clearWidthMm)
+        assertEquals(2200f, room.clearHeightMm)
+        assertEquals(500f, room.clearDepthMm)
     }
 }

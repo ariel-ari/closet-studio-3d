@@ -1,3 +1,4 @@
+import com.android.build.api.variant.HostTestBuilder
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -24,6 +25,12 @@ android {
         }
     }
 
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
     buildFeatures {
         compose = true
     }
@@ -35,6 +42,12 @@ android {
 
     packaging {
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")
+    }
+}
+
+androidComponents {
+    beforeVariants { variantBuilder ->
+        variantBuilder.hostTests[HostTestBuilder.UNIT_TEST_TYPE]?.enable = true
     }
 }
 
@@ -62,6 +75,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
 
-tasks.matching { it.name.contains("AarMetadata") }.configureEach {
-    enabled = false
+tasks.configureEach {
+    if (name.contains("AarMetadata")) {
+        enabled = false
+    }
 }

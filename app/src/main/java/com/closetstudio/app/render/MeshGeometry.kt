@@ -23,15 +23,15 @@ fun MeshData.toFilamentGeometry(engine: Engine): Geometry {
         vertices += Geometry.Vertex(
             position = Float3(
                 positions[i * 3] * MM_TO_M,
-                positions[i * 3 + 1] * MM_TO_M,
-                positions[i * 3 + 2] * MM_TO_M,
+                positions[(i * 3) + 1] * MM_TO_M,
+                positions[(i * 3) + 2] * MM_TO_M,
             ),
             normal = Float3(
                 normals[i * 3],
-                normals[i * 3 + 1],
-                normals[i * 3 + 2],
+                normals[(i * 3) + 1],
+                normals[(i * 3) + 2],
             ),
-            uvCoordinate = Float2(uvs[i * 2], uvs[i * 2 + 1]),
+            uvCoordinate = Float2(uvs[i * 2], uvs[(i * 2) + 1]),
             color = COLORS_NONE,
         )
     }

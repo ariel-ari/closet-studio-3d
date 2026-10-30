@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.closetstudio.app.ui.ClosetScreen
+import com.closetstudio.app.ui.RoomScreen
 import com.closetstudio.app.ui.theme.ClosetStudioTheme
 
 class MainActivity : ComponentActivity() {
@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             ClosetStudioTheme {
-                ClosetScreen()
+                RoomScreen()
             }
         }
     }

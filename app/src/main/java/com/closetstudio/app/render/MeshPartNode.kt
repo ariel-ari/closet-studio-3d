@@ -4,29 +4,23 @@ import android.annotation.SuppressLint
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
-import com.closetstudio.core.geometry.Part
+import com.closetstudio.core.geometry.MeshData
 import com.google.android.filament.MaterialInstance
 import io.github.sceneview.SceneScope
 import io.github.sceneview.node.GeometryNode
 import io.github.sceneview.safeDestroyGeometry
 
 /**
- * Declares one procedural mesh as a scene node.
- *
- * The node owns its material instance (`destroyMaterialsOnDispose`), so a finish
- * change destroys the old instance only after its renderable is gone — the crash
- * this library documents when an instance dies while still bound. The geometry is
- * released through [safeDestroyGeometry], which is a no-op while a node still
- * references it and idempotent afterwards.
+ * Declares one procedural mesh as a SceneView node.
  */
 @SuppressLint("RestrictedApi")
 @Composable
-fun SceneScope.MeshPartNode(
-    part: Part,
+fun SceneScope.MeshNode(
+    mesh: MeshData,
     material: MaterialInstance,
     name: String,
 ) {
-    val geometry = remember(this.engine, part.mesh) { part.mesh.toFilamentGeometry(this.engine) }
+    val geometry = remember(this.engine, mesh) { mesh.toFilamentGeometry(this.engine) }
 
     DisposableEffect(geometry) {
         onDispose { engine.safeDestroyGeometry(geometry) }
