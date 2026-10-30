@@ -1,5 +1,6 @@
 package com.closetstudio.app.ui
 
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -63,109 +64,118 @@ fun RoomScene(
     val eyeY = 1.40f // 1.40 m from finished floor
     val eyeZ = room.clearDepthMm * 0.5f * MM_TO_M
 
-    val manipulator = remember(eyeX, eyeY, eyeZ) { PanoramicCameraManipulator().apply { eye = Float3(eyeX, eyeY, eyeZ); target = Float3(eyeX, eyeY, eyeZ + 1f) } }
-
-    LaunchedEffect(room, yawAngleDegrees, pitchAngleDegrees, cameraNode) {
-        val eye = Float3(eyeX, eyeY, eyeZ)
-
-        val yawRad = Math.toRadians(yawAngleDegrees.toDouble()).toFloat()
-        val pitchRad = Math.toRadians(pitchAngleDegrees.toDouble()).toFloat()
-
-        // Direction vector from yaw and pitch
-        val dirX = sin(yawRad) * cos(pitchRad)
-        val dirY = sin(pitchRad)
-        val dirZ = -cos(yawRad) * cos(pitchRad)
-
-        val target = Float3(eye.x + dirX, eye.y + dirY, eye.z + dirZ)
-
-        manipulator.eye = eye
-        manipulator.target = target
-
-        // Wide angle FOV (80 degrees) so the wall is fully visible in frame
-        try {
-            cameraNode.setProjection(
-                80.0,
-                1.0,
-                0.05,
-                50.0,
-                Camera.Fov.VERTICAL,
-            )
-        } catch (_: Throwable) {}
+    val manipulator = remember(eyeX, eyeY, eyeZ) {
+        PanoramicCameraManipulator().apply {
+            eye = Float3(eyeX, eyeY, eyeZ)
+            target = Float3(eyeX, eyeY, eyeZ + 1f)
+        }
     }
 
-    SceneView(
-        modifier = modifier.fillMaxSize(),
-        engine = engine,
-        materialLoader = materialLoader,
-        cameraNode = cameraNode,
-        cameraManipulator = manipulator,
-        autoCenterContent = false,
-        autoFitContent = false,
-    ) {
-        // High-intensity central interior light (ceiling lamp)
-        LightNode(
-            type = LightManager.Type.POINT,
-            position = Float3(eyeX, (room.clearHeightMm - 100f) * MM_TO_M, eyeZ),
-            intensity = 250_000f,
-            color = Float4(1f, 0.98f, 0.94f, 1f),
-        )
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val aspect = (maxWidth.value / maxHeight.value.coerceAtLeast(1f)).toDouble()
 
-        // Eye-level ambient fill light to guarantee every wall is brilliantly illuminated
-        LightNode(
-            type = LightManager.Type.POINT,
-            position = Float3(eyeX, eyeY, eyeZ),
-            intensity = 150_000f,
-            color = Float4(1f, 1f, 1f, 1f),
-        )
+        LaunchedEffect(room, yawAngleDegrees, pitchAngleDegrees, cameraNode, aspect) {
+            val eye = Float3(eyeX, eyeY, eyeZ)
 
-        parts.forEachIndexed { index, part ->
-            key(part.surface, index) {
-                val material = remember(engine, part.surface) {
-                    when (part.surface) {
-                        RoomSurface.FLOOR -> materialLoader.createColorInstance(
-                            color = Color(0xFFE0D2BE), // Bright light oak parquet
-                            metallic = 0.05f,
-                            roughness = 0.35f,
-                            reflectance = 0.5f,
-                        )
-                        RoomSurface.WALL -> materialLoader.createColorInstance(
-                            color = Color(0xFFFAF7F0), // Clean bright warm eggshell wall
-                            metallic = 0.0f,
-                            roughness = 0.5f,
-                            reflectance = 0.6f,
-                        )
-                        RoomSurface.CEILING -> materialLoader.createColorInstance(
-                            color = Color(0xFFFAF9F6),
-                            metallic = 0.0f,
-                            roughness = 0.9f,
-                            reflectance = 0.2f,
-                        )
-                        RoomSurface.DOOR_FRAME -> materialLoader.createColorInstance(
-                            color = Color(0xFF8B5A2B), // Warm rich wood frame
-                            metallic = 0.0f,
-                            roughness = 0.45f,
-                            reflectance = 0.5f,
-                        )
-                        RoomSurface.DOOR_LEAF -> materialLoader.createColorInstance(
-                            color = Color(0xFFA67444), // Warm cedar wood panel
-                            metallic = 0.05f,
-                            roughness = 0.4f,
-                            reflectance = 0.55f,
-                        )
-                        RoomSurface.DOOR_HANDLE -> materialLoader.createColorInstance(
-                            color = Color(0xFFF5F5F5), // Polished bright chrome
-                            metallic = 0.95f,
-                            roughness = 0.1f,
-                            reflectance = 0.95f,
-                        )
-                    }
-                }
+            val yawRad = Math.toRadians(yawAngleDegrees.toDouble()).toFloat()
+            val pitchRad = Math.toRadians(pitchAngleDegrees.toDouble()).toFloat()
 
-                MeshNode(
-                    mesh = part.mesh,
-                    material = material,
-                    name = "room-${part.surface.name.lowercase()}-$index",
+            // Direction vector from yaw and pitch
+            val dirX = sin(yawRad) * cos(pitchRad)
+            val dirY = sin(pitchRad)
+            val dirZ = -cos(yawRad) * cos(pitchRad)
+
+            val target = Float3(eye.x + dirX, eye.y + dirY, eye.z + dirZ)
+
+            manipulator.eye = eye
+            manipulator.target = target
+
+            // Wide horizontal FOV (96 degrees) guarantees the full 3.6m wall is visible corner-to-corner
+            try {
+                cameraNode.setProjection(
+                    96.0,
+                    aspect,
+                    0.05,
+                    50.0,
+                    Camera.Fov.HORIZONTAL,
                 )
+            } catch (_: Throwable) {}
+        }
+
+        SceneView(
+            modifier = Modifier.fillMaxSize(),
+            engine = engine,
+            materialLoader = materialLoader,
+            cameraNode = cameraNode,
+            cameraManipulator = manipulator,
+            autoCenterContent = false,
+            autoFitContent = false,
+        ) {
+            // High-intensity central interior light (ceiling lamp)
+            LightNode(
+                type = LightManager.Type.POINT,
+                position = Float3(eyeX, (room.clearHeightMm - 100f) * MM_TO_M, eyeZ),
+                intensity = 250_000f,
+                color = Float4(1f, 0.98f, 0.94f, 1f),
+            )
+
+            // Eye-level ambient fill light to guarantee every wall is brilliantly illuminated
+            LightNode(
+                type = LightManager.Type.POINT,
+                position = Float3(eyeX, eyeY, eyeZ),
+                intensity = 150_000f,
+                color = Float4(1f, 1f, 1f, 1f),
+            )
+
+            parts.forEachIndexed { index, part ->
+                key(part.surface, index) {
+                    val material = remember(engine, part.surface) {
+                        when (part.surface) {
+                            RoomSurface.FLOOR -> materialLoader.createColorInstance(
+                                color = Color(0xFFE0D2BE), // Bright light oak parquet
+                                metallic = 0.05f,
+                                roughness = 0.35f,
+                                reflectance = 0.5f,
+                            )
+                            RoomSurface.WALL -> materialLoader.createColorInstance(
+                                color = Color(0xFFFAF7F0), // Clean bright warm eggshell wall
+                                metallic = 0.0f,
+                                roughness = 0.5f,
+                                reflectance = 0.6f,
+                            )
+                            RoomSurface.CEILING -> materialLoader.createColorInstance(
+                                color = Color(0xFFFAF9F6),
+                                metallic = 0.0f,
+                                roughness = 0.9f,
+                                reflectance = 0.2f,
+                            )
+                            RoomSurface.DOOR_FRAME -> materialLoader.createColorInstance(
+                                color = Color(0xFF8B5A2B), // Warm rich wood frame
+                                metallic = 0.0f,
+                                roughness = 0.45f,
+                                reflectance = 0.5f,
+                            )
+                            RoomSurface.DOOR_LEAF -> materialLoader.createColorInstance(
+                                color = Color(0xFFA67444), // Warm cedar wood panel
+                                metallic = 0.05f,
+                                roughness = 0.4f,
+                                reflectance = 0.55f,
+                            )
+                            RoomSurface.DOOR_HANDLE -> materialLoader.createColorInstance(
+                                color = Color(0xFFF5F5F5), // Polished bright chrome
+                                metallic = 0.95f,
+                                roughness = 0.1f,
+                                reflectance = 0.95f,
+                            )
+                        }
+                    }
+
+                    MeshNode(
+                        mesh = part.mesh,
+                        material = material,
+                        name = "room-${part.surface.name.lowercase()}-$index",
+                    )
+                }
             }
         }
     }
