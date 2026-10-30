@@ -46,13 +46,7 @@ object RoomGeometryBuilder {
         )
         parts += RoomPart(RoomSurface.FLOOR, floorBuilder.build())
 
-        // 2. Ceiling
-        val ceilingBuilder = MeshBuilder(uvScaleMm)
-        ceilingBuilder.addBox(
-            min = Vec3(-slab, h, -slab),
-            max = Vec3(w + slab, h + slab, d + slab),
-        )
-        parts += RoomPart(RoomSurface.CEILING, ceilingBuilder.build())
+        // 2. Walls (Ceiling is kept open to let natural ambient light illuminate all 4 interior walls)
 
         // 3. Walls
         val wallBuilder = MeshBuilder(uvScaleMm)

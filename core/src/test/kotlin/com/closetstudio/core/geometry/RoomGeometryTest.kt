@@ -11,27 +11,23 @@ import kotlin.test.assertTrue
 class RoomGeometryTest {
 
     @Test
-    fun `generates all room surfaces including ceiling and door`() {
+    fun `generates all room surfaces including door`() {
         val room = RoomSpec(clearWidthMm = 3600f, clearHeightMm = 2600f, clearDepthMm = 3600f)
         val parts = RoomGeometryBuilder.build(room)
 
         assertNotNull(parts.find { it.surface == RoomSurface.FLOOR })
-        assertNotNull(parts.find { it.surface == RoomSurface.CEILING })
         assertNotNull(parts.find { it.surface == RoomSurface.WALL })
         assertNotNull(parts.find { it.surface == RoomSurface.DOOR_FRAME })
         assertNotNull(parts.find { it.surface == RoomSurface.DOOR_LEAF })
     }
 
     @Test
-    fun `floor and ceiling enclose vertical room height`() {
+    fun `floor encloses bottom level`() {
         val room = RoomSpec(clearWidthMm = 3000f, clearHeightMm = 2500f, clearDepthMm = 3000f)
         val parts = RoomGeometryBuilder.build(room)
 
         val floor = assertNotNull(parts.find { it.surface == RoomSurface.FLOOR })
-        val ceiling = assertNotNull(parts.find { it.surface == RoomSurface.CEILING })
-
         assertMm(0f, floor.mesh.bounds().max.y)
-        assertMm(2500f, ceiling.mesh.bounds().min.y)
     }
 
     @Test

@@ -12,9 +12,10 @@ import com.closetstudio.app.render.MeshNode
 import com.closetstudio.core.geometry.RoomGeometryBuilder
 import com.closetstudio.core.geometry.RoomSurface
 import com.closetstudio.core.model.RoomSpec
+import com.google.android.filament.LightManager
 import dev.romainguy.kotlin.math.Float3
+import dev.romainguy.kotlin.math.Float4
 import io.github.sceneview.SceneView
-import io.github.sceneview.node.CameraNode
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
@@ -34,12 +35,12 @@ fun RoomScene(
     val materialLoader = rememberMaterialLoader(engine)
     val cameraNode = rememberCameraNode(engine)
 
-    // Position the camera in the center of the room at eye level (1.5 m)
-    LaunchedEffect(room, yawAngleDegrees, pitchAngleDegrees, cameraNode) {
-        val eyeX = room.clearWidthMm * 0.5f * MM_TO_M
-        val eyeY = (room.clearHeightMm * 0.5f).coerceIn(1400f, 1700f) * MM_TO_M
-        val eyeZ = room.clearDepthMm * 0.5f * MM_TO_M
+    // Position the camera in the center of the room at eye level
+    val eyeX = room.clearWidthMm * 0.5f * MM_TO_M
+    val eyeY = (room.clearHeightMm * 0.5f).coerceIn(1400f, 1600f) * MM_TO_M
+    val eyeZ = room.clearDepthMm * 0.5f * MM_TO_M
 
+    LaunchedEffect(room, yawAngleDegrees, pitchAngleDegrees, cameraNode) {
         val eye = Float3(eyeX, eyeY, eyeZ)
 
         val yawRad = Math.toRadians(yawAngleDegrees.toDouble()).toFloat()
@@ -59,47 +60,63 @@ fun RoomScene(
         engine = engine,
         materialLoader = materialLoader,
         cameraNode = cameraNode,
-        cameraManipulator = null, // Custom 360 camera control
+        cameraManipulator = null,
     ) {
+        // High-intensity central interior light (ceiling lamp)
+        LightNode(
+            type = LightManager.Type.POINT,
+            position = Float3(eyeX, (room.clearHeightMm - 100f) * MM_TO_M, eyeZ),
+            intensity = 250_000f,
+            color = Float4(1f, 0.98f, 0.94f, 1f),
+        )
+
+        // Eye-level ambient fill light to guarantee every wall is brilliantly illuminated
+        LightNode(
+            type = LightManager.Type.POINT,
+            position = Float3(eyeX, eyeY, eyeZ),
+            intensity = 150_000f,
+            color = Float4(1f, 1f, 1f, 1f),
+        )
+
         parts.forEachIndexed { index, part ->
             key(part.surface, index) {
                 val material = remember(engine, part.surface) {
                     when (part.surface) {
                         RoomSurface.FLOOR -> materialLoader.createColorInstance(
-                            color = Color(0xFFD6C8B4), // Parquet floor tone
+                            color = Color(0xFFE0D2BE), // Bright light oak parquet
                             metallic = 0.05f,
-                            roughness = 0.45f,
-                            reflectance = 0.4f,
-                        )
-                        RoomSurface.WALL -> materialLoader.createColorInstance(
-                            color = Color(0xFFEBE8E1), // Wallpaper tone
-                            metallic = 0.0f,
-                            roughness = 0.85f,
-                            reflectance = 0.2f,
-                        )
-                        RoomSurface.CEILING -> materialLoader.createColorInstance(
-                            color = Color(0xFFF8F7F4),
-                            metallic = 0.0f,
-                            roughness = 0.95f,
-                            reflectance = 0.1f,
-                        )
-                        RoomSurface.DOOR_FRAME -> materialLoader.createColorInstance(
-                            color = Color(0xFF7A5430), // Dark Oak frame
-                            metallic = 0.0f,
-                            roughness = 0.5f,
-                            reflectance = 0.4f,
-                        )
-                        RoomSurface.DOOR_LEAF -> materialLoader.createColorInstance(
-                            color = Color(0xFF9E7247), // Wood door panel
-                            metallic = 0.05f,
-                            roughness = 0.4f,
+                            roughness = 0.35f,
                             reflectance = 0.5f,
                         )
+                        RoomSurface.WALL -> materialLoader.createColorInstance(
+                            color = Color(0xFFFAF7F0), // Clean bright warm eggshell wall
+                            metallic = 0.0f,
+                            roughness = 0.5f,
+                            reflectance = 0.6f,
+                        )
+                        RoomSurface.CEILING -> materialLoader.createColorInstance(
+                            color = Color(0xFFFAF9F6),
+                            metallic = 0.0f,
+                            roughness = 0.9f,
+                            reflectance = 0.2f,
+                        )
+                        RoomSurface.DOOR_FRAME -> materialLoader.createColorInstance(
+                            color = Color(0xFF8B5A2B), // Warm rich wood frame
+                            metallic = 0.0f,
+                            roughness = 0.45f,
+                            reflectance = 0.5f,
+                        )
+                        RoomSurface.DOOR_LEAF -> materialLoader.createColorInstance(
+                            color = Color(0xFFA67444), // Warm cedar wood panel
+                            metallic = 0.05f,
+                            roughness = 0.4f,
+                            reflectance = 0.55f,
+                        )
                         RoomSurface.DOOR_HANDLE -> materialLoader.createColorInstance(
-                            color = Color(0xFFE0E0E0), // Brushed chrome
-                            metallic = 0.9f,
-                            roughness = 0.2f,
-                            reflectance = 0.9f,
+                            color = Color(0xFFF5F5F5), // Polished bright chrome
+                            metallic = 0.95f,
+                            roughness = 0.1f,
+                            reflectance = 0.95f,
                         )
                     }
                 }
