@@ -36,7 +36,8 @@ fun RoomScreen() {
     }
 
     val coroutineScope = rememberCoroutineScope()
-    val yawAnim = remember { Animatable(0f) }
+    // Inicia mirando directamente a la pared con la puerta (270°)
+    val yawAnim = remember { Animatable(270f) }
     val pitchAnim = remember { Animatable(0f) }
 
     Box(

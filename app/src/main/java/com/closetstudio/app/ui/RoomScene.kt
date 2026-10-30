@@ -12,15 +12,38 @@ import com.closetstudio.app.render.MeshNode
 import com.closetstudio.core.geometry.RoomGeometryBuilder
 import com.closetstudio.core.geometry.RoomSurface
 import com.closetstudio.core.model.RoomSpec
+import com.google.android.filament.Camera
 import com.google.android.filament.LightManager
 import dev.romainguy.kotlin.math.Float3
 import dev.romainguy.kotlin.math.Float4
+import dev.romainguy.kotlin.math.Mat4
+import dev.romainguy.kotlin.math.lookAt
 import io.github.sceneview.SceneView
+import io.github.sceneview.gesture.CameraGestureDetector
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
 import kotlin.math.cos
 import kotlin.math.sin
+
+/**
+ * Custom interior first-person camera manipulator that locks the eye position
+ * in the center of the room and smoothly looks at any wall angle.
+ */
+class PanoramicCameraManipulator : CameraGestureDetector.CameraManipulator {
+    var eye: Float3 = Float3(0f, 1.4f, 0f)
+    var target: Float3 = Float3(0f, 1.4f, -1f)
+
+    override fun setViewport(width: Int, height: Int) {}
+    override fun getTransform(): Mat4 = lookAt(eye, target, Float3(0f, 1f, 0f))
+    override fun grabBegin(x: Int, y: Int, strafe: Boolean) {}
+    override fun grabUpdate(x: Int, y: Int) {}
+    override fun grabEnd() {}
+    override fun scrollBegin(x: Int, y: Int, amount: Float) {}
+    override fun scrollUpdate(x: Int, y: Int, amount: Float, delta: Float) {}
+    override fun scrollEnd() {}
+    override fun update(deltaTime: Float) {}
+}
 
 @Composable
 fun RoomScene(
@@ -35,10 +58,12 @@ fun RoomScene(
     val materialLoader = rememberMaterialLoader(engine)
     val cameraNode = rememberCameraNode(engine)
 
-    // Position the camera in the center of the room at eye level
+    // Camera eye position: Center of the room, standing human height (1.40 m)
     val eyeX = room.clearWidthMm * 0.5f * MM_TO_M
-    val eyeY = (room.clearHeightMm * 0.5f).coerceIn(1400f, 1600f) * MM_TO_M
+    val eyeY = 1.40f // 1.40 m from finished floor
     val eyeZ = room.clearDepthMm * 0.5f * MM_TO_M
+
+    val manipulator = remember { PanoramicCameraManipulator() }
 
     LaunchedEffect(room, yawAngleDegrees, pitchAngleDegrees, cameraNode) {
         val eye = Float3(eyeX, eyeY, eyeZ)
@@ -46,13 +71,26 @@ fun RoomScene(
         val yawRad = Math.toRadians(yawAngleDegrees.toDouble()).toFloat()
         val pitchRad = Math.toRadians(pitchAngleDegrees.toDouble()).toFloat()
 
-        // Direction vector from spherical coordinates
+        // Direction vector from yaw and pitch
         val dirX = sin(yawRad) * cos(pitchRad)
         val dirY = sin(pitchRad)
         val dirZ = -cos(yawRad) * cos(pitchRad)
 
         val target = Float3(eye.x + dirX, eye.y + dirY, eye.z + dirZ)
-        cameraNode.lookAt(eye, target, Float3(0f, 1f, 0f))
+
+        manipulator.eye = eye
+        manipulator.target = target
+
+        // Wide angle FOV (80 degrees) so the wall is fully visible in frame
+        try {
+            cameraNode.setProjection(
+                80.0,
+                cameraNode.viewPortAspect,
+                0.05,
+                50.0,
+                Camera.Fov.VERTICAL,
+            )
+        } catch (_: Throwable) {}
     }
 
     SceneView(
@@ -60,7 +98,7 @@ fun RoomScene(
         engine = engine,
         materialLoader = materialLoader,
         cameraNode = cameraNode,
-        cameraManipulator = null,
+        cameraManipulator = manipulator,
     ) {
         // High-intensity central interior light (ceiling lamp)
         LightNode(
