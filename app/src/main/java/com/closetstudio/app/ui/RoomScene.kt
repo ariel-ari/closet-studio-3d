@@ -98,14 +98,21 @@ fun RoomScene(
             manipulator.eye = eye
             manipulator.target = target
 
-            // Lente rectilíneo natural (78° horizontal) para paredes 100% planas y rectas
+            // En tablet/horizontal (aspect >= 1.0) fijamos FOV VERTICAL (74°) para que se vean techo y piso con aire
+            // En celular/vertical (aspect < 1.0) fijamos FOV HORIZONTAL (86°) para que entre el ancho de pared
+            val (fov, direction) = if (aspect >= 1.0) {
+                74.0 to Camera.Fov.VERTICAL
+            } else {
+                86.0 to Camera.Fov.HORIZONTAL
+            }
+
             try {
                 cameraNode.setProjection(
-                    78.0,
+                    fov,
                     aspect,
                     0.05,
                     50.0,
-                    Camera.Fov.HORIZONTAL,
+                    direction,
                 )
             } catch (_: Throwable) {}
         }
