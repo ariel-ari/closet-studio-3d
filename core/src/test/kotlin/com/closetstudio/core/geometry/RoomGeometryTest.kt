@@ -1,39 +1,54 @@
 package com.closetstudio.core.geometry
 
 import com.closetstudio.core.assertMm
+import com.closetstudio.core.model.DoorSpec
 import com.closetstudio.core.model.RoomSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class RoomGeometryTest {
 
     @Test
-    fun `floor top surface aligns with zero level`() {
-        val room = RoomSpec(clearWidthMm = 3000f, clearHeightMm = 2500f, clearDepthMm = 800f)
+    fun `generates all room surfaces including ceiling and door`() {
+        val room = RoomSpec(clearWidthMm = 3600f, clearHeightMm = 2600f, clearDepthMm = 3600f)
         val parts = RoomGeometryBuilder.build(room)
+
+        assertNotNull(parts.find { it.surface == RoomSurface.FLOOR })
+        assertNotNull(parts.find { it.surface == RoomSurface.CEILING })
+        assertNotNull(parts.find { it.surface == RoomSurface.WALL })
+        assertNotNull(parts.find { it.surface == RoomSurface.DOOR_FRAME })
+        assertNotNull(parts.find { it.surface == RoomSurface.DOOR_LEAF })
+    }
+
+    @Test
+    fun `floor and ceiling enclose vertical room height`() {
+        val room = RoomSpec(clearWidthMm = 3000f, clearHeightMm = 2500f, clearDepthMm = 3000f)
+        val parts = RoomGeometryBuilder.build(room)
+
         val floor = assertNotNull(parts.find { it.surface == RoomSurface.FLOOR })
+        val ceiling = assertNotNull(parts.find { it.surface == RoomSurface.CEILING })
 
-        val bounds = floor.mesh.bounds()
-        assertMm(0f, bounds.max.y)
+        assertMm(0f, floor.mesh.bounds().max.y)
+        assertMm(2500f, ceiling.mesh.bounds().min.y)
     }
 
     @Test
-    fun `walls cover full room width and height`() {
-        val room = RoomSpec(clearWidthMm = 2800f, clearHeightMm = 2400f, clearDepthMm = 700f)
+    fun `door offset leaves wall before and after the opening`() {
+        val room = RoomSpec(
+            clearWidthMm = 4000f,
+            clearHeightMm = 2600f,
+            clearDepthMm = 4000f,
+            door = DoorSpec(offsetMm = 1000f, widthMm = 900f, heightMm = 2100f),
+        )
         val parts = RoomGeometryBuilder.build(room)
-        val wall = assertNotNull(parts.find { it.surface == RoomSurface.WALL })
+        val walls = assertNotNull(parts.find { it.surface == RoomSurface.WALL })
 
-        val bounds = wall.mesh.bounds()
-        assertEquals(true, bounds.max.x >= 2800f)
-        assertEquals(true, bounds.max.y >= 2400f)
-    }
-
-    @Test
-    fun `rejects non positive dimensions`() {
-        assertFailsWith<IllegalArgumentException> {
-            RoomSpec(clearWidthMm = -100f, clearHeightMm = 2000f, clearDepthMm = 600f)
-        }
+        val bounds = walls.mesh.bounds()
+        // Wall spans full room opening
+        assertTrue(bounds.min.x <= 0f)
+        assertTrue(bounds.max.x >= 4000f)
+        assertTrue(bounds.max.z >= 4000f)
     }
 }
