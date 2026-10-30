@@ -20,6 +20,7 @@ import dev.romainguy.kotlin.math.Float4
 import dev.romainguy.kotlin.math.Mat4
 import dev.romainguy.kotlin.math.lookAt
 import io.github.sceneview.SceneView
+import io.github.sceneview.SurfaceType
 import io.github.sceneview.gesture.CameraGestureDetector
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
@@ -121,6 +122,7 @@ fun RoomScene(
 
         SceneView(
             modifier = Modifier.fillMaxSize(),
+            surfaceType = SurfaceType.TextureSurface,
             engine = engine,
             materialLoader = materialLoader,
             cameraNode = cameraNode,
