@@ -63,7 +63,7 @@ fun RoomScene(
     val eyeY = 1.40f // 1.40 m from finished floor
     val eyeZ = room.clearDepthMm * 0.5f * MM_TO_M
 
-    val manipulator = remember { PanoramicCameraManipulator() }
+    val manipulator = remember(eyeX, eyeY, eyeZ) { PanoramicCameraManipulator().apply { eye = Float3(eyeX, eyeY, eyeZ); target = Float3(eyeX, eyeY, eyeZ + 1f) } }
 
     LaunchedEffect(room, yawAngleDegrees, pitchAngleDegrees, cameraNode) {
         val eye = Float3(eyeX, eyeY, eyeZ)
@@ -99,6 +99,8 @@ fun RoomScene(
         materialLoader = materialLoader,
         cameraNode = cameraNode,
         cameraManipulator = manipulator,
+        autoCenterContent = false,
+        autoFitContent = false,
     ) {
         // High-intensity central interior light (ceiling lamp)
         LightNode(
