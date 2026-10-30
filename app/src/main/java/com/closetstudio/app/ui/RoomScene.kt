@@ -59,15 +59,18 @@ fun RoomScene(
     val materialLoader = rememberMaterialLoader(engine)
     val cameraNode = rememberCameraNode(engine)
 
-    // Camera eye position: Center of the room, standing human height (1.40 m)
-    val eyeX = room.clearWidthMm * 0.5f * MM_TO_M
+    // Room center coordinates and human eye height (1.40 m)
+    val centerX = room.clearWidthMm * 0.5f * MM_TO_M
     val eyeY = 1.40f // 1.40 m from finished floor
-    val eyeZ = room.clearDepthMm * 0.5f * MM_TO_M
+    val centerZ = room.clearDepthMm * 0.5f * MM_TO_M
 
-    val manipulator = remember(eyeX, eyeY, eyeZ) {
+    // Un paso suave hacia atrás (0.65 m) respecto a la pared activa, continuo e imperceptible
+    val backOffset = 0.65f.coerceAtMost(minOf(centerX, centerZ) * 0.45f)
+
+    val manipulator = remember(centerX, centerZ) {
         PanoramicCameraManipulator().apply {
-            eye = Float3(eyeX, eyeY, eyeZ)
-            target = Float3(eyeX, eyeY, eyeZ + 1f)
+            eye = Float3(centerX, eyeY, centerZ)
+            target = Float3(centerX, eyeY, centerZ + 1f)
         }
     }
 
@@ -75,25 +78,30 @@ fun RoomScene(
         val aspect = (maxWidth.value / maxHeight.value.coerceAtLeast(1f)).toDouble()
 
         LaunchedEffect(room, yawAngleDegrees, pitchAngleDegrees, cameraNode, aspect) {
-            val eye = Float3(eyeX, eyeY, eyeZ)
-
             val yawRad = Math.toRadians(yawAngleDegrees.toDouble()).toFloat()
             val pitchRad = Math.toRadians(pitchAngleDegrees.toDouble()).toFloat()
 
-            // Direction vector from yaw and pitch
+            // Vector de dirección de la mirada
             val dirX = sin(yawRad) * cos(pitchRad)
             val dirY = sin(pitchRad)
             val dirZ = -cos(yawRad) * cos(pitchRad)
+
+            // Posición con retroceso dinámico suave (órbita circular interior imperceptible)
+            val eye = Float3(
+                centerX - (sin(yawRad) * backOffset),
+                eyeY,
+                centerZ - (-cos(yawRad) * backOffset),
+            )
 
             val target = Float3(eye.x + dirX, eye.y + dirY, eye.z + dirZ)
 
             manipulator.eye = eye
             manipulator.target = target
 
-            // Wide horizontal FOV (96 degrees) guarantees the full 3.6m wall is visible corner-to-corner
+            // Lente rectilíneo natural (78° horizontal) para paredes 100% planas y rectas
             try {
                 cameraNode.setProjection(
-                    96.0,
+                    78.0,
                     aspect,
                     0.05,
                     50.0,
@@ -114,7 +122,7 @@ fun RoomScene(
             // High-intensity central interior light (ceiling lamp)
             LightNode(
                 type = LightManager.Type.POINT,
-                position = Float3(eyeX, (room.clearHeightMm - 100f) * MM_TO_M, eyeZ),
+                position = Float3(centerX, (room.clearHeightMm - 100f) * MM_TO_M, centerZ),
                 intensity = 250_000f,
                 color = Float4(1f, 0.98f, 0.94f, 1f),
             )
@@ -122,7 +130,7 @@ fun RoomScene(
             // Eye-level ambient fill light to guarantee every wall is brilliantly illuminated
             LightNode(
                 type = LightManager.Type.POINT,
-                position = Float3(eyeX, eyeY, eyeZ),
+                position = Float3(centerX, eyeY, centerZ),
                 intensity = 150_000f,
                 color = Float4(1f, 1f, 1f, 1f),
             )
