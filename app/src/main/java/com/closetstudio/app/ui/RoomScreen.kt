@@ -191,7 +191,9 @@ fun RoomScreen() {
                         onOrbit = { deltaX, deltaY ->
                             coroutineScope.launch {
                                 yawAnim.snapTo(yawAnim.value - deltaX * 0.22f)
-                                val newPitch = (pitchAnim.value - deltaY * 0.18f).coerceIn(-80f, 80f)
+                                // Pitch acotado: desde -55° (vista maqueta cenital/superior) hasta +25° (vista rasante desde el suelo)
+                                // Mantiene la cámara siempre por encima del piso sin deformación ni compresión
+                                val newPitch = (pitchAnim.value - deltaY * 0.18f).coerceIn(-55f, 25f)
                                 pitchAnim.snapTo(newPitch)
                             }
                         },

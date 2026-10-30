@@ -46,11 +46,15 @@ object RoomGeometryBuilder {
         )
         parts += RoomPart(RoomSurface.FLOOR, floorBuilder.build())
 
-        // 2. Ceiling
+        // 2. Ceiling (inward-facing quad with normal -Y)
+        // Visible when looking up from inside; naturally backface-culled when orbiting from above (Dollhouse)
         val ceilingBuilder = MeshBuilder(uvScaleMm)
-        ceilingBuilder.addBox(
-            min = Vec3(-slab, h, -slab),
-            max = Vec3(w + slab, h + slab, d + slab),
+        ceilingBuilder.addQuad(
+            a = Vec3(-slab, h, -slab),
+            b = Vec3(w + slab, h, -slab),
+            c = Vec3(w + slab, h, d + slab),
+            d = Vec3(-slab, h, d + slab),
+            normal = Vec3(0f, -1f, 0f),
         )
         parts += RoomPart(RoomSurface.CEILING, ceilingBuilder.build())
 

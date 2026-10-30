@@ -85,23 +85,13 @@ fun RoomScene(
             val dirY = sin(pitchRad)
             val dirZ = -cos(yawRad) * cos(pitchRad)
 
-            // Posición de la cámara orbitando a distancia 'distance' del objetivo focal
-            val rawEye = Float3(
-                target.x - dirX * distance,
-                target.y - dirY * distance,
-                target.z - dirZ * distance,
-            )
-
-            // Confinar la cámara dentro del espacio interior para que nunca traspase las paredes al vacío exterior
-            val margin = 0.20f
-            val roomW = room.clearWidthMm * MM_TO_M
-            val roomH = room.clearHeightMm * MM_TO_M
-            val roomD = room.clearDepthMm * MM_TO_M
-
+            // Enfoque B (Maqueta/Dollhouse): La cámara orbita libremente en 3D
+            // sin topes artificiales. La distancia se mantiene constante para evitar
+            // cualquier compresión o deformación de perspectiva (ojo de pez).
             val eye = Float3(
-                rawEye.x.coerceIn(margin, roomW - margin),
-                rawEye.y.coerceIn(margin, roomH - margin),
-                rawEye.z.coerceIn(margin, roomD - margin),
+                target.x - dirX * distance,
+                (target.y - dirY * distance).coerceAtLeast(0.10f),
+                target.z - dirZ * distance,
             )
 
             manipulator.eye = eye
