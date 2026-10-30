@@ -1,0 +1,14 @@
+# Build and tool outputs
+.gradle/
+build/
+*/build/
+local.properties
+*.apk
+
+# Reverse engineering and local toolchains
+tools/
+work/
+
+# IDE
+.idea/
+*.iml
