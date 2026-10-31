@@ -38,6 +38,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.automirrored.filled.MergeType
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
@@ -1159,7 +1160,7 @@ fun RoomScreen() {
                                     modifier = Modifier
                                         .align(Alignment.BottomStart)
                                         .navigationBarsPadding()
-                                        .padding(start = 16.dp, bottom = 20.dp),
+                                        .padding(start = 16.dp, bottom = 76.dp),
                                 ) {
                                     // 1. Edit Button (✏️ opens right-side size inspector)
                                     Surface(
@@ -1246,72 +1247,6 @@ fun RoomScreen() {
                                                 tint = Color(0xFF651FFF),
                                                 modifier = Modifier.size(25.dp),
                                             )
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Floating Corner Fusion Buttons when 2 containers intersect or meet at a corner
-                            val cornerCandidates = remember(room) { room.detectCornerIntersections() }
-                            if (cornerCandidates.isNotEmpty()) {
-                                Column(
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier
-                                        .align(Alignment.TopCenter)
-                                        .padding(top = 14.dp),
-                                ) {
-                                    cornerCandidates.forEach { candidate ->
-                                        val isFused = candidate.isFused
-                                        val label = if (isFused) {
-                                            "${s.unfuseCornerButton} (${candidate.corner.codeLabel})"
-                                        } else {
-                                            "${s.fuseCornerButton} (${candidate.corner.codeLabel})"
-                                        }
-                                        Surface(
-                                            onClick = {
-                                                val updated = room.withCornerFusion(
-                                                    corner = candidate.corner,
-                                                    fuse = !isFused,
-                                                )
-                                                updateRoom(updated)
-                                                coroutineScope.launch {
-                                                    messageHostState.showSnackbar(
-                                                        if (!isFused) {
-                                                            "${s.cornerFusedToast} (${candidate.corner.codeLabel})"
-                                                        } else {
-                                                            "${s.cornerUnfusedToast} (${candidate.corner.codeLabel})"
-                                                        },
-                                                    )
-                                                }
-                                            },
-                                            shape = RoundedCornerShape(22.dp),
-                                            color = if (isFused) {
-                                                Color(0xFF1E6B47)
-                                            } else {
-                                                Color(0xFF2C55B5)
-                                            },
-                                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.85f)),
-                                            shadowElevation = 8.dp,
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.MergeType,
-                                                    contentDescription = label,
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(20.dp),
-                                                )
-                                                Text(
-                                                    text = label,
-                                                    style = MaterialTheme.typography.labelLarge,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color.White,
-                                                )
-                                            }
                                         }
                                     }
                                 }
@@ -1407,7 +1342,7 @@ fun RoomScreen() {
                                 }
                             }
 
-                            // Bottom-Right "+" Floating Action Button to deploy the Right-Side Units Column
+                            // Bottom-Right Floating Actions: Corner Fusion/Split action + "+" Add Units FAB
                             androidx.compose.animation.AnimatedVisibility(
                                 visible = !showUnitsColumn,
                                 enter = fadeIn(tween(200)),
@@ -1415,22 +1350,84 @@ fun RoomScreen() {
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .navigationBarsPadding()
-                                    .padding(end = 20.dp, bottom = 20.dp),
+                                    .padding(end = 16.dp, bottom = 76.dp),
                             ) {
-                                FloatingActionButton(
-                                    onClick = {
-                                        isEditingContainerInPanel = false
-                                        showUnitsColumn = true
-                                    },
-                                    shape = CircleShape,
-                                    containerColor = Color(0xFF2C55B5),
-                                    contentColor = Color.White,
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp),
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = s.addUnitsFabDesc,
-                                        modifier = Modifier.size(28.dp),
-                                    )
+                                    // Floating Corner Fusion/Split Buttons stacked directly above the "+" FAB
+                                    val cornerCandidates = remember(room) { room.detectCornerIntersections() }
+                                    if (cornerCandidates.isNotEmpty()) {
+                                        cornerCandidates.forEach { candidate ->
+                                            val isFused = candidate.isFused
+                                            Surface(
+                                                onClick = {
+                                                    val updated = room.withCornerFusion(
+                                                        corner = candidate.corner,
+                                                        fuse = !isFused,
+                                                    )
+                                                    updateRoom(updated)
+                                                    coroutineScope.launch {
+                                                        messageHostState.showSnackbar(
+                                                            if (!isFused) {
+                                                                "${s.cornerFusedToast} (${candidate.corner.codeLabel})"
+                                                            } else {
+                                                                "${s.cornerUnfusedToast} (${candidate.corner.codeLabel})"
+                                                            },
+                                                        )
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(20.dp),
+                                                color = if (isFused) {
+                                                    Color(0xFF1E6B47)
+                                                } else {
+                                                    Color(0xFF2C55B5)
+                                                },
+                                                border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.85f)),
+                                                shadowElevation = 6.dp,
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (isFused) Icons.AutoMirrored.Filled.CallSplit else Icons.AutoMirrored.Filled.MergeType,
+                                                        contentDescription = if (isFused) {
+                                                            "${s.unfuseCornerButton} (${candidate.corner.codeLabel})"
+                                                        } else {
+                                                            "${s.fuseCornerButton} (${candidate.corner.codeLabel})"
+                                                        },
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                    Text(
+                                                        text = candidate.corner.codeLabel,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White,
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    FloatingActionButton(
+                                        onClick = {
+                                            isEditingContainerInPanel = false
+                                            showUnitsColumn = true
+                                        },
+                                        shape = CircleShape,
+                                        containerColor = Color(0xFF2C55B5),
+                                        contentColor = Color.White,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = s.addUnitsFabDesc,
+                                            modifier = Modifier.size(28.dp),
+                                        )
+                                    }
                                 }
                             }
 
