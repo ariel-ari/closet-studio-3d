@@ -14,9 +14,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -28,10 +25,8 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.closetstudio.core.model.RoomSpec
 import com.closetstudio.core.model.Vec2Mm
@@ -110,7 +105,7 @@ fun RoomFloorplan2D(
             .background(Color(0xFFF3F1EC))
             .pointerInput(density) {
                 detectTapGestures { tap ->
-                    if (size.width <= 0 || size.height <= 0) return@detectTapGestures
+                    if ((size.width <= 0) || (size.height <= 0)) return@detectTapGestures
                     val targets = computeHitTargets(
                         room = currentRoom,
                         width = size.width.toFloat(),
@@ -150,7 +145,7 @@ fun RoomFloorplan2D(
                         ),
                     )
                     val bestCorner = cornerCandidates.minByOrNull { it.second }
-                    if (bestCorner != null && bestCorner.second <= cornerHitRadius) {
+                    if ((bestCorner != null) && (bestCorner.second <= cornerHitRadius)) {
                         currentOnSelect(bestCorner.first)
                         return@detectTapGestures
                     }
@@ -168,7 +163,7 @@ fun RoomFloorplan2D(
                         ),
                     )
                     val bestBadge = badgeCandidates.minByOrNull { it.second }
-                    if (bestBadge != null && bestBadge.second <= badgeHitRadius) {
+                    if ((bestBadge != null) && (bestBadge.second <= badgeHitRadius)) {
                         currentOnSelect(bestBadge.first)
                         return@detectTapGestures
                     }
@@ -181,7 +176,7 @@ fun RoomFloorplan2D(
                         FloorplanElement.WallSouthDoor to pointToSegmentDist(tap, targets.pSW, targets.pSE),
                     )
                     val bestSegment = segmentCandidates.minByOrNull { it.second }
-                    if (bestSegment != null && bestSegment.second <= wallSegmentRadius) {
+                    if ((bestSegment != null) && (bestSegment.second <= wallSegmentRadius)) {
                         currentOnSelect(bestSegment.first)
                     }
                 }
@@ -201,7 +196,7 @@ fun RoomFloorplan2D(
             val roomSpanX = (maxX - minX).coerceAtLeast(1000f)
             val roomSpanZ = (maxZ - minZ).coerceAtLeast(1000f)
 
-            val availW = (size.width - padX * 2f).coerceAtLeast(100f)
+            val availW = (size.width - (padX * 2f)).coerceAtLeast(100f)
             val availH = (size.height - padTop - padBottom).coerceAtLeast(100f)
 
             val scale = min(availW / roomSpanX, availH / roomSpanZ)
@@ -209,7 +204,7 @@ fun RoomFloorplan2D(
             val centerWorldX = (minX + maxX) * 0.5f
             val centerWorldZ = (minZ + maxZ) * 0.5f
             val centerScreenX = size.width * 0.5f
-            val centerScreenY = padTop + availH * 0.5f
+            val centerScreenY = padTop + (availH * 0.5f)
 
             fun toScreen(pt: Vec2Mm): Offset {
                 return Offset(
@@ -404,10 +399,9 @@ fun RoomFloorplan2D(
             if (doorRadiusPx > 6f) {
                 val ux = doorVecX / doorRadiusPx
                 val uz = doorVecY / doorRadiusPx
-                val inNx = uz
                 val inNy = -ux
                 val pDoorOpenTip = Offset(
-                    x = pDoorStart.x + inNx * doorRadiusPx,
+                    x = pDoorStart.x + uz * doorRadiusPx,
                     y = pDoorStart.y + inNy * doorRadiusPx,
                 )
 
@@ -419,7 +413,7 @@ fun RoomFloorplan2D(
                     cap = StrokeCap.Round,
                 )
 
-                val startAngleDeg = Math.toDegrees(atan2(inNy.toDouble(), inNx.toDouble())).toFloat()
+                val startAngleDeg = Math.toDegrees(atan2(inNy.toDouble(), uz.toDouble())).toFloat()
                 drawArc(
                     color = Color(0xFF8B5A2B).copy(alpha = 0.65f),
                     startAngle = startAngleDeg,
@@ -527,7 +521,7 @@ fun RoomFloorplan2D(
             drawBadgePill(
                 center = midLeft,
                 letter = "E",
-                text = "${room.segmentDMm.roundToInt()}",
+                text = room.segmentDMm.roundToInt().toString(),
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
                 isLocked = room.lockSegmentD || room.lockWallSouth,
@@ -544,7 +538,7 @@ fun RoomFloorplan2D(
             drawBadgePill(
                 center = midRight,
                 letter = "D",
-                text = "${room.segmentEMm.roundToInt()}",
+                text = room.segmentEMm.roundToInt().toString(),
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
                 isLocked = room.lockSegmentE || room.lockWallSouth,
@@ -780,8 +774,7 @@ private fun DrawScope.drawCornerAngleArc(
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         textAlign = Paint.Align.LEFT
     }
-    val label = angleStr
-    val textW = textPaint.measureText(label)
+    val textW = textPaint.measureText(angleStr)
     val lockExtraW = if (isLocked) 13.dp.toPx() else 0f
     val pillW = textW + 10.dp.toPx() + lockExtraW
     val pillH = 17.dp.toPx()
@@ -811,7 +804,7 @@ private fun DrawScope.drawCornerAngleArc(
 
     val textStartX = lx - pillW * 0.5f + 5.dp.toPx()
     drawContext.canvas.nativeCanvas.drawText(
-        label,
+        angleStr,
         textStartX,
         ly + 3.8.dp.toPx(),
         textPaint,

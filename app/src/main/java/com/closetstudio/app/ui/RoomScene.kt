@@ -41,8 +41,8 @@ class PanoramicCameraManipulator : CameraGestureDetector.CameraManipulator {
     override fun grabBegin(x: Int, y: Int, strafe: Boolean) {}
     override fun grabUpdate(x: Int, y: Int) {}
     override fun grabEnd() {}
-    override fun scrollBegin(x: Int, y: Int, amount: Float) {}
-    override fun scrollUpdate(x: Int, y: Int, amount: Float, delta: Float) {}
+    override fun scrollBegin(x: Int, y: Int, separation: Float) {}
+    override fun scrollUpdate(x: Int, y: Int, prevSeparation: Float, currSeparation: Float) {}
     override fun scrollEnd() {}
     override fun update(deltaTime: Float) {}
 }
@@ -52,10 +52,10 @@ fun RoomScene(
     room: RoomSpec,
     target: Float3,
     yawAngleDegrees: Float,
+    modifier: Modifier = Modifier,
     pitchAngleDegrees: Float = 0f,
     distance: Float = 2.45f,
     selectedContainerId: String? = null,
-    modifier: Modifier = Modifier,
 ) {
     val parts = remember(room, selectedContainerId) {
         RoomGeometryBuilder.build(room, selectedContainerId = selectedContainerId)
@@ -93,9 +93,9 @@ fun RoomScene(
             // sin topes artificiales. La distancia se mantiene constante para evitar
             // cualquier compresión o deformación de perspectiva (ojo de pez).
             val eye = Float3(
-                target.x - dirX * distance,
-                (target.y - dirY * distance).coerceAtLeast(0.10f),
-                target.z - dirZ * distance,
+                target.x - (dirX * distance),
+                (target.y - (dirY * distance)).coerceAtLeast(0.10f),
+                target.z - (dirZ * distance),
             )
 
             manipulator.eye = eye
@@ -150,10 +150,10 @@ fun RoomScene(
                 color = Float4(1f, 1f, 1f, 1f),
             )
 
-            parts.forEachIndexed { index, part ->
-                key(part.surface, index) {
-                    val material = remember(engine, part.surface) {
-                        when (part.surface) {
+            parts.forEachIndexed { index, (surface, mesh) ->
+                key(surface, index) {
+                    val material = remember(engine, surface) {
+                        when (surface) {
                             RoomSurface.FLOOR -> materialLoader.createColorInstance(
                                 color = Color(0xFFE0D2BE), // Bright light oak parquet
                                 metallic = 0.05f,
@@ -224,9 +224,9 @@ fun RoomScene(
                     }
 
                     MeshNode(
-                        mesh = part.mesh,
+                        mesh = mesh,
                         material = material,
-                        name = "room-${part.surface.name.lowercase()}-$index",
+                        name = "room-${surface.name.lowercase()}-$index",
                     )
                 }
             }

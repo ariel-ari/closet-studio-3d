@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -58,7 +57,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.closetstudio.core.model.RoomSpec
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -194,8 +192,9 @@ fun RoomDimensionsPanel(
                             "Igualar A con Pared C (${room.wallBMm.roundToInt()} mm)",
                             "Match A with Wall C (${room.wallBMm.roundToInt()} mm)",
                         ),
-                        onMatchOpposite = { onRoomChange(room.withWallC(room.wallBMm, doorCentered)) },
-                    )
+                    ) {
+                        onRoomChange(room.withWallC(room.wallBMm, doorCentered))
+                    }
                 }
 
                 FloorplanElement.WallB -> {
@@ -212,8 +211,9 @@ fun RoomDimensionsPanel(
                             "Igualar B con Pared E-D (${room.wallSouthMm.roundToInt()} mm)",
                             "Match B with Wall E-D (${room.wallSouthMm.roundToInt()} mm)",
                         ),
-                        onMatchOpposite = { onRoomChange(room.withWallA(room.wallSouthMm, doorCentered)) },
-                    )
+                    ) {
+                        onRoomChange(room.withWallA(room.wallSouthMm, doorCentered))
+                    }
                 }
 
                 FloorplanElement.WallC -> {
@@ -230,8 +230,9 @@ fun RoomDimensionsPanel(
                             "Igualar C con Pared A (${room.wallCMm.roundToInt()} mm)",
                             "Match C with Wall A (${room.wallCMm.roundToInt()} mm)",
                         ),
-                        onMatchOpposite = { onRoomChange(room.withWallB(room.wallCMm, doorCentered)) },
-                    )
+                    ) {
+                        onRoomChange(room.withWallB(room.wallCMm, doorCentered))
+                    }
                 }
 
                 FloorplanElement.WallSouthDoor -> {
@@ -259,8 +260,9 @@ fun RoomDimensionsPanel(
                         allOthersLocked = otherLockedCount == 3,
                         room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleAC = !room.lockAngleAC)) },
-                        onAngleChange = { onRoomChange(room.withAngleAC(it, doorCentered)) },
-                    )
+                    ) {
+                        onRoomChange(room.withAngleAC(it, doorCentered))
+                    }
                 }
 
                 FloorplanElement.CornerAB -> {
@@ -274,8 +276,9 @@ fun RoomDimensionsPanel(
                         allOthersLocked = otherLockedCount == 3,
                         room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleAB = !room.lockAngleAB)) },
-                        onAngleChange = { onRoomChange(room.withAngleAB(it, doorCentered)) },
-                    )
+                    ) {
+                        onRoomChange(room.withAngleAB(it, doorCentered))
+                    }
                 }
 
                 FloorplanElement.CornerBE -> {
@@ -289,8 +292,9 @@ fun RoomDimensionsPanel(
                         allOthersLocked = otherLockedCount == 3,
                         room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleBE = !room.lockAngleBE)) },
-                        onAngleChange = { onRoomChange(room.withAngleBE(it, doorCentered)) },
-                    )
+                    ) {
+                        onRoomChange(room.withAngleBE(it, doorCentered))
+                    }
                 }
 
                 FloorplanElement.CornerCD -> {
@@ -304,8 +308,9 @@ fun RoomDimensionsPanel(
                         allOthersLocked = otherLockedCount == 3,
                         room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleCD = !room.lockAngleCD)) },
-                        onAngleChange = { onRoomChange(room.withAngleCD(it, doorCentered)) },
-                    )
+                    ) {
+                        onRoomChange(room.withAngleCD(it, doorCentered))
+                    }
                 }
 
                 FloorplanElement.CeilingHeight -> {
@@ -319,8 +324,7 @@ fun RoomDimensionsPanel(
                         onLockToggle = {},
                         onValueChange = { onRoomChange(room.copy(clearHeightMm = it)) },
                         oppositeButtonLabel = null,
-                        onMatchOpposite = {},
-                    )
+                    ) {}
                 }
             }
 
@@ -816,14 +820,12 @@ private fun DoorWallInspectorCard(
                 },
                 valueMm = room.doorWallLengthMm,
                 rangeMm = 0f..maxOf(10000f, room.doorWallLengthMm * 1.5f),
-                stepMm = 25f,
                 enabled = !totalLocked,
-                onValueChange = { newTotal ->
-                    if (!totalLocked) {
-                        onRoomChange(room.withWallSouth(newTotal, keepDoorCentered = doorCentered))
-                    }
-                },
-            )
+            ) { newTotal ->
+                if (!totalLocked) {
+                    onRoomChange(room.withWallSouth(newTotal, keepDoorCentered = doorCentered))
+                }
+            }
 
             HorizontalDivider()
 
@@ -897,14 +899,12 @@ private fun DoorWallInspectorCard(
                 label = tr(lang, "Deslizar Puerta", "Slide Door Width"),
                 valueMm = room.door.widthMm,
                 rangeMm = 0f..maxOf(3000f, room.doorWallLengthMm, room.door.widthMm * 1.5f),
-                stepMm = 25f,
                 enabled = !room.door.lockWidth,
-                onValueChange = { newW ->
-                    if (!room.door.lockWidth) {
-                        onRoomChange(room.withDoorWidth(newW, keepCentered = doorCentered))
-                    }
-                },
-            )
+            ) { newW ->
+                if (!room.door.lockWidth) {
+                    onRoomChange(room.withDoorWidth(newW, keepCentered = doorCentered))
+                }
+            }
 
             HorizontalDivider()
 
@@ -984,15 +984,13 @@ private fun DoorWallInspectorCard(
                 },
                 valueMm = room.segmentDMm,
                 rangeMm = 0f..maxSliderSide,
-                stepMm = 25f,
                 enabled = canEditE,
-                onValueChange = { newE ->
-                    if (canEditE) {
-                        if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentD(newE))
-                    }
-                },
-            )
+            ) { newE ->
+                if (canEditE) {
+                    if (doorCentered) onDoorCenteredChange(false)
+                    onRoomChange(room.withSegmentD(newE))
+                }
+            }
 
             HorizontalDivider()
 
@@ -1064,15 +1062,13 @@ private fun DoorWallInspectorCard(
                 },
                 valueMm = room.segmentEMm,
                 rangeMm = 0f..maxSliderSide,
-                stepMm = 25f,
                 enabled = canEditD,
-                onValueChange = { newD ->
-                    if (canEditD) {
-                        if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentE(newD))
-                    }
-                },
-            )
+            ) { newD ->
+                if (canEditD) {
+                    if (doorCentered) onDoorCenteredChange(false)
+                    onRoomChange(room.withSegmentE(newD))
+                }
+            }
         }
     }
 }
@@ -1113,7 +1109,7 @@ private fun DirectNumericInputRow(
         OutlinedTextField(
             value = textValue,
             onValueChange = { raw ->
-                val filtered = raw.filter { it.isDigit() || (isDecimal && (it == '.' || it == ',')) }
+                val filtered = raw.filter { (it.isDigit()) || (isDecimal && ((it == '.') || (it == ','))) }
                 textValue = filtered
             },
             enabled = enabled,
@@ -1121,7 +1117,7 @@ private fun DirectNumericInputRow(
             label = { Text(label, style = MaterialTheme.typography.labelSmall) },
             suffix = { Text(unitSuffix, style = MaterialTheme.typography.labelSmall) },
             trailingIcon = {
-                if (enabled && textValue != currentValueText) {
+                if (enabled && (textValue != currentValueText)) {
                     IconButton(
                         onClick = { applyInput() },
                         modifier = Modifier.size(28.dp),
@@ -1208,8 +1204,8 @@ private fun DimensionSlider(
     label: String,
     valueMm: Float,
     rangeMm: ClosedFloatingPointRange<Float>,
-    stepMm: Float,
     enabled: Boolean = true,
+    stepMm: Float = 25f,
     onValueChange: (Float) -> Unit,
 ) {
     val steps = ((rangeMm.endInclusive - rangeMm.start) / stepMm).toInt() - 1

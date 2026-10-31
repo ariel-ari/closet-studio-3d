@@ -554,8 +554,7 @@ object RoomGeometryBuilder {
 
         // 1. Left Side Panel:
         // - If NOT fused at start corner: normal full outer side panel at s0..s0+t
-        // - If FUSED at start corner: clean internal corner divider spine at s0Front - t/2 .. s0Front + t/2
-        //   running between bottom shelf and top roof (matching the user's corner closet reference!)
+        // - If FUSED at start corner: omit vertical panel so the inside corner forms an open, continuous L!
         if (fusedPrevNeighbor == null) {
             addWallAlignedBox(
                 builder = vertPanelsBuilder,
@@ -565,22 +564,11 @@ object RoomGeometryBuilder {
                 d0 = wallGap, d1 = wallGap + totalD,
                 frontEdgeBuilder = frontEdgesBuilder,
             )
-        } else if (totalH > plinthH + t * 2f) {
-            val spineS0 = (s0Front - t * 0.5f).coerceAtLeast(0f)
-            val spineS1 = (spineS0 + t).coerceAtMost(s1 - t)
-            addWallAlignedBox(
-                builder = vertPanelsBuilder,
-                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = spineS0, s1 = spineS1,
-                y0 = plinthH + t, y1 = totalH - t,
-                d0 = wallGap + backT, d1 = wallGap + totalD,
-                frontEdgeBuilder = frontEdgesBuilder,
-            )
         }
 
         // 2. Right Side Panel:
         // - If NOT fused at end corner: normal full outer side panel at s1-t..s1
-        // - If FUSED at end corner: clean internal corner divider spine at s1Front - t/2 .. s1Front + t/2
+        // - If FUSED at end corner: omit vertical panel so the inside corner forms an open, continuous L!
         if (fusedNextNeighbor == null) {
             addWallAlignedBox(
                 builder = vertPanelsBuilder,
@@ -588,17 +576,6 @@ object RoomGeometryBuilder {
                 s0 = s1 - t, s1 = s1,
                 y0 = 0f, y1 = totalH,
                 d0 = wallGap, d1 = wallGap + totalD,
-                frontEdgeBuilder = frontEdgesBuilder,
-            )
-        } else if (totalH > plinthH + t * 2f) {
-            val spineS1 = (s1Front + t * 0.5f).coerceAtMost(wallLen)
-            val spineS0 = (spineS1 - t).coerceAtLeast(s0 + t)
-            addWallAlignedBox(
-                builder = vertPanelsBuilder,
-                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = spineS0, s1 = spineS1,
-                y0 = plinthH + t, y1 = totalH - t,
-                d0 = wallGap + backT, d1 = wallGap + totalD,
                 frontEdgeBuilder = frontEdgesBuilder,
             )
         }
@@ -629,16 +606,37 @@ object RoomGeometryBuilder {
             )
         }
 
-        // 5. Front Plinth / Toe-Kick (trimmed to s0Front..s1Front so the L-plinth meets cleanly at the inner corner)
-        if (s1Front > s0Front && plinthH > 2f) {
-            val plinthSetback = 16f
-            val dFront = (wallGap + totalD - plinthSetback).coerceAtLeast(wallGap + t)
+        // 5. Front Plinth / Toe-Kick (trimmed to s0Plinth..s1Plinth so the L-plinth meets cleanly at the inner corner)
+        val plinthSetback = 16f
+        val dCurrPlinth = (wallGap + totalD - plinthSetback).coerceAtLeast(wallGap + t)
+        val s0Plinth = if (fusedPrevNeighbor != null) {
+            val thetaRad = Math.toRadians(room.cornerAngleDeg(startCorner).coerceIn(15f, 165f).toDouble()).toFloat()
+            val sinT = sin(thetaRad).coerceAtLeast(0.15f)
+            val cosT = cos(thetaRad)
+            val dPrevPlinth = (fusedPrevNeighbor.depthMm.coerceAtLeast(350f) + wallGap - plinthSetback).coerceAtLeast(wallGap + t)
+            ((dPrevPlinth + dCurrPlinth * cosT) / sinT).coerceIn(0f, s1 - t)
+        } else {
+            s0 + t
+        }
+
+        val s1Plinth = if (fusedNextNeighbor != null) {
+            val thetaRad = Math.toRadians(room.cornerAngleDeg(endCorner).coerceIn(15f, 165f).toDouble()).toFloat()
+            val sinT = sin(thetaRad).coerceAtLeast(0.15f)
+            val cosT = cos(thetaRad)
+            val dNextPlinth = (fusedNextNeighbor.depthMm.coerceAtLeast(350f) + wallGap - plinthSetback).coerceAtLeast(wallGap + t)
+            val cutFromEnd = (dNextPlinth + dCurrPlinth * cosT) / sinT
+            (wallLen - cutFromEnd).coerceIn(s0Plinth, s1 - t)
+        } else {
+            s1 - t
+        }
+
+        if (s1Plinth > s0Plinth && plinthH > 2f) {
             addWallAlignedBox(
                 builder = vertPanelsBuilder,
                 pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s0Front, s1 = s1Front,
+                s0 = s0Plinth, s1 = s1Plinth,
                 y0 = 0f, y1 = plinthH,
-                d0 = (dFront - t).coerceAtLeast(wallGap), d1 = dFront,
+                d0 = (dCurrPlinth - t).coerceAtLeast(wallGap), d1 = dCurrPlinth,
             )
         }
 
@@ -658,38 +656,46 @@ object RoomGeometryBuilder {
             val rim = 6f
             val dOut0 = wallGap + totalD - 2f
             val dOut1 = wallGap + totalD + 6f
-            // Left vertical highlight
-            addWallAlignedBox(
-                builder = selectedOutlineBuilder,
-                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s0 - rim, s1 = s0 + rim,
-                y0 = 0f, y1 = totalH + rim,
-                d0 = dOut0, d1 = dOut1,
-            )
-            // Right vertical highlight
-            addWallAlignedBox(
-                builder = selectedOutlineBuilder,
-                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s1 - rim, s1 = s1 + rim,
-                y0 = 0f, y1 = totalH + rim,
-                d0 = dOut0, d1 = dOut1,
-            )
+            // Left vertical highlight (only on free end, not in fused corner)
+            if (fusedPrevNeighbor == null) {
+                addWallAlignedBox(
+                    builder = selectedOutlineBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = s0 - rim, s1 = s0 + rim,
+                    y0 = 0f, y1 = totalH + rim,
+                    d0 = dOut0, d1 = dOut1,
+                )
+            }
+            // Right vertical highlight (only on free end, not in fused corner)
+            if (fusedNextNeighbor == null) {
+                addWallAlignedBox(
+                    builder = selectedOutlineBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = s1 - rim, s1 = s1 + rim,
+                    y0 = 0f, y1 = totalH + rim,
+                    d0 = dOut0, d1 = dOut1,
+                )
+            }
             // Top horizontal highlight
-            addWallAlignedBox(
-                builder = selectedOutlineBuilder,
-                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s0 - rim, s1 = s1 + rim,
-                y0 = totalH - rim, y1 = totalH + rim,
-                d0 = dOut0, d1 = dOut1,
-            )
-            // Bottom horizontal highlight
-            addWallAlignedBox(
-                builder = selectedOutlineBuilder,
-                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s0 - rim, s1 = s1 + rim,
-                y0 = 0f, y1 = rim * 2f,
-                d0 = dOut0, d1 = dOut1,
-            )
+            val hlS0 = if (fusedPrevNeighbor != null) s0Front else s0 - rim
+            val hlS1 = if (fusedNextNeighbor != null) s1Front else s1 + rim
+            if (hlS1 > hlS0) {
+                addWallAlignedBox(
+                    builder = selectedOutlineBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = hlS0, s1 = hlS1,
+                    y0 = totalH - rim, y1 = totalH + rim,
+                    d0 = dOut0, d1 = dOut1,
+                )
+                // Bottom horizontal highlight
+                addWallAlignedBox(
+                    builder = selectedOutlineBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = hlS0, s1 = hlS1,
+                    y0 = 0f, y1 = rim * 2f,
+                    d0 = dOut0, d1 = dOut1,
+                )
+            }
         }
     }
 }

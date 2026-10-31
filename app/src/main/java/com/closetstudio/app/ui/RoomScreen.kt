@@ -1,6 +1,5 @@
 package com.closetstudio.app.ui
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -39,6 +38,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MergeType
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -55,14 +55,12 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -93,6 +91,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -118,7 +117,6 @@ import com.closetstudio.app.render.MM_TO_M
 import com.closetstudio.core.model.ClosetContainerSpec
 import com.closetstudio.core.model.DoorSpec
 import com.closetstudio.core.model.RoomSpec
-import com.closetstudio.core.model.SavedProject
 import com.closetstudio.core.model.WallIndex
 import dev.romainguy.kotlin.math.Float3
 import kotlinx.coroutines.launch
@@ -143,8 +141,7 @@ private fun getWallTarget(wallStep: Int, room: RoomSpec): Float3 {
     val se = room.vertexSE
     val sw = room.vertexSW
     val midY = 1.40f
-    val wall = ((wallStep % 4) + 4) % 4
-    return when (wall) {
+    return when (((wallStep % 4) + 4) % 4) {
         0 -> Float3((sw.x + se.x) * 0.5f * MM_TO_M, midY, (sw.z + se.z) * 0.5f * MM_TO_M)
         1 -> Float3((sw.x + nw.x) * 0.5f * MM_TO_M, midY, (sw.z + nw.z) * 0.5f * MM_TO_M)
         2 -> Float3((nw.x + ne.x) * 0.5f * MM_TO_M, midY, (nw.z + ne.z) * 0.5f * MM_TO_M)
@@ -153,12 +150,13 @@ private fun getWallTarget(wallStep: Int, room: RoomSpec): Float3 {
 }
 
 private fun getWallName(wallStep: Int, lang: AppLanguage): String {
+    val s = stringsFor(lang)
     val wall = ((wallStep % 4) + 4) % 4
     return when (wall) {
-        0 -> tr(lang, "Pared E - Puerta - D", "Wall E - Door - D")
-        1 -> tr(lang, "Pared A", "Wall A")
-        2 -> tr(lang, "Pared B", "Wall B")
-        else -> tr(lang, "Pared C", "Wall C")
+        0 -> "E - ${s.doorWord} - D"
+        1 -> s.wallALabel
+        2 -> s.wallBLabel
+        else -> s.wallCLabel
     }
 }
 
@@ -179,16 +177,19 @@ private fun stepFromWallIndex(wall: WallIndex): Int = when (wall) {
     WallIndex.EAST -> 3
 }
 
-private fun wallDisplayName(wall: WallIndex, lang: AppLanguage): String = when (wall) {
-    WallIndex.WEST -> tr(lang, "Pared A", "Wall A")
-    WallIndex.NORTH -> tr(lang, "Pared B", "Wall B")
-    WallIndex.EAST -> tr(lang, "Pared C", "Wall C")
-    WallIndex.SOUTH -> tr(lang, "Pared E-D", "Wall E-D")
+private fun wallDisplayName(wall: WallIndex, lang: AppLanguage): String {
+    val s = stringsFor(lang)
+    return when (wall) {
+        WallIndex.WEST -> s.wallALabel
+        WallIndex.NORTH -> s.wallBLabel
+        WallIndex.EAST -> s.wallCLabel
+        WallIndex.SOUTH -> "${s.wallALabel.substringBefore(" ")} E-D"
+    }
 }
 
 /**
- * Multi-touch gesture recognizer:
- * - Single tap: Raycast 3D selection (`onTap(pos, viewportWidth, viewportHeight)`)
+ * Multitouch gesture recognizer:
+ * - Single tap: 3D ray selection (`onTap(pos, viewportWidth, viewportHeight)`)
  * - 1 Finger drag: Orbit (horizontal yaw and vertical pitch)
  * - 2 Fingers: Pan (translate focal target and camera) & Pinch (zoom distance)
  */
@@ -242,7 +243,7 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
                     if (panDelta != Offset.Zero) {
                         onPan(panDelta.x, panDelta.y)
                     }
-                    if (zoomFactor in 0.5f..1.8f && zoomFactor != 1f) {
+                    if ((zoomFactor in 0.5f..1.8f) && zoomFactor != 1f) {
                         onZoom(zoomFactor)
                     }
                 }
@@ -264,7 +265,7 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
 }
 
 /**
- * Unprojects a 2D viewport tap coordinate into a 3D world-space ray (in millimetres)
+ * Projects a 2D viewport tap coordinate into a 3D world-space ray (in millimeters)
  * matching [RoomScene]'s camera projection and tests intersection against placed containers.
  */
 private fun pickContainerAtScreenTap(
@@ -283,23 +284,23 @@ private fun pickContainerAtScreenTap(
     val pitchRad = Math.toRadians(pitchDeg.toDouble()).toFloat()
 
     // Forward unit vector (from eye toward target)
-    val fwdX = sin(yawRad) * cos(pitchRad)
-    val fwdY = sin(pitchRad)
-    val fwdZ = -cos(yawRad) * cos(pitchRad)
+    val forwardX = sin(yawRad) * cos(pitchRad)
+    val forwardY = sin(pitchRad)
+    val forwardZ = -cos(yawRad) * cos(pitchRad)
 
-    // Eye position in metres, converted to millimetres
-    val eyeXM = targetX - fwdX * distanceM
-    val eyeYM = (targetY - fwdY * distanceM).coerceAtLeast(0.10f)
-    val eyeZM = targetZ - fwdZ * distanceM
+    // Eye position in meters, converted to millimeters
+    val eyeXM = targetX - forwardX * distanceM
+    val eyeYM = (targetY - forwardY * distanceM).coerceAtLeast(0.10f)
+    val eyeZM = targetZ - forwardZ * distanceM
 
     // Actual forward vector from clamped eye to target
     val rawDx = targetX - eyeXM
     val rawDy = targetY - eyeYM
     val rawDz = targetZ - eyeZM
-    val fwdLen = sqrt(rawDx * rawDx + rawDy * rawDy + rawDz * rawDz).coerceAtLeast(1e-5f)
-    val fx = rawDx / fwdLen
-    val fy = rawDy / fwdLen
-    val fz = rawDz / fwdLen
+    val forwardLen = sqrt(rawDx * rawDx + rawDy * rawDy + rawDz * rawDz).coerceAtLeast(1e-5f)
+    val fx = rawDx / forwardLen
+    val fy = rawDy / forwardLen
+    val fz = rawDz / forwardLen
 
     // Right = normalize(cross(forward, worldUp(0,1,0))) = normalize((-fz, 0, fx))
     val rLen = sqrt(fz * fz + fx * fx).coerceAtLeast(1e-5f)
@@ -321,12 +322,12 @@ private fun pickContainerAtScreenTap(
         tanH to (tanH / aspect.coerceAtLeast(0.1f))
     }
 
-    val ndcX = (2f * tapPos.x / viewportWidthPx) - 1f
-    val ndcY = 1f - (2f * tapPos.y / viewportHeightPx)
+    val normalizedX = (2f * tapPos.x / viewportWidthPx) - 1f
+    val normalizedY = 1f - (2f * tapPos.y / viewportHeightPx)
 
-    val dirX = fx + ndcX * halfTanX * rx + ndcY * halfTanY * ux
-    val dirY = fy + ndcX * halfTanX * ry + ndcY * halfTanY * uy
-    val dirZ = fz + ndcX * halfTanX * rz + ndcY * halfTanY * uz
+    val dirX = fx + normalizedX * halfTanX * rx + normalizedY * halfTanY * ux
+    val dirY = fy + normalizedX * halfTanX * ry + normalizedY * halfTanY * uy
+    val dirZ = fz + normalizedX * halfTanX * rz + normalizedY * halfTanY * uz
 
     return room.pickContainerByRayMm(
         rayOriginX = eyeXM * 1000f,
@@ -351,7 +352,7 @@ fun RoomScreen() {
     }
     var currentProjectName by remember {
         val active = savedProjects.firstOrNull { it.id == currentProjectId } ?: savedProjects.firstOrNull()
-        mutableStateOf(active?.name ?: tr(appLanguage, "Proyecto 1", "Project 1"))
+        mutableStateOf(active?.name ?: "${stringsFor(appLanguage).defaultProjectPrefix} 1")
     }
 
     var room by remember {
@@ -373,10 +374,10 @@ fun RoomScreen() {
 
     val coroutineScope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val snackbarHostState = remember { SnackbarHostState() }
+    val messageHostState = remember { SnackbarHostState() }
 
     var showDimensionsSheet by remember { mutableStateOf(false) }
-    var selectedFloorplanElement by remember { mutableStateOf<FloorplanElement>(FloorplanElement.WallA) }
+    var selectedPlanElement by remember { mutableStateOf<FloorplanElement>(FloorplanElement.WallA) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showCreateNewDialog by remember { mutableStateOf(false) }
@@ -428,7 +429,7 @@ fun RoomScreen() {
         }
     }
 
-    // Top-down / Floorplan Camera Transition for Dimensioning
+    // Top-down / Floor plan Camera Transition for Dimensioning
     fun enterDimensionsMode() {
         showUnitsColumn = false
         showDimensionsSheet = true
@@ -439,7 +440,7 @@ fun RoomScreen() {
         val topDownDist = (maxDim * 1.55f).coerceIn(4.2f, 9.0f)
         coroutineScope.launch {
             launch { yawAnim.animateTo(180f, tween(450, easing = FastOutSlowInEasing)) }
-            // Pitch cenital a -86°: el techo desaparece solo por backface culling
+            // Zenith pitch at -86°: ceiling disappears automatically via back-face culling
             launch { pitchAnim.animateTo(-86f, tween(450, easing = FastOutSlowInEasing)) }
             launch { distanceAnim.animateTo(topDownDist, tween(450, easing = FastOutSlowInEasing)) }
             launch { targetXAnim.animateTo(centerX, tween(450, easing = FastOutSlowInEasing)) }
@@ -489,7 +490,7 @@ fun RoomScreen() {
         projectStorage.setLanguageCode(lang.code)
         val newStrings = stringsFor(lang)
         coroutineScope.launch {
-            snackbarHostState.showSnackbar(newStrings.languageChangedMessage)
+            messageHostState.showSnackbar(newStrings.languageChangedMessage)
         }
     }
 
@@ -518,7 +519,7 @@ fun RoomScreen() {
                     Spacer(modifier = Modifier.height(12.dp))
                     HorizontalDivider()
 
-                    // --- My Projects / Mis Proyectos Section (matching reference screenshot) ---
+                    // --- My Projects Section (matching reference screenshot) ---
                     Text(
                         text = s.myProjectsSection,
                         style = MaterialTheme.typography.labelLarge,
@@ -562,7 +563,7 @@ fun RoomScreen() {
                                         color = Color(0xFF2C55B5).copy(alpha = 0.14f),
                                     ) {
                                         Text(
-                                            text = "${savedProjects.size}",
+                                            text = savedProjects.size.toString(),
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = Color(0xFF2C55B5),
@@ -855,8 +856,8 @@ fun RoomScreen() {
                         var isDraggingUnit by remember { mutableStateOf(false) }
                         var dragScreenOffset by remember { mutableStateOf(Offset.Zero) }
                         var viewportOriginInRoot by remember { mutableStateOf(Offset.Zero) }
-                        var viewportWidthPx by remember { mutableStateOf(1f) }
-                        var panelOriginInRootX by remember { mutableStateOf(Float.MAX_VALUE) }
+                        var viewportWidthPx by remember { mutableFloatStateOf(1f) }
+                        var panelOriginInRootX by remember { mutableFloatStateOf(Float.MAX_VALUE) }
 
                         LaunchedEffect(room.containers, selectedContainerId) {
                             if (selectedContainerId != null && room.containers.none { it.id == selectedContainerId }) {
@@ -865,13 +866,13 @@ fun RoomScreen() {
                             }
                         }
 
-                        // Normal 3D Mode: Fullscreen RoomScene + navigation arrows + centrar
+                        // Normal 3D Mode: Fullscreen RoomScene + navigation arrows + recenter
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .onGloballyPositioned { coords ->
-                                    viewportOriginInRoot = coords.positionInRoot()
-                                    viewportWidthPx = coords.size.width.toFloat().coerceAtLeast(1f)
+                                .onGloballyPositioned { coordinates ->
+                                    viewportOriginInRoot = coordinates.positionInRoot()
+                                    viewportWidthPx = coordinates.size.width.toFloat().coerceAtLeast(1f)
                                 },
                         ) {
                             RoomViewport(
@@ -1009,7 +1010,7 @@ fun RoomScreen() {
                                             if (newId != null) {
                                                 selectedContainerId = newId
                                                 coroutineScope.launch {
-                                                    snackbarHostState.showSnackbar(s.containerDuplicatedToast)
+                                                    messageHostState.showSnackbar(s.containerDuplicatedToast)
                                                 }
                                             }
                                         },
@@ -1039,7 +1040,7 @@ fun RoomScreen() {
                                                 isEditingContainerInPanel = false
                                             }
                                             coroutineScope.launch {
-                                                snackbarHostState.showSnackbar(s.containerDeletedToast)
+                                                messageHostState.showSnackbar(s.containerDeletedToast)
                                             }
                                         },
                                         shape = CircleShape,
@@ -1085,7 +1086,7 @@ fun RoomScreen() {
                                                 )
                                                 updateRoom(updated)
                                                 coroutineScope.launch {
-                                                    snackbarHostState.showSnackbar(
+                                                    messageHostState.showSnackbar(
                                                         if (!isFused) {
                                                             "${s.cornerFusedToast} (${candidate.corner.codeLabel})"
                                                         } else {
@@ -1109,7 +1110,7 @@ fun RoomScreen() {
                                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                                             ) {
                                                 Icon(
-                                                    imageVector = Icons.Default.MergeType,
+                                                    imageVector = Icons.AutoMirrored.Filled.MergeType,
                                                     contentDescription = label,
                                                     tint = Color.White,
                                                     modifier = Modifier.size(20.dp),
@@ -1226,9 +1227,7 @@ fun RoomScreen() {
                             ) {
                                 RightSideUnitsAndInspectorColumn(
                                     room = room,
-                                    appLanguage = appLanguage,
                                     s = s,
-                                    currentWallStep = wallStep.intValue,
                                     activeContainer = activeContainer,
                                     isEditingContainer = isEditingContainerInPanel && activeContainer != null,
                                     onToggleEditMode = { isEditingContainerInPanel = it },
@@ -1255,7 +1254,7 @@ fun RoomScreen() {
                                         updateRoom(updatedRoom)
                                         selectedContainerId = newId
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(
+                                            messageHostState.showSnackbar(
                                                 "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
                                             )
                                         }
@@ -1285,7 +1284,7 @@ fun RoomScreen() {
                                                 updateRoom(updatedRoom)
                                                 selectedContainerId = newId
                                                 coroutineScope.launch {
-                                                    snackbarHostState.showSnackbar(
+                                                    messageHostState.showSnackbar(
                                                         "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
                                                     )
                                                 }
@@ -1303,9 +1302,7 @@ fun RoomScreen() {
                                     onDuplicateContainer = { id ->
                                         val (updatedRoom, newId) = room.withDuplicatedContainer(id)
                                         updateRoom(updatedRoom)
-                                        if (newId != null) {
-                                            selectedContainerId = newId
-                                        }
+                                        newId?.let { selectedContainerId = it }
                                     },
                                     onDeleteContainer = { id ->
                                         val updatedRoom = room.withRemovedContainer(id)
@@ -1319,8 +1316,8 @@ fun RoomScreen() {
                                     modifier = Modifier
                                         .width(unitsColumnWidth)
                                         .fillMaxHeight()
-                                        .onGloballyPositioned { coords ->
-                                            panelOriginInRootX = coords.positionInRoot().x
+                                        .onGloballyPositioned { coordinates ->
+                                            panelOriginInRootX = coordinates.positionInRoot().x
                                         },
                                 )
                             }
@@ -1345,15 +1342,15 @@ fun RoomScreen() {
                             }
                         }
                     } else {
-                        // Dimensioning Mode: Responsive Split-Screen with Interactive 2D CAD Floorplan!
+                        // Dimensioning Mode: Responsive Split-Screen with Interactive 2D CAD Floor Plan!
                         if (isLandscape) {
-                            // Tablet / Landscape: Side by Side (Left: 2D CAD floorplan, Right: Contextual Inspector)
+                            // Tablet / Landscape: Side by Side (Left: 2D CAD floor plan, Right: Contextual Inspector)
                             val panelWidth = (screenWidth * 0.42f).coerceIn(370.dp, 450.dp)
                             Row(modifier = Modifier.fillMaxSize()) {
                                 RoomFloorplan2D(
                                     room = room,
-                                    selectedElement = selectedFloorplanElement,
-                                    onSelectElement = { selectedFloorplanElement = it },
+                                    selectedElement = selectedPlanElement,
+                                    onSelectElement = { selectedPlanElement = it },
                                     modifier = Modifier
                                         .weight(1f)
                                         .fillMaxHeight(),
@@ -1361,8 +1358,8 @@ fun RoomScreen() {
 
                                 RoomDimensionsPanel(
                                     room = room,
-                                    selectedElement = selectedFloorplanElement,
-                                    onSelectElement = { selectedFloorplanElement = it },
+                                    selectedElement = selectedPlanElement,
+                                    onSelectElement = { selectedPlanElement = it },
                                     onRoomChange = { updateRoom(it) },
                                     onDismiss = { exitDimensionsMode() },
                                     modifier = Modifier
@@ -1372,12 +1369,12 @@ fun RoomScreen() {
                                 )
                             }
                         } else {
-                            // Mobile / Portrait: Top / Bottom Split (Top: 2D CAD floorplan, Bottom: Contextual Inspector)
+                            // Mobile / Portrait: Top / Bottom Split (Top: 2D CAD floor plan, Bottom: Contextual Inspector)
                             Column(modifier = Modifier.fillMaxSize()) {
                                 RoomFloorplan2D(
                                     room = room,
-                                    selectedElement = selectedFloorplanElement,
-                                    onSelectElement = { selectedFloorplanElement = it },
+                                    selectedElement = selectedPlanElement,
+                                    onSelectElement = { selectedPlanElement = it },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .weight(1.10f),
@@ -1385,8 +1382,8 @@ fun RoomScreen() {
 
                                 RoomDimensionsPanel(
                                     room = room,
-                                    selectedElement = selectedFloorplanElement,
-                                    onSelectElement = { selectedFloorplanElement = it },
+                                    selectedElement = selectedPlanElement,
+                                    onSelectElement = { selectedPlanElement = it },
                                     onRoomChange = { updateRoom(it) },
                                     onDismiss = { exitDimensionsMode() },
                                     modifier = Modifier
@@ -1425,7 +1422,7 @@ fun RoomScreen() {
                     )
                 }
 
-                // Save Project Dialog (💾 Guardar Proyecto)
+                // Save Project Dialog (Save Project)
                 if (showSaveDialog) {
                     var nameDraft by remember(currentProjectName) { mutableStateOf(currentProjectName) }
                     AlertDialog(
@@ -1475,7 +1472,7 @@ fun RoomScreen() {
                                         currentProjectName = saved.name
                                         showSaveDialog = false
                                         coroutineScope.launch {
-                                            snackbarHostState.showSnackbar("${s.savedAsNewToast}: ${saved.name}")
+                                            messageHostState.showSnackbar("${s.savedAsNewToast}: ${saved.name}")
                                         }
                                     },
                                 ) {
@@ -1500,7 +1497,7 @@ fun RoomScreen() {
                                     currentProjectName = saved.name
                                     showSaveDialog = false
                                     coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("${s.projectSavedToast}: ${saved.name}")
+                                        messageHostState.showSnackbar("${s.projectSavedToast}: ${saved.name}")
                                     }
                                 },
                             ) {
@@ -1510,7 +1507,7 @@ fun RoomScreen() {
                     )
                 }
 
-                // Create New Project Dialog (📁+ Crear nuevo)
+                // Create New Project Dialog (Create New)
                 if (showCreateNewDialog) {
                     val nextIndex = savedProjects.size + 1
                     var newNameDraft by remember(nextIndex, appLanguage) {
@@ -1556,7 +1553,7 @@ fun RoomScreen() {
                                     updateRoom(freshRoom)
                                     showCreateNewDialog = false
                                     coroutineScope.launch {
-                                        snackbarHostState.showSnackbar("${s.projectCreatedToast}: ${created.name}")
+                                        messageHostState.showSnackbar("${s.projectCreatedToast}: ${created.name}")
                                     }
                                 },
                             ) {
@@ -1566,7 +1563,7 @@ fun RoomScreen() {
                     )
                 }
 
-                // My Projects Dialog (📂 Mis Proyectos)
+                // My Projects Dialog (My Projects)
                 if (showMyProjectsDialog) {
                     val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
                     AlertDialog(
@@ -1587,9 +1584,9 @@ fun RoomScreen() {
                                         .fillMaxWidth()
                                         .heightIn(max = 360.dp),
                                 ) {
-                                    items(savedProjects, key = { it.id }) { proj ->
-                                        val isCurrent = proj.id == currentProjectId
-                                        val r = proj.room
+                                    items(savedProjects, key = { it.id }) { project ->
+                                        val isCurrent = project.id == currentProjectId
+                                        val r = project.room
                                         Card(
                                             shape = RoundedCornerShape(12.dp),
                                             colors = CardDefaults.cardColors(
@@ -1600,13 +1597,13 @@ fun RoomScreen() {
                                                 },
                                             ),
                                             onClick = {
-                                                currentProjectId = proj.id
-                                                currentProjectName = proj.name
-                                                projectStorage.setActiveProjectId(proj.id)
-                                                updateRoom(proj.room)
+                                                currentProjectId = project.id
+                                                currentProjectName = project.name
+                                                projectStorage.setActiveProjectId(project.id)
+                                                updateRoom(project.room)
                                                 showMyProjectsDialog = false
                                                 coroutineScope.launch {
-                                                    snackbarHostState.showSnackbar("${s.projectOpenedToast}: ${proj.name}")
+                                                    messageHostState.showSnackbar("${s.projectOpenedToast}: ${project.name}")
                                                 }
                                             },
                                             modifier = Modifier.fillMaxWidth(),
@@ -1627,7 +1624,7 @@ fun RoomScreen() {
                                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                     ) {
                                                         Text(
-                                                            text = proj.name,
+                                                            text = project.name,
                                                             style = MaterialTheme.typography.titleSmall,
                                                             fontWeight = FontWeight.Bold,
                                                             color = if (isCurrent) Color(0xFF2C55B5) else MaterialTheme.colorScheme.onSurface,
@@ -1653,7 +1650,7 @@ fun RoomScreen() {
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     )
                                                     Text(
-                                                        text = "${s.doorWord}:${r.door.widthMm.roundToInt()} (E:${r.segmentDMm.roundToInt()}, D:${r.segmentEMm.roundToInt()}) • ${dateFormatter.format(Date(proj.updatedAtEpochMs))}",
+                                                        text = "${s.doorWord}:${r.door.widthMm.roundToInt()} (E:${r.segmentDMm.roundToInt()}, D:${r.segmentEMm.roundToInt()}) • ${dateFormatter.format(Date(project.updatedAtEpochMs))}",
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     )
@@ -1661,8 +1658,8 @@ fun RoomScreen() {
 
                                                 IconButton(
                                                     onClick = {
-                                                        savedProjects = projectStorage.deleteProject(proj.id)
-                                                        if (currentProjectId == proj.id) {
+                                                        savedProjects = projectStorage.deleteProject(project.id)
+                                                        if (currentProjectId == project.id) {
                                                             val fallback = savedProjects.firstOrNull()
                                                             currentProjectId = fallback?.id
                                                             currentProjectName = fallback?.name ?: "${s.defaultProjectPrefix} 1"
@@ -1689,7 +1686,7 @@ fun RoomScreen() {
                     )
                 }
 
-                // Scalable Language Selector Dialog (🌐 Idioma / Language)
+                // Scalable Language Selector Dialog (Language)
                 if (showLanguageDialog) {
                     AlertDialog(
                         onDismissRequest = { showLanguageDialog = false },
@@ -1783,7 +1780,7 @@ fun RoomScreen() {
                 }
 
                 SnackbarHost(
-                    hostState = snackbarHostState,
+                    hostState = messageHostState,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
@@ -1803,12 +1800,12 @@ private fun RoomViewport(
     yaw: Float,
     pitch: Float,
     distance: Float,
+    modifier: Modifier = Modifier,
     selectedContainerId: String? = null,
     onOrbit: (Float, Float) -> Unit,
     onPan: (Float, Float) -> Unit,
     onZoom: (Float) -> Unit,
     onTap: (Offset, Float, Float) -> Unit = { _, _, _ -> },
-    modifier: Modifier = Modifier,
 ) {
     Box(
         modifier = modifier
@@ -1835,9 +1832,7 @@ private fun RoomViewport(
 @Composable
 private fun RightSideUnitsAndInspectorColumn(
     room: RoomSpec,
-    appLanguage: AppLanguage,
     s: UiStrings,
-    currentWallStep: Int,
     activeContainer: ClosetContainerSpec?,
     isEditingContainer: Boolean,
     onToggleEditMode: (Boolean) -> Unit,
@@ -1965,40 +1960,37 @@ private fun RightSideUnitsAndInspectorColumn(
                         }
                     }
 
-                    // 1. Width (Ancho)
+                    // 1. Width
                     ContainerDimensionControlCard(
                         label = s.containerWidthLabel,
                         valueMm = clamped.widthMm,
                         minMm = 200f.coerceAtMost(maxW),
                         maxMm = maxW,
-                        onValueChange = { newW ->
-                            onUpdateContainer(clamped.id) { it.copy(widthMm = newW) }
-                        },
-                    )
+                    ) { newW ->
+                        onUpdateContainer(clamped.id) { it.copy(widthMm = newW) }
+                    }
 
-                    // 2. Height (Alto)
+                    // 2. Height
                     ContainerDimensionControlCard(
                         label = s.containerHeightLabel,
                         valueMm = clamped.heightMm,
                         minMm = 300f.coerceAtMost(maxH),
                         maxMm = maxH,
-                        onValueChange = { newH ->
-                            onUpdateContainer(clamped.id) { it.copy(heightMm = newH) }
-                        },
-                    )
+                    ) { newH ->
+                        onUpdateContainer(clamped.id) { it.copy(heightMm = newH) }
+                    }
 
-                    // 3. Depth (Profundidad — bounded by adjacent walls)
+                    // 3. Depth (bounded by adjacent walls)
                     ContainerDimensionControlCard(
                         label = s.containerDepthLabel,
                         valueMm = clamped.depthMm,
                         minMm = 200f.coerceAtMost(maxD),
                         maxMm = maxD,
-                        onValueChange = { newD ->
-                            onUpdateContainer(clamped.id) { it.copy(depthMm = newD) }
-                        },
-                    )
+                    ) { newD ->
+                        onUpdateContainer(clamped.id) { it.copy(depthMm = newD) }
+                    }
 
-                    // 4. Offset along Wall (Posición en la pared + Botón Centrar)
+                    // 4. Offset along Wall (Wall position + Center button)
                     Surface(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -2056,7 +2048,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(tr(appLanguage, "Duplicar", "Duplicate"), style = MaterialTheme.typography.labelMedium)
+                            Text(s.duplicateButton, style = MaterialTheme.typography.labelMedium)
                         }
                         OutlinedButton(
                             onClick = { onDeleteContainer(clamped.id) },
@@ -2065,7 +2057,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         ) {
                             Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(tr(appLanguage, "Eliminar", "Delete"), style = MaterialTheme.typography.labelMedium)
+                            Text(s.deleteButton, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -2089,8 +2081,8 @@ private fun RightSideUnitsAndInspectorColumn(
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
                             .height(175.dp)
-                            .onGloballyPositioned { coords ->
-                                itemRootOffset = coords.positionInRoot()
+                            .onGloballyPositioned { coordinates ->
+                                itemRootOffset = coordinates.positionInRoot()
                             }
                             .clickable {
                                 onAddContainerOnCurrentWall(null)
@@ -2154,7 +2146,7 @@ private fun ContainerDimensionControlCard(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "${valueMm.roundToInt()} mm (máx ${maxMm.roundToInt()})",
+                    text = "${valueMm.roundToInt()} mm (max ${maxMm.roundToInt()})",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2C55B5),
@@ -2283,7 +2275,7 @@ private fun ClosetContainer3DGraphic(modifier: Modifier = Modifier) {
         }
         drawPath(bottomShelfPath, color = bottomShelfWood)
 
-        // 6. Front Plinth / Toe-Kick (bottom strip between left and right vertical panels)
+        // 6. Front Plinth / Toe Kick (bottom strip between left and right vertical panels)
         drawRect(
             color = plinthWood,
             topLeft = Offset(innerFrontLeft, innerFrontBottom),
@@ -2325,163 +2317,6 @@ private fun ClosetContainer3DGraphic(modifier: Modifier = Modifier) {
             topLeft = Offset(outerLeft, outerTop),
             size = androidx.compose.ui.geometry.Size(outerRight - outerLeft, outerBottom - outerTop),
             style = Stroke(width = 1.4f),
-        )
-    }
-}
-
-@Composable
-private fun FloorplanBadgesOverlay(
-    room: RoomSpec,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(12.dp),
-    ) {
-        // Top Wall (Pared A / Norte)
-        FloorplanWallBadge(
-            letter = "A",
-            dimensionText = "${room.clearWidthMm.roundToInt()} mm",
-            modifier = Modifier.align(Alignment.TopCenter),
-        )
-
-        // Right Wall (Pared B / Este)
-        FloorplanWallBadge(
-            letter = "B",
-            dimensionText = "${room.clearDepthMm.roundToInt()} mm",
-            modifier = Modifier.align(Alignment.CenterEnd),
-        )
-
-        // Left Wall (Pared C / Oeste)
-        FloorplanWallBadge(
-            letter = "C",
-            dimensionText = "${room.clearDepthMm.roundToInt()} mm",
-            modifier = Modifier.align(Alignment.CenterStart),
-        )
-
-        // Bottom Wall with Door (Tramos D y E)
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-            shadowElevation = 6.dp,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 4.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                FloorplanSegmentBadge("D", "${room.segmentDMm.roundToInt()} mm")
-                Text("•", color = Color.Gray)
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Icon(
-                        Icons.Default.DoorFront,
-                        contentDescription = null,
-                        tint = Color(0xFF8B5A2B),
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = "${room.door.widthMm.roundToInt()} mm",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF8B5A2B),
-                    )
-                }
-                Text("•", color = Color.Gray)
-                FloorplanSegmentBadge("E", "${room.segmentEMm.roundToInt()} mm")
-            }
-        }
-
-        // 4 Corner 90° Indicators
-        CornerAngleBadge(text = "90°", modifier = Modifier.align(Alignment.TopStart))
-        CornerAngleBadge(text = "90°", modifier = Modifier.align(Alignment.TopEnd))
-        CornerAngleBadge(text = "90°", modifier = Modifier.align(Alignment.BottomStart))
-        CornerAngleBadge(text = "90°", modifier = Modifier.align(Alignment.BottomEnd))
-    }
-}
-
-@Composable
-private fun FloorplanWallBadge(letter: String, dimensionText: String, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-        shadowElevation = 5.dp,
-        modifier = modifier,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = Color(0xFF2C55B5),
-            ) {
-                Text(
-                    text = " $letter ",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                )
-            }
-            Text(
-                text = dimensionText,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-    }
-}
-
-@Composable
-private fun FloorplanSegmentBadge(letter: String, dimensionText: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Surface(
-            shape = RoundedCornerShape(4.dp),
-            color = Color(0xFF2C55B5),
-        ) {
-            Text(
-                text = " $letter ",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
-            )
-        }
-        Text(
-            text = dimensionText,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF2C55B5),
-        )
-    }
-}
-
-@Composable
-private fun CornerAngleBadge(text: String, modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-        shadowElevation = 2.dp,
-        modifier = modifier,
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
         )
     }
 }
