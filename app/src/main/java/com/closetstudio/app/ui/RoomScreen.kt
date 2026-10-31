@@ -216,15 +216,25 @@ private fun getWallLengthMm(wall: WallIndex, room: RoomSpec): Float {
     return kotlin.math.sqrt(dx * dx + dz * dz).coerceAtLeast(100f)
 }
 
+private fun wallLetterCode(wall: WallIndex): String = when (wall) {
+    WallIndex.WEST -> "A"
+    WallIndex.NORTH -> "B"
+    WallIndex.EAST -> "C"
+    WallIndex.SOUTH -> "E-D"
+}
+
+private fun wallLetterCodeFromStep(wallStep: Int): String =
+    wallLetterCode(wallIndexFromStep(wallStep))
+
 private data class WallAnchor(
     val wall: WallIndex,
-    val name: String,
+    val letter: String,
     val lengthMm: Float,
     val topCenter3D: Float3,
     val normal: Float3,
 )
 
-private fun getWallAnchors(room: RoomSpec, lang: AppLanguage): List<WallAnchor> {
+private fun getWallAnchors(room: RoomSpec): List<WallAnchor> {
     val nw = room.vertexNW
     val ne = room.vertexNE
     val se = room.vertexSE
@@ -233,28 +243,28 @@ private fun getWallAnchors(room: RoomSpec, lang: AppLanguage): List<WallAnchor> 
 
     val wallA = WallAnchor(
         wall = WallIndex.WEST,
-        name = wallDisplayName(WallIndex.WEST, lang),
+        letter = "A",
         lengthMm = getWallLengthMm(WallIndex.WEST, room),
         topCenter3D = Float3((sw.x + nw.x) * 0.5f * MM_TO_M, topY, (sw.z + nw.z) * 0.5f * MM_TO_M),
         normal = Float3(1f, 0f, 0f),
     )
     val wallB = WallAnchor(
         wall = WallIndex.NORTH,
-        name = wallDisplayName(WallIndex.NORTH, lang),
+        letter = "B",
         lengthMm = getWallLengthMm(WallIndex.NORTH, room),
         topCenter3D = Float3((nw.x + ne.x) * 0.5f * MM_TO_M, topY, (nw.z + ne.z) * 0.5f * MM_TO_M),
         normal = Float3(0f, 0f, 1f),
     )
     val wallC = WallAnchor(
         wall = WallIndex.EAST,
-        name = wallDisplayName(WallIndex.EAST, lang),
+        letter = "C",
         lengthMm = getWallLengthMm(WallIndex.EAST, room),
         topCenter3D = Float3((ne.x + se.x) * 0.5f * MM_TO_M, topY, (ne.z + se.z) * 0.5f * MM_TO_M),
         normal = Float3(-1f, 0f, 0f),
     )
     val wallSouth = WallAnchor(
         wall = WallIndex.SOUTH,
-        name = wallDisplayName(WallIndex.SOUTH, lang),
+        letter = "E-D",
         lengthMm = getWallLengthMm(WallIndex.SOUTH, room),
         topCenter3D = Float3((se.x + sw.x) * 0.5f * MM_TO_M, topY, (se.z + sw.z) * 0.5f * MM_TO_M),
         normal = Float3(0f, 0f, -1f),
@@ -1340,8 +1350,8 @@ fun RoomScreen() {
                                                 modifier = Modifier.size(18.dp),
                                             )
                                             Text(
-                                                text = getWallName(wallStep.intValue, appLanguage),
-                                                style = MaterialTheme.typography.titleSmall,
+                                                text = wallLetterCodeFromStep(wallStep.intValue),
+                                                style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface,
                                             )
@@ -1360,7 +1370,7 @@ fun RoomScreen() {
                                         }
                                     }
                                 } else {
-                                    val anchors = remember(room, appLanguage) { getWallAnchors(room, appLanguage) }
+                                    val anchors = remember(room) { getWallAnchors(room) }
                                     val currentFocusedWall = wallIndexFromStep(wallStep.intValue)
                                     val isTopDown = currentViewMode == RoomViewMode.TOP_DOWN
 
@@ -1443,7 +1453,7 @@ fun RoomScreen() {
                                                                 modifier = Modifier.size(13.dp),
                                                             )
                                                             Text(
-                                                                text = "${anchor.name} (${(anchor.lengthMm / 10f).roundToInt() / 100f}m)",
+                                                                text = "${anchor.letter} (${(anchor.lengthMm / 10f).roundToInt() / 100f}m)",
                                                                 style = MaterialTheme.typography.labelMedium,
                                                                 fontWeight = FontWeight.Bold,
                                                                 color = Color.White,
@@ -1496,11 +1506,11 @@ fun RoomScreen() {
                                         shadowElevation = 4.dp,
                                     ) {
                                         Text(
-                                            text = wallDisplayName(activeContainer.wall, appLanguage),
-                                            style = MaterialTheme.typography.labelSmall,
+                                            text = wallLetterCode(activeContainer.wall),
+                                            style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                         )
                                     }
 
