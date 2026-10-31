@@ -217,4 +217,42 @@ class RoomSpecTest {
         val attempted = room.withWallSouth(4800f)
         assertEquals(3600f, attempted.doorWallLengthMm, 0.01f)
     }
+
+    @Test
+    fun `locking opposite Wall A (UI Pared B) prevents it from growing when resizing South door wall`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            wallBMm = 3600f,
+            lockWallA = true, // UI Pared B (Top) locked!
+            lockWallB = false,
+            lockWallC = false,
+            lockAngleAC = true,
+            lockAngleAB = true,
+        )
+        // Increasing South wall to 3800 mm when top wall is locked at 3600 mm:
+        // Top wall (clearWidthMm) MUST NOT change from 3600 mm; side wall B or C adapts instead!
+        val updated = room.withWallSouth(3800f)
+        assertEquals(3600f, updated.wallAMm, 0.01f)
+        assertEquals(3800f, updated.wallSouthMm, 2f)
+    }
+
+    @Test
+    fun `when both side walls B and C and top corners are locked, South wall cannot be resized`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            wallBMm = 3600f,
+            lockWallA = true,
+            lockWallB = true,
+            lockWallC = true,
+            lockAngleAC = true,
+            lockAngleAB = true,
+        )
+        val updated = room.withWallSouth(4500f)
+        assertEquals(3600f, updated.wallAMm, 0.01f)
+        assertEquals(3600f, updated.wallBMm, 0.01f)
+        assertEquals(3600f, updated.wallCMm, 0.01f)
+        assertEquals(3600f, updated.wallSouthMm, 0.01f)
+    }
 }
