@@ -131,27 +131,19 @@ fun RoomScene(
             autoFitContent = false,
             isOpaque = false,
         ) {
-            // High-intensity central interior light (ceiling lamp)
-            LightNode(
-                type = LightManager.Type.POINT,
-                position = Float3(centerX, (room.clearHeightMm - 100f) * MM_TO_M, centerZ),
-                intensity = 220_000f,
-                color = Float4(1f, 0.98f, 0.94f, 1f),
-            )
-
-            // Eye-level ambient fill light to guarantee every wall is brilliantly illuminated
+            // Eye-level ambient fill light to guarantee every wall is evenly illuminated without ceiling glare
             LightNode(
                 type = LightManager.Type.POINT,
                 position = Float3(centerX, eyeY, centerZ),
-                intensity = 120_000f,
+                intensity = 150_000f,
                 color = Float4(1f, 1f, 1f, 1f),
             )
 
-            // Directional fill light so exterior faces are illuminated during 360° orbit
+            // Directional fill light so exterior/interior faces are evenly illuminated during 360° orbit
             LightNode(
                 type = LightManager.Type.DIRECTIONAL,
                 direction = Float3(-0.4f, -0.8f, -0.4f),
-                intensity = 40_000f,
+                intensity = 65_000f,
                 color = Float4(1f, 1f, 1f, 1f),
             )
 
