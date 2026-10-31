@@ -167,13 +167,13 @@ fun RoomDimensionsPanel(
                 FloorplanElement.WallA -> {
                     WallInspectorCard(
                         letter = "A",
-                        title = "Pared Norte (Frente)",
-                        subtitle = "Muro frontal de referencia",
+                        title = "Pared A",
+                        subtitle = "Pared principal frente a la puerta",
                         valueMm = room.wallAMm,
                         isLocked = room.lockWallA,
                         onLockToggle = { onRoomChange(room.copy(lockWallA = !room.lockWallA)) },
                         onValueChange = { onRoomChange(room.withWallA(it, doorCentered)) },
-                        oppositeButtonLabel = "Igualar A con Pared Sur (${room.wallSouthMm.roundToInt()} mm)",
+                        oppositeButtonLabel = "Igualar A con Pared D-E (${room.wallSouthMm.roundToInt()} mm)",
                         onMatchOpposite = { onRoomChange(room.withWallA(room.wallSouthMm, doorCentered)) },
                     )
                 }
@@ -181,7 +181,7 @@ fun RoomDimensionsPanel(
                 FloorplanElement.WallB -> {
                     WallInspectorCard(
                         letter = "B",
-                        title = "Pared Este (Derecha)",
+                        title = "Pared B",
                         subtitle = "Se redimensiona sola sin obligar a Pared C",
                         valueMm = room.wallBMm,
                         isLocked = room.lockWallB,
@@ -195,7 +195,7 @@ fun RoomDimensionsPanel(
                 FloorplanElement.WallC -> {
                     WallInspectorCard(
                         letter = "C",
-                        title = "Pared Oeste (Izquierda)",
+                        title = "Pared C",
                         subtitle = "Se redimensiona sola sin obligar a Pared B",
                         valueMm = room.wallCMm,
                         isLocked = room.lockWallC,
@@ -224,7 +224,7 @@ fun RoomDimensionsPanel(
                     val otherLockedCount = listOf(room.lockAngleAB, room.lockAngleCD, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "A-C",
-                        title = "Esquina Arriba Izquierda (Noroeste)",
+                        title = "Esquina A-C",
                         subtitle = "Ángulo interior entre Pared A y Pared C",
                         angleDeg = room.angleACDeg,
                         isLocked = room.lockAngleAC,
@@ -239,7 +239,7 @@ fun RoomDimensionsPanel(
                     val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleCD, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "A-B",
-                        title = "Esquina Arriba Derecha (Noreste)",
+                        title = "Esquina A-B",
                         subtitle = "Ángulo interior entre Pared A y Pared B",
                         angleDeg = room.angleABDeg,
                         isLocked = room.lockAngleAB,
@@ -254,8 +254,8 @@ fun RoomDimensionsPanel(
                     val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleAB, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "C-D",
-                        title = "Esquina Abajo Izquierda (Suroeste)",
-                        subtitle = "Ángulo entre Pared C y Tramo D (adapta Pared B / Sur)",
+                        title = "Esquina C-D",
+                        subtitle = "Ángulo interior entre Pared C y Tramo D",
                         angleDeg = room.angleCDDeg,
                         isLocked = room.lockAngleCD,
                         allOthersLocked = otherLockedCount == 3,
@@ -269,8 +269,8 @@ fun RoomDimensionsPanel(
                     val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleAB, room.lockAngleCD).count { it }
                     CornerInspectorCard(
                         cornerCode = "B-E",
-                        title = "Esquina Abajo Derecha (Sureste)",
-                        subtitle = "Ángulo entre Pared B y Tramo E (adapta Pared C / Sur)",
+                        title = "Esquina B-E",
+                        subtitle = "Ángulo interior entre Pared B y Tramo E",
                         angleDeg = room.angleBEDeg,
                         isLocked = room.lockAngleBE,
                         allOthersLocked = otherLockedCount == 3,
@@ -589,7 +589,7 @@ private fun CornerInspectorCard(
             Text(
                 text = String.format(
                     Locale.US,
-                    "Cierre automático activo (Σ = %.0f°) • Sur: %d mm %s",
+                    "Cierre automático activo (Σ = %.0f°) • D-E: %d mm %s",
                     sumAngles,
                     room.wallSouthMm.roundToInt(),
                     if (room.lockWallSouth) "🔒" else "🔓",
@@ -637,7 +637,7 @@ private fun DoorWallInspectorCard(
                     )
                     WallBadge(letter = "E")
                     Text(
-                        text = "Pared Puerta (Sur)",
+                        text = "Pared D - Puerta - E",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                     )

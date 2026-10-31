@@ -532,7 +532,7 @@ fun RoomFloorplan2D(
             drawBadgePill(
                 center = midDoor,
                 letter = "🚪",
-                text = "${room.door.widthMm.roundToInt()} ${if (room.door.lockWidth) "🔒" else "🔓"} (Sur: ${room.wallSouthMm.roundToInt()})",
+                text = "${room.door.widthMm.roundToInt()} ${if (room.door.lockWidth) "🔒" else "🔓"} (Total: ${room.wallSouthMm.roundToInt()})",
                 badgeColor = Color(0xFF8B5A2B),
                 isSelected = isSouthSelected,
             )
