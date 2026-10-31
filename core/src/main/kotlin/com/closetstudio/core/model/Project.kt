@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -233,20 +234,16 @@ data class RoomSpec(
     /** Updates Wall A (North), propagating constraints if South wall or bottom corners are locked. */
     fun withWallA(newAMm: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
         if (lockWallA) return this
+        if (isSouthWallTotalLocked && lockAngleAC && lockAngleAB && lockWallB && lockWallC) return this
         val prevDoorWallLen = doorWallLengthMm
         val clampedA = newAMm.coerceIn(1500f, 6000f)
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
+        val targetSouth = wallSouthMm
         var next = copy(clearWidthMm = clampedA)
         next = when {
-            lockAngleCD -> next.solveWallForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
-            lockAngleBE -> {
-                val targetCD = 360f - next.angleACDeg - next.angleABDeg - oldBE
-                next.solveWallForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
-            }
-            lockWallSouth || isSouthWallTotalLocked -> {
-                if (!lockWallB) {
-                    val targetSouth = wallSouthMm
+            isSouthWallTotalLocked -> {
+                if (!lockWallB && abs(clampedA - next.vertexSW.x) < targetSouth) {
                     val sw = next.vertexSW
                     val radAB = Math.toRadians(next.angleABDeg.toDouble()).toFloat()
                     val dx = clampedA - sw.x
@@ -255,9 +252,29 @@ data class RoomSpec(
                     val sinAB = sin(radAB).coerceAtLeast(0.2f)
                     val newB = (targetZ / sinAB).coerceIn(1500f, 6000f)
                     next.copy(wallBMm = newB)
+                } else if (!lockAngleAB) {
+                    // Tilt Wall B (angle A-B) so vertexSE stays at distance targetSouth from vertexSW
+                    val sw = next.vertexSW
+                    val dxN = clampedA - sw.x
+                    val distN = hypot(dxN.toDouble(), sw.z.toDouble()).toFloat().coerceAtLeast(1f)
+                    val cosPhi = ((wallBMm * wallBMm + distN * distN - targetSouth * targetSouth) / (2f * wallBMm * distN))
+                    if (cosPhi in -0.98f..0.98f) {
+                        val phi = acos(cosPhi.toDouble()).toFloat()
+                        val alpha = kotlin.math.atan2(sw.z.toDouble(), dxN.toDouble()).toFloat()
+                        val newRadAB = (alpha + phi).coerceIn(Math.toRadians(65.0).toFloat(), Math.toRadians(115.0).toFloat())
+                        next.copy(angleABDeg = Math.toDegrees(newRadAB.toDouble()).toFloat())
+                    } else {
+                        this
+                    }
                 } else {
-                    next
+                    // Cannot preserve targetSouth because Wall B and Angle A-B cannot absorb -> reject change!
+                    this
                 }
+            }
+            lockAngleCD -> next.solveWallForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
+            lockAngleBE -> {
+                val targetCD = 360f - next.angleACDeg - next.angleABDeg - oldBE
+                next.solveWallForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
             }
             else -> next
         }
