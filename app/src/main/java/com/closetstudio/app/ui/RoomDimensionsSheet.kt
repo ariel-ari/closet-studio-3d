@@ -1,16 +1,14 @@
 package com.closetstudio.app.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -23,17 +21,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,32 +43,37 @@ import com.closetstudio.core.model.RoomSpec
 import java.util.Locale
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Embedded / Inline Dimensions Panel:
+ * Used in split-screen mode:
+ * - Mobile: lower half of screen
+ * - Tablet: right side panel
+ */
 @Composable
-fun RoomDimensionsSheet(
+fun RoomDimensionsPanel(
     room: RoomSpec,
     onRoomChange: (RoomSpec) -> Unit,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
     // Checkbox state for symmetrical/opposite walls (default true = 90° rectangular box)
     var symmetricOppositeWalls by remember { mutableStateOf(true) }
 
     // Checkbox for centered door (default true = D and E are equal)
     var doorCentered by remember { mutableStateOf(room.isDoorCentered) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 4.dp,
+        shadowElevation = 8.dp,
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp)
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 12.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // Header
             Row(
@@ -112,7 +112,7 @@ fun RoomDimensionsSheet(
                 }
             }
 
-            // 1. Checkbox for Symmetrical Opposite Walls
+            // 1. Switch for Symmetrical Opposite Walls
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                 shape = RoundedCornerShape(12.dp),
@@ -120,7 +120,7 @@ fun RoomDimensionsSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
@@ -131,7 +131,7 @@ fun RoomDimensionsSheet(
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = if (symmetricOppositeWalls) "Pared A = (D + Puerta + E) • Esquinas a 90°" else "Modo libre: ángulos y caras independientes",
+                            text = if (symmetricOppositeWalls) "Pared A = (D + Puerta + E) • 90°" else "Modo libre: lados independientes",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -177,8 +177,8 @@ fun RoomDimensionsSheet(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -323,7 +323,7 @@ fun RoomDimensionsSheet(
                 onValueChange = { onRoomChange(room.copy(clearHeightMm = it)) },
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
             Button(
                 onClick = onDismiss,
