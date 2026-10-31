@@ -298,7 +298,7 @@ fun RoomDimensionsPanel(
                         subtitle = "Distancia libre piso a techo",
                         valueMm = room.clearHeightMm,
                         rangeMm = 2000f..3500f,
-                        isLocked = true,
+                        isLocked = false,
                         onLockToggle = {},
                         onValueChange = { onRoomChange(room.copy(clearHeightMm = it)) },
                         oppositeButtonLabel = null,
@@ -414,9 +414,9 @@ private fun WallInspectorCard(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = subtitle,
+                            text = if (isLocked) "Tamaño bloqueado (tocá el candado para editar)" else subtitle,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isLocked) Color(0xFF2C55B5) else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -427,15 +427,17 @@ private fun WallInspectorCard(
                 label = "Medida $letter (mm)",
                 currentValueText = valueMm.roundToInt().toString(),
                 unitSuffix = "mm",
-                enabled = true,
+                enabled = !isLocked,
                 onCommitValue = { parsed ->
-                    onValueChange(parsed.coerceIn(rangeMm))
+                    if (!isLocked) {
+                        onValueChange(parsed.coerceIn(rangeMm))
+                    }
                 },
                 trailingButtons = {
-                    StepButton("-100") { onValueChange((valueMm - 100f).coerceIn(rangeMm)) }
-                    StepButton("-25") { onValueChange((valueMm - 25f).coerceIn(rangeMm)) }
-                    StepButton("+25") { onValueChange((valueMm + 25f).coerceIn(rangeMm)) }
-                    StepButton("+100") { onValueChange((valueMm + 100f).coerceIn(rangeMm)) }
+                    StepButton("-100", enabled = !isLocked) { onValueChange((valueMm - 100f).coerceIn(rangeMm)) }
+                    StepButton("-25", enabled = !isLocked) { onValueChange((valueMm - 25f).coerceIn(rangeMm)) }
+                    StepButton("+25", enabled = !isLocked) { onValueChange((valueMm + 25f).coerceIn(rangeMm)) }
+                    StepButton("+100", enabled = !isLocked) { onValueChange((valueMm + 100f).coerceIn(rangeMm)) }
                 },
             )
 
@@ -444,12 +446,14 @@ private fun WallInspectorCard(
                 valueMm = valueMm,
                 rangeMm = rangeMm,
                 stepMm = 25f,
+                enabled = !isLocked,
                 onValueChange = onValueChange,
             )
 
             if (oppositeButtonLabel != null) {
                 OutlinedButton(
                     onClick = onMatchOpposite,
+                    enabled = !isLocked,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(vertical = 6.dp),
@@ -564,14 +568,14 @@ private fun CornerInspectorCard(
                     }
                 },
                 trailingButtons = {
-                    StepButton("-2°") {
-                        if (canEdit) onAngleChange((angleDeg - 2f).coerceIn(65f, 115f))
+                    StepButton("-2°", enabled = canEdit) {
+                        onAngleChange((angleDeg - 2f).coerceIn(65f, 115f))
                     }
-                    StepButton("90°") {
-                        if (canEdit) onAngleChange(90f)
+                    StepButton("90°", enabled = canEdit) {
+                        onAngleChange(90f)
                     }
-                    StepButton("+2°") {
-                        if (canEdit) onAngleChange((angleDeg + 2f).coerceIn(65f, 115f))
+                    StepButton("+2°", enabled = canEdit) {
+                        onAngleChange((angleDeg + 2f).coerceIn(65f, 115f))
                     }
                 },
             )
@@ -699,12 +703,29 @@ private fun DoorWallInspectorCard(
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF2C55B5),
                     )
-                    Text(
-                        text = "+ 🚪 ${room.door.widthMm.roundToInt()} mm +",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF8B5A2B),
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text(
+                            text = "+",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF8B5A2B),
+                        )
+                        Icon(
+                            imageVector = Icons.Default.DoorFront,
+                            contentDescription = null,
+                            tint = Color(0xFF8B5A2B),
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Text(
+                            text = "${room.door.widthMm.roundToInt()} mm +",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF8B5A2B),
+                        )
+                    }
                     Text(
                         text = "D: ${room.segmentEMm.roundToInt()} mm",
                         style = MaterialTheme.typography.labelSmall,
@@ -776,20 +797,17 @@ private fun DoorWallInspectorCard(
                     }
                 },
                 trailingButtons = {
-                    StepButton("-50") {
-                        if (!room.door.lockWidth) {
-                            onRoomChange(room.withDoorWidth((room.door.widthMm - 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
-                        }
+                    StepButton("-50", enabled = !room.door.lockWidth) {
+                        onRoomChange(room.withDoorWidth((room.door.widthMm - 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
                     }
-                    StepButton("+50") {
-                        if (!room.door.lockWidth) {
-                            onRoomChange(room.withDoorWidth((room.door.widthMm + 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
-                        }
+                    StepButton("+50", enabled = !room.door.lockWidth) {
+                        onRoomChange(room.withDoorWidth((room.door.widthMm + 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
                     }
                 },
             )
 
             val maxSide = room.maxDoorOffset().coerceAtLeast(100f)
+            val segmentsEnabled = !room.lockWallSouth
 
             // Side-by-side Direct Numeric Inputs for Tramo E (left of door) and Tramo D (right of door)
             Row(
@@ -802,10 +820,12 @@ private fun DoorWallInspectorCard(
                         label = "Tramo E (mm)",
                         currentValueText = room.segmentDMm.roundToInt().toString(),
                         unitSuffix = "mm",
-                        enabled = true,
+                        enabled = segmentsEnabled,
                         onCommitValue = { parsed ->
-                            if (doorCentered) onDoorCenteredChange(false)
-                            onRoomChange(room.withSegmentD(parsed.coerceIn(0f, maxSide)))
+                            if (segmentsEnabled) {
+                                if (doorCentered) onDoorCenteredChange(false)
+                                onRoomChange(room.withSegmentD(parsed.coerceIn(0f, maxSide)))
+                            }
                         },
                         trailingButtons = {},
                     )
@@ -815,10 +835,12 @@ private fun DoorWallInspectorCard(
                         label = "Tramo D (mm)",
                         currentValueText = room.segmentEMm.roundToInt().toString(),
                         unitSuffix = "mm",
-                        enabled = true,
+                        enabled = segmentsEnabled,
                         onCommitValue = { parsed ->
-                            if (doorCentered) onDoorCenteredChange(false)
-                            onRoomChange(room.withSegmentE(parsed.coerceIn(0f, maxSide)))
+                            if (segmentsEnabled) {
+                                if (doorCentered) onDoorCenteredChange(false)
+                                onRoomChange(room.withSegmentE(parsed.coerceIn(0f, maxSide)))
+                            }
                         },
                         trailingButtons = {},
                     )
@@ -830,9 +852,12 @@ private fun DoorWallInspectorCard(
                 valueMm = room.segmentDMm,
                 rangeMm = 0f..maxSide,
                 stepMm = 25f,
+                enabled = segmentsEnabled,
                 onValueChange = { newE ->
-                    if (doorCentered) onDoorCenteredChange(false)
-                    onRoomChange(room.withSegmentD(newE))
+                    if (segmentsEnabled) {
+                        if (doorCentered) onDoorCenteredChange(false)
+                        onRoomChange(room.withSegmentD(newE))
+                    }
                 },
             )
         }
@@ -923,18 +948,27 @@ private fun DirectNumericInputRow(
 }
 
 @Composable
-private fun StepButton(label: String, onClick: () -> Unit) {
+private fun StepButton(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 1.dp,
+        color = if (enabled) {
+            MaterialTheme.colorScheme.surface
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        },
+        shadowElevation = if (enabled) 1.dp else 0.dp,
+        enabled = enabled,
         onClick = onClick,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF2C55B5),
+            color = if (enabled) {
+                Color(0xFF2C55B5)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+            },
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
         )
     }
@@ -962,6 +996,7 @@ private fun DimensionSlider(
     valueMm: Float,
     rangeMm: ClosedFloatingPointRange<Float>,
     stepMm: Float,
+    enabled: Boolean = true,
     onValueChange: (Float) -> Unit,
 ) {
     val steps = ((rangeMm.endInclusive - rangeMm.start) / stepMm).toInt() - 1
@@ -986,6 +1021,7 @@ private fun DimensionSlider(
         }
         Slider(
             value = valueMm.coerceIn(rangeMm.start, rangeMm.endInclusive),
+            enabled = enabled,
             onValueChange = { raw ->
                 val snapped = (raw / stepMm).roundToInt() * stepMm
                 onValueChange(snapped.coerceIn(rangeMm.start, rangeMm.endInclusive))

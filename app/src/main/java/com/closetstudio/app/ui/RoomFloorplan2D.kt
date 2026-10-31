@@ -523,20 +523,23 @@ fun RoomFloorplan2D(
                 y = (pDoorEnd.y + pSE.y) * 0.5f + outSouthY * southOffset,
             )
 
-            // Left of door is E, Right of door is D (continuous clockwise order: A -> B -> C -> D -> 🚪 -> E)
+            // Left of door is E, Right of door is D (continuous clockwise order: A -> B -> C -> D -> Door -> E)
             drawBadgePill(
                 center = midLeft,
                 letter = "E",
                 text = "${room.segmentDMm.roundToInt()}",
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
+                isLocked = room.lockWallSouth,
             )
             drawBadgePill(
                 center = midDoor,
-                letter = "🚪",
+                letter = "",
                 text = "${room.door.widthMm.roundToInt()} (Total: ${room.wallSouthMm.roundToInt()})",
                 badgeColor = Color(0xFF8B5A2B),
                 isSelected = isSouthSelected,
+                isLocked = room.door.lockWidth,
+                isDoorIcon = true,
             )
             drawBadgePill(
                 center = midRight,
@@ -544,6 +547,7 @@ fun RoomFloorplan2D(
                 text = "${room.segmentEMm.roundToInt()}",
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
+                isLocked = room.lockWallSouth,
             )
         }
 
@@ -763,17 +767,17 @@ private fun DrawScope.drawCornerAngleArc(
     } else {
         String.format(Locale.US, "%.1f°", angleDeg)
     }
-    val lockIcon = if (isLocked) " [L]" else ""
 
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
         textSize = 10.5.dp.toPx()
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        textAlign = Paint.Align.CENTER
+        textAlign = Paint.Align.LEFT
     }
     val label = angleStr
     val textW = textPaint.measureText(label)
-    val pillW = textW + 10.dp.toPx()
+    val lockExtraW = if (isLocked) 13.dp.toPx() else 0f
+    val pillW = textW + 10.dp.toPx() + lockExtraW
     val pillH = 17.dp.toPx()
 
     if (isSelected) {
@@ -798,12 +802,22 @@ private fun DrawScope.drawCornerAngleArc(
         size = androidx.compose.ui.geometry.Size(pillW, pillH),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx(), 6.dp.toPx()),
     )
+
+    val textStartX = lx - pillW * 0.5f + 5.dp.toPx()
     drawContext.canvas.nativeCanvas.drawText(
         label,
-        lx,
+        textStartX,
         ly + 3.8.dp.toPx(),
         textPaint,
     )
+
+    if (isLocked) {
+        drawVectorPadlock(
+            center = Offset(textStartX + textW + 6.5.dp.toPx(), ly),
+            sizePx = 9.5.dp.toPx(),
+            color = Color.White,
+        )
+    }
 }
 
 private fun DrawScope.drawWallDimensionCallout(
@@ -855,6 +869,7 @@ private fun DrawScope.drawWallDimensionCallout(
         text = valueText,
         badgeColor = badgeColor,
         isSelected = isSelected,
+        isLocked = isLocked,
     )
 }
 
@@ -864,6 +879,8 @@ private fun DrawScope.drawBadgePill(
     text: String,
     badgeColor: Color,
     isSelected: Boolean,
+    isLocked: Boolean = false,
+    isDoorIcon: Boolean = false,
 ) {
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.rgb(30, 41, 59)
@@ -877,10 +894,15 @@ private fun DrawScope.drawBadgePill(
         textAlign = Paint.Align.CENTER
     }
 
-    val letterW = (letterPaint.measureText(letter) + 10.dp.toPx()).coerceAtLeast(20.dp.toPx())
+    val letterW = if (isDoorIcon) {
+        20.dp.toPx()
+    } else {
+        (letterPaint.measureText(letter) + 10.dp.toPx()).coerceAtLeast(20.dp.toPx())
+    }
     val valW = textPaint.measureText(text)
+    val lockExtraW = if (isLocked) 15.dp.toPx() else 0f
     val padH = 8.dp.toPx()
-    val totalW = letterW + valW + padH * 2.2f
+    val totalW = letterW + valW + padH * 2.2f + lockExtraW
     val pillH = 22.dp.toPx()
 
     val left = center.x - totalW * 0.5f
@@ -916,18 +938,98 @@ private fun DrawScope.drawBadgePill(
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(8.dp.toPx(), 8.dp.toPx()),
     )
 
-    drawContext.canvas.nativeCanvas.apply {
-        drawText(
+    if (isDoorIcon) {
+        drawVectorDoorIcon(
+            center = Offset(left + 3.dp.toPx() + letterW * 0.5f, center.y),
+            sizePx = 11.dp.toPx(),
+            color = Color.White,
+        )
+    } else {
+        drawContext.canvas.nativeCanvas.drawText(
             letter,
             left + 3.dp.toPx() + letterW * 0.5f,
             center.y + 4.dp.toPx(),
             letterPaint,
         )
-        drawText(
-            text,
-            left + 6.dp.toPx() + letterW + 4.dp.toPx(),
-            center.y + 4.dp.toPx(),
-            textPaint,
+    }
+
+    val textStartX = left + 6.dp.toPx() + letterW + 4.dp.toPx()
+    drawContext.canvas.nativeCanvas.drawText(
+        text,
+        textStartX,
+        center.y + 4.dp.toPx(),
+        textPaint,
+    )
+
+    if (isLocked) {
+        drawVectorPadlock(
+            center = Offset(textStartX + valW + 8.dp.toPx(), center.y),
+            sizePx = 11.dp.toPx(),
+            color = badgeColor,
         )
     }
+}
+
+/**
+ * Draws a crisp vector padlock icon (body + shackle arc) without using emojis.
+ */
+private fun DrawScope.drawVectorPadlock(
+    center: Offset,
+    sizePx: Float,
+    color: Color,
+) {
+    val bodyW = sizePx * 0.78f
+    val bodyH = sizePx * 0.56f
+    val bodyLeft = center.x - bodyW * 0.5f
+    val bodyTop = center.y - sizePx * 0.04f
+
+    val shackleW = sizePx * 0.46f
+    val shackleH = sizePx * 0.46f
+    val shackleStroke = (sizePx * 0.16f).coerceAtLeast(1.4f)
+
+    // Shackle arch
+    drawArc(
+        color = color,
+        startAngle = 180f,
+        sweepAngle = 180f,
+        useCenter = false,
+        topLeft = Offset(center.x - shackleW * 0.5f, bodyTop - shackleH * 0.55f),
+        size = androidx.compose.ui.geometry.Size(shackleW, shackleH),
+        style = Stroke(width = shackleStroke, cap = StrokeCap.Round),
+    )
+
+    // Padlock body
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(bodyLeft, bodyTop),
+        size = androidx.compose.ui.geometry.Size(bodyW, bodyH),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(sizePx * 0.16f, sizePx * 0.16f),
+    )
+}
+
+/**
+ * Draws a clean vector door icon inside the brown Door badge pill without using emojis.
+ */
+private fun DrawScope.drawVectorDoorIcon(
+    center: Offset,
+    sizePx: Float,
+    color: Color,
+) {
+    val w = sizePx * 0.68f
+    val h = sizePx * 0.88f
+    val left = center.x - w * 0.5f
+    val top = center.y - h * 0.5f
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(left, top),
+        size = androidx.compose.ui.geometry.Size(w, h),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(sizePx * 0.1f, sizePx * 0.1f),
+        style = Stroke(width = (sizePx * 0.15f).coerceAtLeast(1.4f)),
+    )
+    // Door knob dot
+    drawCircle(
+        color = color,
+        radius = (sizePx * 0.09f).coerceAtLeast(1f),
+        center = Offset(left + w * 0.72f, center.y),
+    )
 }

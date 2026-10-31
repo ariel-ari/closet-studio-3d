@@ -163,4 +163,24 @@ class RoomSpecTest {
         val widened = room.withWallSouth(4800f, keepDoorCentered = true)
         assertEquals(1200f, widened.door.widthMm, 10f)
     }
+
+    @Test
+    fun `locking a wall prevents direct resizing and routes angle adaptation to unlocked opposite wall`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            wallBMm = 3600f,
+            lockWallB = true, // Right wall (UI Pared C) locked
+            lockWallC = false, // Left wall (UI Pared A) unlocked
+        )
+        // Direct edit on locked wall B must be ignored
+        val directAttempt = room.withWallB(4500f)
+        assertEquals(3600f, directAttempt.wallBMm, 0.01f)
+
+        // Changing corner angle C-D when wallBMm is locked must preserve wallBMm and adapt unlocked wallCMm
+        val angled = room.withAngleCD(96f)
+        assertEquals(3600f, angled.wallBMm, 0.01f)
+        assertTrue(angled.wallCMm < 3600f)
+        assertEquals(96f, angled.angleCDDeg, 0.2f)
+    }
 }
