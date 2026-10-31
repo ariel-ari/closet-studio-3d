@@ -156,10 +156,11 @@ fun RoomFloorplan2D(
                     }
 
                     // 2. Check Wall Dimension Badges
+                    // Left wall = A (targets.wallBadgeC), Top wall = B (targets.wallBadgeA), Right wall = C (targets.wallBadgeB)
                     val badgeCandidates = listOf(
-                        FloorplanElement.WallA to dist(tap, targets.wallBadgeA),
-                        FloorplanElement.WallB to dist(tap, targets.wallBadgeB),
-                        FloorplanElement.WallC to dist(tap, targets.wallBadgeC),
+                        FloorplanElement.WallA to dist(tap, targets.wallBadgeC),
+                        FloorplanElement.WallB to dist(tap, targets.wallBadgeA),
+                        FloorplanElement.WallC to dist(tap, targets.wallBadgeB),
                         FloorplanElement.WallSouthDoor to minOf(
                             dist(tap, targets.wallBadgeD),
                             dist(tap, targets.wallBadgeDoor),
@@ -174,9 +175,9 @@ fun RoomFloorplan2D(
 
                     // 3. Check Wall Line Segments
                     val segmentCandidates = listOf(
-                        FloorplanElement.WallA to pointToSegmentDist(tap, targets.pNW, targets.pNE),
-                        FloorplanElement.WallB to pointToSegmentDist(tap, targets.pNE, targets.pSE),
-                        FloorplanElement.WallC to pointToSegmentDist(tap, targets.pSW, targets.pNW),
+                        FloorplanElement.WallA to pointToSegmentDist(tap, targets.pSW, targets.pNW),
+                        FloorplanElement.WallB to pointToSegmentDist(tap, targets.pNW, targets.pNE),
+                        FloorplanElement.WallC to pointToSegmentDist(tap, targets.pNE, targets.pSE),
                         FloorplanElement.WallSouthDoor to pointToSegmentDist(tap, targets.pSW, targets.pSE),
                     )
                     val bestSegment = segmentCandidates.minByOrNull { it.second }
@@ -315,36 +316,36 @@ fun RoomFloorplan2D(
             val selectedWallColor = Color(0xFF1D4ED8)
             val selectedGlowColor = Color(0xFF3B82F6).copy(alpha = 0.28f)
 
-            // Wall A (North: NW -> NE)
-            if (selectedElement == FloorplanElement.WallA) {
+            // Wall B (Top: NW -> NE)
+            if (selectedElement == FloorplanElement.WallB) {
                 drawLine(selectedGlowColor, pNW, pNE, glowStrokePx, StrokeCap.Round)
             }
             drawLine(
-                color = if (selectedElement == FloorplanElement.WallA) selectedWallColor else baseWallColor,
+                color = if (selectedElement == FloorplanElement.WallB) selectedWallColor else baseWallColor,
                 start = pNW,
                 end = pNE,
                 strokeWidth = wallStrokePx,
                 cap = StrokeCap.Round,
             )
 
-            // Wall B (East: NE -> SE)
-            if (selectedElement == FloorplanElement.WallB) {
+            // Wall C (Right: NE -> SE)
+            if (selectedElement == FloorplanElement.WallC) {
                 drawLine(selectedGlowColor, pNE, pSE, glowStrokePx, StrokeCap.Round)
             }
             drawLine(
-                color = if (selectedElement == FloorplanElement.WallB) selectedWallColor else baseWallColor,
+                color = if (selectedElement == FloorplanElement.WallC) selectedWallColor else baseWallColor,
                 start = pNE,
                 end = pSE,
                 strokeWidth = wallStrokePx,
                 cap = StrokeCap.Round,
             )
 
-            // Wall C (West: SW -> NW)
-            if (selectedElement == FloorplanElement.WallC) {
+            // Wall A (Left: SW -> NW)
+            if (selectedElement == FloorplanElement.WallA) {
                 drawLine(selectedGlowColor, pSW, pNW, glowStrokePx, StrokeCap.Round)
             }
             drawLine(
-                color = if (selectedElement == FloorplanElement.WallC) selectedWallColor else baseWallColor,
+                color = if (selectedElement == FloorplanElement.WallA) selectedWallColor else baseWallColor,
                 start = pSW,
                 end = pNW,
                 strokeWidth = wallStrokePx,
@@ -466,16 +467,16 @@ fun RoomFloorplan2D(
                 }
             }
 
-            // 6. Glued CAD Dimension Badges along each wall
+            // 6. Glued CAD Dimension Badges along each wall (Clockwise: Left=A, Top=B, Right=C, BottomRight=D, BottomLeft=E)
             drawWallDimensionCallout(
                 start = pNW,
                 end = pNE,
                 outwardSign = -1f,
                 offsetPx = wallOffsetA,
-                letter = "A",
+                letter = "B",
                 valueText = "${room.wallAMm.roundToInt()} mm",
                 isLocked = room.lockWallA,
-                isSelected = selectedElement == FloorplanElement.WallA,
+                isSelected = selectedElement == FloorplanElement.WallB,
                 badgeColor = Color(0xFF2C55B5),
             )
 
@@ -484,10 +485,10 @@ fun RoomFloorplan2D(
                 end = pSE,
                 outwardSign = -1f,
                 offsetPx = wallOffsetBC,
-                letter = "B",
+                letter = "C",
                 valueText = "${room.wallBMm.roundToInt()} mm",
                 isLocked = room.lockWallB,
-                isSelected = selectedElement == FloorplanElement.WallB,
+                isSelected = selectedElement == FloorplanElement.WallC,
                 badgeColor = Color(0xFF2C55B5),
             )
 
@@ -496,10 +497,10 @@ fun RoomFloorplan2D(
                 end = pNW,
                 outwardSign = -1f,
                 offsetPx = wallOffsetBC,
-                letter = "C",
+                letter = "A",
                 valueText = "${room.wallCMm.roundToInt()} mm",
                 isLocked = room.lockWallC,
-                isSelected = selectedElement == FloorplanElement.WallC,
+                isSelected = selectedElement == FloorplanElement.WallA,
                 badgeColor = Color(0xFF2C55B5),
             )
 
@@ -509,7 +510,7 @@ fun RoomFloorplan2D(
             val outSouthX = -southDy / southPxLen
             val outSouthY = southDx / southPxLen
 
-            val midD = Offset(
+            val midLeft = Offset(
                 x = (pSW.x + pDoorStart.x) * 0.5f + outSouthX * southOffset,
                 y = (pSW.y + pDoorStart.y) * 0.5f + outSouthY * southOffset,
             )
@@ -517,14 +518,15 @@ fun RoomFloorplan2D(
                 x = (pDoorStart.x + pDoorEnd.x) * 0.5f + outSouthX * (southOffset + southDoorExtra),
                 y = (pDoorStart.y + pDoorEnd.y) * 0.5f + outSouthY * (southOffset + southDoorExtra),
             )
-            val midE = Offset(
+            val midRight = Offset(
                 x = (pDoorEnd.x + pSE.x) * 0.5f + outSouthX * southOffset,
                 y = (pDoorEnd.y + pSE.y) * 0.5f + outSouthY * southOffset,
             )
 
+            // Left of door is E, Right of door is D (continuous clockwise order: A -> B -> C -> D -> 🚪 -> E)
             drawBadgePill(
-                center = midD,
-                letter = "D",
+                center = midLeft,
+                letter = "E",
                 text = "${room.segmentDMm.roundToInt()}",
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
@@ -537,8 +539,8 @@ fun RoomFloorplan2D(
                 isSelected = isSouthSelected,
             )
             drawBadgePill(
-                center = midE,
-                letter = "E",
+                center = midRight,
+                letter = "D",
                 text = "${room.segmentEMm.roundToInt()}",
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,

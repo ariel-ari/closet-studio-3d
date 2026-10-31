@@ -110,10 +110,10 @@ private fun getWallTarget(wallStep: Int, room: RoomSpec): Float3 {
 private fun getWallName(wallStep: Int): String {
     val wall = ((wallStep % 4) + 4) % 4
     return when (wall) {
-        0 -> "Pared D - Puerta - E"
-        1 -> "Pared C"
-        2 -> "Pared A"
-        else -> "Pared B"
+        0 -> "Pared E - Puerta - D"
+        1 -> "Pared A"
+        2 -> "Pared B"
+        else -> "Pared C"
     }
 }
 
@@ -716,11 +716,11 @@ fun RoomScreen() {
                     title = { Text("Datos del Ambiente") },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("• Pared A: ${room.wallAMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallAMm / 1000f)} m)")
-                            Text("• Pared B: ${room.wallBMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallBMm / 1000f)} m)")
-                            Text("• Pared C: ${room.wallCMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallCMm / 1000f)} m)")
-                            Text("• Pared D-E (Total): ${room.wallSouthMm.toInt()} mm (D:${room.segmentDMm.toInt()} + 🚪${room.door.widthMm.toInt()} + E:${room.segmentEMm.toInt()})")
-                            Text("• Ángulos: A-C=${String.format(Locale.US, "%.1f°", room.angleACDeg)}, A-B=${String.format(Locale.US, "%.1f°", room.angleABDeg)}, C-D=${String.format(Locale.US, "%.1f°", room.angleCDDeg)}, B-E=${String.format(Locale.US, "%.1f°", room.angleBEDeg)}")
+                            Text("• Pared A: ${room.wallCMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallCMm / 1000f)} m)")
+                            Text("• Pared B: ${room.wallAMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallAMm / 1000f)} m)")
+                            Text("• Pared C: ${room.wallBMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallBMm / 1000f)} m)")
+                            Text("• Pared E-D (Total): ${room.wallSouthMm.toInt()} mm (E:${room.segmentDMm.toInt()} + 🚪${room.door.widthMm.toInt()} + D:${room.segmentEMm.toInt()})")
+                            Text("• Ángulos: A-B=${String.format(Locale.US, "%.1f°", room.angleACDeg)}, B-C=${String.format(Locale.US, "%.1f°", room.angleABDeg)}, C-D=${String.format(Locale.US, "%.1f°", room.angleBEDeg)}, A-E=${String.format(Locale.US, "%.1f°", room.angleCDDeg)}")
                             Text("• Altura (Y): ${room.clearHeightMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearHeightMm / 1000f)} m)")
                             Text("• Vista actual: ${getWallName(wallStep.intValue)}")
                         }

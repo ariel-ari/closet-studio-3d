@@ -8,10 +8,10 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 enum class WallIndex(val degrees: Float, val label: String) {
-    NORTH(0f, "Pared A"),
-    EAST(90f, "Pared B"),
-    SOUTH(180f, "Pared D - Puerta - E"),
-    WEST(270f, "Pared C");
+    NORTH(0f, "Pared B"),
+    EAST(90f, "Pared C"),
+    SOUTH(180f, "Pared E - Puerta - D"),
+    WEST(270f, "Pared A");
 
     fun next(): WallIndex = values()[(ordinal + 1) % values().size]
     fun prev(): WallIndex = values()[(ordinal - 1 + values().size) % values().size]
