@@ -255,4 +255,30 @@ class RoomSpecTest {
         assertEquals(3600f, updated.wallCMm, 0.01f)
         assertEquals(3600f, updated.wallSouthMm, 0.01f)
     }
+
+    @Test
+    fun `South wall and segments can shrink to 0 and grow beyond 6000 mm without artificial limits`() {
+        val room = RoomSpec(
+            clearWidthMm = 3325f,
+            clearDepthMm = 4177f,
+            wallBMm = 3769f,
+            lockWallA = true, // Top wall locked
+            lockWallC = true, // Left wall locked
+            lockWallB = false, // Right wall unlocked
+            lockAngleAC = true,
+            lockAngleAB = true,
+            door = DoorSpec(widthMm = 660f, offsetMm = 1345f, lockWidth = false),
+        )
+        // Can grow far beyond 6000 mm (e.g., 12000 mm)
+        val grown = room.withWallSouth(12000f)
+        assertEquals(12000f, grown.wallSouthMm, 1f)
+        assertEquals(3325f, grown.wallAMm, 0.01f)
+        assertEquals(4177f, grown.wallCMm, 0.01f)
+
+        // Can shrink below 3325 mm all the way down to 0 mm
+        val shrunk = room.withWallSouth(0f)
+        assertEquals(0f, shrunk.wallSouthMm, 0.01f)
+        assertEquals(0f, shrunk.segmentDMm, 0.01f)
+        assertEquals(0f, shrunk.segmentEMm, 0.01f)
+    }
 }

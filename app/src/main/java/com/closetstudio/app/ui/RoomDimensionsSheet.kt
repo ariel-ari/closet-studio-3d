@@ -351,7 +351,7 @@ private fun WallInspectorCard(
     title: String,
     subtitle: String,
     valueMm: Float,
-    rangeMm: ClosedFloatingPointRange<Float> = 1500f..6000f,
+    rangeMm: ClosedFloatingPointRange<Float> = 0f..maxOf(10000f, valueMm * 1.5f),
     isLocked: Boolean,
     onLockToggle: () -> Unit,
     onValueChange: (Float) -> Unit,
@@ -430,14 +430,14 @@ private fun WallInspectorCard(
                 enabled = !isLocked,
                 onCommitValue = { parsed ->
                     if (!isLocked) {
-                        onValueChange(parsed.coerceIn(rangeMm))
+                        onValueChange(parsed.coerceAtLeast(0f))
                     }
                 },
                 trailingButtons = {
-                    StepButton("-100", enabled = !isLocked) { onValueChange((valueMm - 100f).coerceIn(rangeMm)) }
-                    StepButton("-25", enabled = !isLocked) { onValueChange((valueMm - 25f).coerceIn(rangeMm)) }
-                    StepButton("+25", enabled = !isLocked) { onValueChange((valueMm + 25f).coerceIn(rangeMm)) }
-                    StepButton("+100", enabled = !isLocked) { onValueChange((valueMm + 100f).coerceIn(rangeMm)) }
+                    StepButton("-100", enabled = !isLocked) { onValueChange((valueMm - 100f).coerceAtLeast(0f)) }
+                    StepButton("-25", enabled = !isLocked) { onValueChange((valueMm - 25f).coerceAtLeast(0f)) }
+                    StepButton("+25", enabled = !isLocked) { onValueChange((valueMm + 25f).coerceAtLeast(0f)) }
+                    StepButton("+100", enabled = !isLocked) { onValueChange((valueMm + 100f).coerceAtLeast(0f)) }
                 },
             )
 
@@ -765,21 +765,21 @@ private fun DoorWallInspectorCard(
                 enabled = !totalLocked,
                 onCommitValue = { parsed ->
                     if (!totalLocked) {
-                        onRoomChange(room.withWallSouth(parsed.coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                        onRoomChange(room.withWallSouth(parsed.coerceAtLeast(0f), keepDoorCentered = doorCentered))
                     }
                 },
                 trailingButtons = {
                     StepButton("-100", enabled = !totalLocked) {
-                        onRoomChange(room.withWallSouth((room.doorWallLengthMm - 100f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                        onRoomChange(room.withWallSouth((room.doorWallLengthMm - 100f).coerceAtLeast(0f), keepDoorCentered = doorCentered))
                     }
                     StepButton("-25", enabled = !totalLocked) {
-                        onRoomChange(room.withWallSouth((room.doorWallLengthMm - 25f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                        onRoomChange(room.withWallSouth((room.doorWallLengthMm - 25f).coerceAtLeast(0f), keepDoorCentered = doorCentered))
                     }
                     StepButton("+25", enabled = !totalLocked) {
-                        onRoomChange(room.withWallSouth((room.doorWallLengthMm + 25f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                        onRoomChange(room.withWallSouth((room.doorWallLengthMm + 25f).coerceAtLeast(0f), keepDoorCentered = doorCentered))
                     }
                     StepButton("+100", enabled = !totalLocked) {
-                        onRoomChange(room.withWallSouth((room.doorWallLengthMm + 100f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                        onRoomChange(room.withWallSouth((room.doorWallLengthMm + 100f).coerceAtLeast(0f), keepDoorCentered = doorCentered))
                     }
                 },
             )
@@ -791,7 +791,7 @@ private fun DoorWallInspectorCard(
                     "Deslizar Total Pared E-D"
                 },
                 valueMm = room.doorWallLengthMm,
-                rangeMm = 1500f..6000f,
+                rangeMm = 0f..maxOf(10000f, room.doorWallLengthMm * 1.5f),
                 stepMm = 25f,
                 enabled = !totalLocked,
                 onValueChange = { newTotal ->
@@ -856,15 +856,15 @@ private fun DoorWallInspectorCard(
                 enabled = !room.door.lockWidth,
                 onCommitValue = { parsed ->
                     if (!room.door.lockWidth) {
-                        onRoomChange(room.withDoorWidth(parsed.coerceIn(600f, 1400f), keepCentered = doorCentered))
+                        onRoomChange(room.withDoorWidth(parsed.coerceAtLeast(0f), keepCentered = doorCentered))
                     }
                 },
                 trailingButtons = {
                     StepButton("-50", enabled = !room.door.lockWidth) {
-                        onRoomChange(room.withDoorWidth((room.door.widthMm - 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
+                        onRoomChange(room.withDoorWidth((room.door.widthMm - 50f).coerceAtLeast(0f), keepCentered = doorCentered))
                     }
                     StepButton("+50", enabled = !room.door.lockWidth) {
-                        onRoomChange(room.withDoorWidth((room.door.widthMm + 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
+                        onRoomChange(room.withDoorWidth((room.door.widthMm + 50f).coerceAtLeast(0f), keepCentered = doorCentered))
                     }
                 },
             )
@@ -872,7 +872,7 @@ private fun DoorWallInspectorCard(
             DimensionSlider(
                 label = "Deslizar Puerta",
                 valueMm = room.door.widthMm,
-                rangeMm = 600f..1400f,
+                rangeMm = 0f..maxOf(3000f, room.doorWallLengthMm, room.door.widthMm * 1.5f),
                 stepMm = 25f,
                 enabled = !room.door.lockWidth,
                 onValueChange = { newW ->
@@ -884,8 +884,8 @@ private fun DoorWallInspectorCard(
 
             HorizontalDivider()
 
-            val maxSide = if (room.lockSegmentE || room.lockSegmentD) {
-                3500f
+            val maxSliderSide = if (room.lockSegmentE || room.lockSegmentD) {
+                maxOf(10000f, room.doorWallLengthMm, room.segmentDMm * 1.5f, room.segmentEMm * 1.5f)
             } else {
                 room.maxDoorOffset().coerceAtLeast(100f)
             }
@@ -937,17 +937,17 @@ private fun DoorWallInspectorCard(
                 onCommitValue = { parsed ->
                     if (canEditE) {
                         if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentD(parsed.coerceIn(0f, maxSide)))
+                        onRoomChange(room.withSegmentD(parsed.coerceAtLeast(0f)))
                     }
                 },
                 trailingButtons = {
                     StepButton("-50", enabled = canEditE) {
                         if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentD((room.segmentDMm - 50f).coerceIn(0f, maxSide)))
+                        onRoomChange(room.withSegmentD((room.segmentDMm - 50f).coerceAtLeast(0f)))
                     }
                     StepButton("+50", enabled = canEditE) {
                         if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentD((room.segmentDMm + 50f).coerceIn(0f, maxSide)))
+                        onRoomChange(room.withSegmentD((room.segmentDMm + 50f).coerceAtLeast(0f)))
                     }
                 },
             )
@@ -955,7 +955,7 @@ private fun DoorWallInspectorCard(
             DimensionSlider(
                 label = if (room.lockSegmentE) "Deslizar Tramo E (agranda el total)" else "Deslizar Tramo E (D se adapta solo)",
                 valueMm = room.segmentDMm,
-                rangeMm = 0f..maxSide,
+                rangeMm = 0f..maxSliderSide,
                 stepMm = 25f,
                 enabled = canEditE,
                 onValueChange = { newE ->
@@ -1013,17 +1013,17 @@ private fun DoorWallInspectorCard(
                 onCommitValue = { parsed ->
                     if (canEditD) {
                         if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentE(parsed.coerceIn(0f, maxSide)))
+                        onRoomChange(room.withSegmentE(parsed.coerceAtLeast(0f)))
                     }
                 },
                 trailingButtons = {
                     StepButton("-50", enabled = canEditD) {
                         if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentE((room.segmentEMm - 50f).coerceIn(0f, maxSide)))
+                        onRoomChange(room.withSegmentE((room.segmentEMm - 50f).coerceAtLeast(0f)))
                     }
                     StepButton("+50", enabled = canEditD) {
                         if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentE((room.segmentEMm + 50f).coerceIn(0f, maxSide)))
+                        onRoomChange(room.withSegmentE((room.segmentEMm + 50f).coerceAtLeast(0f)))
                     }
                 },
             )
@@ -1031,7 +1031,7 @@ private fun DoorWallInspectorCard(
             DimensionSlider(
                 label = if (room.lockSegmentD) "Deslizar Tramo D (agranda el total)" else "Deslizar Tramo D (E se adapta solo)",
                 valueMm = room.segmentEMm,
-                rangeMm = 0f..maxSide,
+                rangeMm = 0f..maxSliderSide,
                 stepMm = 25f,
                 enabled = canEditD,
                 onValueChange = { newD ->
