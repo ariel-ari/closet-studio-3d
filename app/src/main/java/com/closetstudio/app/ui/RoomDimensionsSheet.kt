@@ -2,6 +2,7 @@ package com.closetstudio.app.ui
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,10 +12,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoorFront
 import androidx.compose.material.icons.filled.Lock
@@ -32,11 +37,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,7 +51,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.closetstudio.core.model.RoomSpec
 import java.util.Locale
@@ -404,26 +414,22 @@ private fun WallInspectorCard(
                 }
             }
 
-            // Dimension value + Fine-tuning step buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "${valueMm.roundToInt()} mm (${String.format(Locale.US, "%.2f", valueMm / 1000f)} m)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2C55B5),
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Direct Numeric Input + Fine-tuning step buttons
+            DirectNumericInputRow(
+                label = "Medida $letter (mm)",
+                currentValueText = valueMm.roundToInt().toString(),
+                unitSuffix = "mm",
+                enabled = true,
+                onCommitValue = { parsed ->
+                    onValueChange(parsed.coerceIn(rangeMm))
+                },
+                trailingButtons = {
                     StepButton("-100") { onValueChange((valueMm - 100f).coerceIn(rangeMm)) }
                     StepButton("-25") { onValueChange((valueMm - 25f).coerceIn(rangeMm)) }
                     StepButton("+25") { onValueChange((valueMm + 25f).coerceIn(rangeMm)) }
                     StepButton("+100") { onValueChange((valueMm + 100f).coerceIn(rangeMm)) }
-                }
-            }
+                },
+            )
 
             DimensionSlider(
                 label = "Deslizar medida ($letter)",
@@ -533,47 +539,30 @@ private fun CornerInspectorCard(
                 }
             }
 
-            // Angle readout + fine step buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = String.format(Locale.US, "%.1f°", angleDeg),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (abs(angleDeg - 90f) < 0.3f) Color(0xFF2C55B5) else Color(0xFFD97706),
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StepButton("-2°") {
-                        if (canEdit) {
-                            onAngleChange((angleDeg - 2f).coerceIn(65f, 115f))
-                        }
+            // Direct Numeric Input for Angle + fine step buttons
+            DirectNumericInputRow(
+                label = "Ángulo $cornerCode (°)",
+                currentValueText = String.format(Locale.US, "%.1f", angleDeg),
+                unitSuffix = "°",
+                enabled = canEdit,
+                isDecimal = true,
+                onCommitValue = { parsed ->
+                    if (canEdit) {
+                        onAngleChange(parsed.coerceIn(65f, 115f))
                     }
-                    StepButton("-0.5°") {
-                        if (canEdit) {
-                            onAngleChange((angleDeg - 0.5f).coerceIn(65f, 115f))
-                        }
+                },
+                trailingButtons = {
+                    StepButton("-2°") {
+                        if (canEdit) onAngleChange((angleDeg - 2f).coerceIn(65f, 115f))
                     }
                     StepButton("90°") {
-                        if (canEdit) {
-                            onAngleChange(90f)
-                        }
-                    }
-                    StepButton("+0.5°") {
-                        if (canEdit) {
-                            onAngleChange((angleDeg + 0.5f).coerceIn(65f, 115f))
-                        }
+                        if (canEdit) onAngleChange(90f)
                     }
                     StepButton("+2°") {
-                        if (canEdit) {
-                            onAngleChange((angleDeg + 2f).coerceIn(65f, 115f))
-                        }
+                        if (canEdit) onAngleChange((angleDeg + 2f).coerceIn(65f, 115f))
                     }
-                }
-            }
+                },
+            )
 
             Slider(
                 value = angleDeg.coerceIn(65f, 115f),
@@ -711,7 +700,7 @@ private fun DoorWallInspectorCard(
                 }
             }
 
-            // Door Width Lock + Slider section
+            // Door Width Lock + Direct Input section
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -749,46 +738,68 @@ private fun DoorWallInspectorCard(
                 )
             }
 
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "${room.door.widthMm.roundToInt()} mm (${String.format(Locale.US, "%.2f", room.door.widthMm / 1000f)} m)",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF8B5A2B),
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        StepButton("-50") {
-                            if (!room.door.lockWidth) {
-                                onRoomChange(room.withDoorWidth((room.door.widthMm - 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
-                            }
-                        }
-                        StepButton("+50") {
-                            if (!room.door.lockWidth) {
-                                onRoomChange(room.withDoorWidth((room.door.widthMm + 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
-                            }
+            DirectNumericInputRow(
+                label = "Puerta (mm)",
+                currentValueText = room.door.widthMm.roundToInt().toString(),
+                unitSuffix = "mm",
+                enabled = !room.door.lockWidth,
+                onCommitValue = { parsed ->
+                    if (!room.door.lockWidth) {
+                        onRoomChange(room.withDoorWidth(parsed.coerceIn(600f, 1400f), keepCentered = doorCentered))
+                    }
+                },
+                trailingButtons = {
+                    StepButton("-50") {
+                        if (!room.door.lockWidth) {
+                            onRoomChange(room.withDoorWidth((room.door.widthMm - 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
                         }
                     }
-                }
-                Slider(
-                    value = room.door.widthMm.coerceIn(600f, 1400f),
-                    enabled = !room.door.lockWidth,
-                    onValueChange = { raw ->
-                        val snapped = (raw / 50f).roundToInt() * 50f
-                        onRoomChange(room.withDoorWidth(snapped.coerceIn(600f, 1400f), keepCentered = doorCentered))
-                    },
-                    valueRange = 600f..1400f,
-                    steps = 15,
-                )
-            }
+                    StepButton("+50") {
+                        if (!room.door.lockWidth) {
+                            onRoomChange(room.withDoorWidth((room.door.widthMm + 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
+                        }
+                    }
+                },
+            )
 
             val maxSide = room.maxDoorOffset().coerceAtLeast(100f)
+
+            // Side-by-side Direct Numeric Inputs for Tramo D and Tramo E
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    DirectNumericInputRow(
+                        label = "Tramo D (mm)",
+                        currentValueText = room.segmentDMm.roundToInt().toString(),
+                        unitSuffix = "mm",
+                        enabled = true,
+                        onCommitValue = { parsed ->
+                            if (doorCentered) onDoorCenteredChange(false)
+                            onRoomChange(room.withSegmentD(parsed.coerceIn(0f, maxSide)))
+                        },
+                        trailingButtons = {},
+                    )
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    DirectNumericInputRow(
+                        label = "Tramo E (mm)",
+                        currentValueText = room.segmentEMm.roundToInt().toString(),
+                        unitSuffix = "mm",
+                        enabled = true,
+                        onCommitValue = { parsed ->
+                            if (doorCentered) onDoorCenteredChange(false)
+                            onRoomChange(room.withSegmentE(parsed.coerceIn(0f, maxSide)))
+                        },
+                        trailingButtons = {},
+                    )
+                }
+            }
+
             DimensionSlider(
-                label = "Tramo D (Izquierda • E se adapta solo)",
+                label = "Deslizar Tramo D (E se adapta solo)",
                 valueMm = room.segmentDMm,
                 rangeMm = 0f..maxSide,
                 stepMm = 25f,
@@ -797,17 +808,89 @@ private fun DoorWallInspectorCard(
                     onRoomChange(room.withSegmentD(newD))
                 },
             )
+        }
+    }
+}
 
-            DimensionSlider(
-                label = "Tramo E (Derecha • D se adapta solo)",
-                valueMm = room.segmentEMm,
-                rangeMm = 0f..maxSide,
-                stepMm = 25f,
-                onValueChange = { newE ->
-                    if (doorCentered) onDoorCenteredChange(false)
-                    onRoomChange(room.withSegmentE(newE))
-                },
-            )
+@Composable
+private fun DirectNumericInputRow(
+    label: String,
+    currentValueText: String,
+    unitSuffix: String,
+    enabled: Boolean,
+    isDecimal: Boolean = false,
+    onCommitValue: (Float) -> Unit,
+    trailingButtons: @Composable () -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    var textValue by remember(currentValueText) { mutableStateOf(currentValueText) }
+
+    LaunchedEffect(currentValueText) {
+        textValue = currentValueText
+    }
+
+    fun applyInput() {
+        val normalized = textValue.trim().replace(',', '.')
+        val parsed = normalized.toFloatOrNull()
+        if (parsed != null) {
+            onCommitValue(parsed)
+        } else {
+            textValue = currentValueText
+        }
+        focusManager.clearFocus()
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        OutlinedTextField(
+            value = textValue,
+            onValueChange = { raw ->
+                val filtered = raw.filter { it.isDigit() || (isDecimal && (it == '.' || it == ',')) }
+                textValue = filtered
+            },
+            enabled = enabled,
+            singleLine = true,
+            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+            suffix = { Text(unitSuffix, style = MaterialTheme.typography.labelSmall) },
+            trailingIcon = {
+                if (enabled && textValue != currentValueText) {
+                    IconButton(
+                        onClick = { applyInput() },
+                        modifier = Modifier.size(28.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Aplicar",
+                            tint = Color(0xFF2C55B5),
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (isDecimal) KeyboardType.Decimal else KeyboardType.Number,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = { applyInput() },
+            ),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF2C55B5),
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            trailingButtons()
         }
     }
 }
