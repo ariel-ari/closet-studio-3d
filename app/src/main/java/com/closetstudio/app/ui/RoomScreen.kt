@@ -143,7 +143,7 @@ private fun getWallTarget(wallStep: Int, room: RoomSpec): Float3 {
     val ne = room.vertexNE
     val se = room.vertexSE
     val sw = room.vertexSW
-    val midY = 1.40f
+    val midY = room.clearHeightMm * 0.5f * MM_TO_M
     return when (((wallStep % 4) + 4) % 4) {
         0 -> Float3((sw.x + se.x) * 0.5f * MM_TO_M, midY, (sw.z + se.z) * 0.5f * MM_TO_M)
         1 -> Float3((sw.x + nw.x) * 0.5f * MM_TO_M, midY, (sw.z + nw.z) * 0.5f * MM_TO_M)
@@ -304,6 +304,8 @@ private fun pickContainerAtScreenTap(
     yawDeg: Float,
     pitchDeg: Float,
     distanceM: Float,
+    isOrtho: Boolean = false,
+    orthoSize: Float = 3.0f,
 ): String? {
     val yawRad = Math.toRadians(yawDeg.toDouble()).toFloat()
     val pitchRad = Math.toRadians(pitchDeg.toDouble()).toFloat()
@@ -313,21 +315,17 @@ private fun pickContainerAtScreenTap(
     val forwardY = sin(pitchRad)
     val forwardZ = -cos(yawRad) * cos(pitchRad)
 
-    // Eye position in meters, converted to millimeters
-    val eyeXM = targetX - forwardX * distanceM
-    val eyeYM = (targetY - forwardY * distanceM).coerceAtLeast(0.10f)
-    val eyeZM = targetZ - forwardZ * distanceM
+    // Eye position in meters
+    val eyeDist = if (isOrtho) maxOf(distanceM, 4.0f) else distanceM
+    val eyeXM = targetX - forwardX * eyeDist
+    val eyeYM = if (isOrtho && kotlin.math.abs(pitchDeg) < 5f) targetY else (targetY - forwardY * eyeDist).coerceAtLeast(0.10f)
+    val eyeZM = targetZ - forwardZ * eyeDist
 
-    // Actual forward vector from clamped eye to target
-    val rawDx = targetX - eyeXM
-    val rawDy = targetY - eyeYM
-    val rawDz = targetZ - eyeZM
-    val forwardLen = sqrt(rawDx * rawDx + rawDy * rawDy + rawDz * rawDz).coerceAtLeast(1e-5f)
-    val fx = rawDx / forwardLen
-    val fy = rawDy / forwardLen
-    val fz = rawDz / forwardLen
+    val fx = forwardX
+    val fy = forwardY
+    val fz = forwardZ
 
-    // Right = normalize(cross(forward, worldUp(0,1,0))) = normalize((-fz, 0, fx))
+    // Right = normalize(cross(forward, worldUp(0,1,0)))
     val rLen = sqrt(fz * fz + fx * fx).coerceAtLeast(1e-5f)
     val rx = -fz / rLen
     val ry = 0f
@@ -339,25 +337,49 @@ private fun pickContainerAtScreenTap(
     val uz = rx * fy - ry * fx
 
     val aspect = viewportWidthPx / viewportHeightPx.coerceAtLeast(1f)
-    val (halfTanX, halfTanY) = if (aspect >= 1f) {
-        val tanV = kotlin.math.tan(Math.toRadians(24.0)).toFloat() // 48° vertical FOV / 2
-        (tanV * aspect) to tanV
-    } else {
-        val tanH = kotlin.math.tan(Math.toRadians(29.0)).toFloat() // 58° horizontal FOV / 2
-        tanH to (tanH / aspect.coerceAtLeast(0.1f))
-    }
-
     val normalizedX = (2f * tapPos.x / viewportWidthPx) - 1f
     val normalizedY = 1f - (2f * tapPos.y / viewportHeightPx)
 
-    val dirX = fx + normalizedX * halfTanX * rx + normalizedY * halfTanY * ux
-    val dirY = fy + normalizedX * halfTanX * ry + normalizedY * halfTanY * uy
-    val dirZ = fz + normalizedX * halfTanX * rz + normalizedY * halfTanY * uz
+    val originX: Float
+    val originY: Float
+    val originZ: Float
+    val dirX: Float
+    val dirY: Float
+    val dirZ: Float
+
+    if (isOrtho) {
+        val halfH = orthoSize * 0.5f
+        val halfW = halfH * aspect
+        originX = eyeXM + normalizedX * halfW * rx + normalizedY * halfH * ux
+        originY = eyeYM + normalizedX * halfW * ry + normalizedY * halfH * uy
+        originZ = eyeZM + normalizedX * halfW * rz + normalizedY * halfH * uz
+        dirX = fx
+        dirY = fy
+        dirZ = fz
+    } else {
+        val (halfTanX, halfTanY) = if (aspect >= 1f) {
+            val tanV = kotlin.math.tan(Math.toRadians(24.0)).toFloat()
+            (tanV * aspect) to tanV
+        } else {
+            val tanH = kotlin.math.tan(Math.toRadians(29.0)).toFloat()
+            tanH to (tanH / aspect.coerceAtLeast(0.1f))
+        }
+        val dx = fx + normalizedX * halfTanX * rx + normalizedY * halfTanY * ux
+        val dy = fy + normalizedX * halfTanX * ry + normalizedY * halfTanY * uy
+        val dz = fz + normalizedX * halfTanX * rz + normalizedY * halfTanY * uz
+        val dLen = sqrt(dx * dx + dy * dy + dz * dz).coerceAtLeast(1e-5f)
+        originX = eyeXM
+        originY = eyeYM
+        originZ = eyeZM
+        dirX = dx / dLen
+        dirY = dy / dLen
+        dirZ = dz / dLen
+    }
 
     return room.pickContainerByRayMm(
-        rayOriginX = eyeXM * 1000f,
-        rayOriginY = eyeYM * 1000f,
-        rayOriginZ = eyeZM * 1000f,
+        rayOriginX = originX * 1000f,
+        rayOriginY = originY * 1000f,
+        rayOriginZ = originZ * 1000f,
         rayDirX = dirX,
         rayDirY = dirY,
         rayDirZ = dirZ,
@@ -431,6 +453,7 @@ fun RoomScreen() {
     val yawAnim = remember { Animatable(180f) }
     val pitchAnim = remember { Animatable(0f) }
     val distanceAnim = remember { Animatable(3.40f) }
+    val orthoSizeAnim = remember { Animatable(3.0f) }
 
     fun switchToTopDownView() {
         currentViewMode = RoomViewMode.TOP_DOWN
@@ -438,12 +461,22 @@ fun RoomScreen() {
         val centerX = room.clearWidthMm * 0.5f * MM_TO_M
         val centerZ = room.clearDepthMm * 0.5f * MM_TO_M
         val maxDim = maxOf(room.clearWidthMm, room.clearDepthMm) * MM_TO_M
+        val estAspect = if (viewportWidthPx > 10f && viewportHeightPx > 10f) {
+            viewportWidthPx / viewportHeightPx
+        } else {
+            16f / 9f
+        }
+        val targetTopDownOrtho = maxOf(
+            room.clearDepthMm * MM_TO_M * 1.15f,
+            (room.clearWidthMm * MM_TO_M * 1.15f) / estAspect
+        ).coerceIn(2.5f, 15.0f)
         val topDownDist = (maxDim * 1.55f).coerceIn(4.2f, 9.5f)
         coroutineScope.launch {
             launch { yawAnim.animateTo(180f, tween(400, easing = FastOutSlowInEasing)) }
             // Looking straight down: -88° avoids gimbal lock and hides ceiling via backface culling
             launch { pitchAnim.animateTo(-88f, tween(400, easing = FastOutSlowInEasing)) }
             launch { distanceAnim.animateTo(topDownDist, tween(400, easing = FastOutSlowInEasing)) }
+            launch { orthoSizeAnim.animateTo(targetTopDownOrtho, tween(400, easing = FastOutSlowInEasing)) }
             launch { targetXAnim.animateTo(centerX, tween(400, easing = FastOutSlowInEasing)) }
             launch { targetYAnim.animateTo(0.10f, tween(400, easing = FastOutSlowInEasing)) }
             launch { targetZAnim.animateTo(centerZ, tween(400, easing = FastOutSlowInEasing)) }
@@ -468,11 +501,13 @@ fun RoomScreen() {
         }
         val distW = (wallLenM * 0.5f) / (estAspect * tanV)
         val frontDist = (maxOf(distH, distW) * 1.08f).coerceIn(2.4f, 9.0f)
+        val targetOrtho = maxOf(wallHeightM * 1.08f, (wallLenM * 1.08f) / estAspect).coerceIn(1.8f, 12.0f)
 
         coroutineScope.launch {
             launch { yawAnim.animateTo(targetYaw, tween(350, easing = FastOutSlowInEasing)) }
             launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
             launch { distanceAnim.animateTo(frontDist, tween(300, easing = FastOutSlowInEasing)) }
+            launch { orthoSizeAnim.animateTo(targetOrtho, tween(350, easing = FastOutSlowInEasing)) }
             launch { targetXAnim.animateTo(targetPos.x, tween(350, easing = FastOutSlowInEasing)) }
             launch { targetYAnim.animateTo(targetPos.y, tween(350, easing = FastOutSlowInEasing)) }
             launch { targetZAnim.animateTo(targetPos.z, tween(350, easing = FastOutSlowInEasing)) }
@@ -542,12 +577,22 @@ fun RoomScreen() {
         val centerX = room.clearWidthMm * 0.5f * MM_TO_M
         val centerZ = room.clearDepthMm * 0.5f * MM_TO_M
         val maxDim = maxOf(room.clearWidthMm, room.clearDepthMm) * MM_TO_M
+        val estAspect = if (viewportWidthPx > 10f && viewportHeightPx > 10f) {
+            viewportWidthPx / viewportHeightPx
+        } else {
+            16f / 9f
+        }
+        val targetTopDownOrtho = maxOf(
+            room.clearDepthMm * MM_TO_M * 1.15f,
+            (room.clearWidthMm * MM_TO_M * 1.15f) / estAspect
+        ).coerceIn(2.5f, 15.0f)
         val topDownDist = (maxDim * 1.55f).coerceIn(4.2f, 9.0f)
         coroutineScope.launch {
             launch { yawAnim.animateTo(180f, tween(450, easing = FastOutSlowInEasing)) }
             // Zenith pitch at -88°: ceiling disappears automatically via back-face culling
             launch { pitchAnim.animateTo(-88f, tween(450, easing = FastOutSlowInEasing)) }
             launch { distanceAnim.animateTo(topDownDist, tween(450, easing = FastOutSlowInEasing)) }
+            launch { orthoSizeAnim.animateTo(targetTopDownOrtho, tween(450, easing = FastOutSlowInEasing)) }
             launch { targetXAnim.animateTo(centerX, tween(450, easing = FastOutSlowInEasing)) }
             launch { targetYAnim.animateTo(0.10f, tween(450, easing = FastOutSlowInEasing)) }
             launch { targetZAnim.animateTo(centerZ, tween(450, easing = FastOutSlowInEasing)) }
@@ -567,12 +612,22 @@ fun RoomScreen() {
             val centerX = newRoom.clearWidthMm * 0.5f * MM_TO_M
             val centerZ = newRoom.clearDepthMm * 0.5f * MM_TO_M
             val maxDim = maxOf(newRoom.clearWidthMm, newRoom.clearDepthMm) * MM_TO_M
+            val estAspect = if (viewportWidthPx > 10f && viewportHeightPx > 10f) {
+                viewportWidthPx / viewportHeightPx
+            } else {
+                16f / 9f
+            }
+            val targetTopDownOrtho = maxOf(
+                newRoom.clearDepthMm * MM_TO_M * 1.15f,
+                (newRoom.clearWidthMm * MM_TO_M * 1.15f) / estAspect
+            ).coerceIn(2.5f, 15.0f)
             val topDownDist = (maxDim * 1.55f).coerceIn(4.2f, 9.0f)
             coroutineScope.launch {
                 targetXAnim.snapTo(centerX)
                 targetYAnim.snapTo(0.10f)
                 targetZAnim.snapTo(centerZ)
                 distanceAnim.snapTo(topDownDist)
+                orthoSizeAnim.snapTo(targetTopDownOrtho)
             }
         } else {
             val targetPos = getWallTarget(wallStep.intValue, newRoom)
@@ -999,6 +1054,7 @@ fun RoomScreen() {
                                     viewportHeightPx = coordinates.size.height.toFloat().coerceAtLeast(1f)
                                 },
                         ) {
+                            val isOrthoMode = currentViewMode == RoomViewMode.FRONT_2D || currentViewMode == RoomViewMode.TOP_DOWN
                             RoomViewport(
                                 room = room,
                                 targetX = targetXAnim.value,
@@ -1007,6 +1063,8 @@ fun RoomScreen() {
                                 yaw = yawAnim.value,
                                 pitch = pitchAnim.value,
                                 distance = distanceAnim.value,
+                                isOrtho = isOrthoMode,
+                                orthoSize = orthoSizeAnim.value,
                                 selectedContainerId = activeContainer?.id,
                                 onOrbit = { deltaX, deltaY ->
                                     currentViewMode = RoomViewMode.PERSPECTIVE_3D
@@ -1028,7 +1086,7 @@ fun RoomScreen() {
                                     val upX = -rightZ * dirY
                                     val upY = rightZ * dirX - rightX * dirZ
                                     val upZ = rightX * dirY
-                                    val panScale = distanceAnim.value * 0.0016f
+                                    val panScale = if (isOrthoMode) orthoSizeAnim.value * 0.0012f else distanceAnim.value * 0.0016f
                                     val deltaX = -rightX * (panX * panScale) + upX * (panY * panScale)
                                     val deltaY = upY * (panY * panScale)
                                     val deltaZ = -rightZ * (panX * panScale) + upZ * (panY * panScale)
@@ -1040,8 +1098,13 @@ fun RoomScreen() {
                                 },
                                 onZoom = { zoomFactor ->
                                     coroutineScope.launch {
-                                        val newDist = (distanceAnim.value / zoomFactor).coerceIn(0.8f, 10.0f)
-                                        distanceAnim.snapTo(newDist)
+                                        if (isOrthoMode) {
+                                            val newOrtho = (orthoSizeAnim.value / zoomFactor).coerceIn(0.5f, 20.0f)
+                                            orthoSizeAnim.snapTo(newOrtho)
+                                        } else {
+                                            val newDist = (distanceAnim.value / zoomFactor).coerceIn(0.8f, 10.0f)
+                                            distanceAnim.snapTo(newDist)
+                                        }
                                     }
                                 },
                                 onTap = { tapPos, vw, vh ->
@@ -1056,6 +1119,8 @@ fun RoomScreen() {
                                         yawDeg = yawAnim.value,
                                         pitchDeg = pitchAnim.value,
                                         distanceM = distanceAnim.value,
+                                        isOrtho = isOrthoMode,
+                                        orthoSize = orthoSizeAnim.value,
                                     )
                                     selectedContainerId = hitId
                                     if (hitId == null && isEditingContainerInPanel) {
@@ -1965,6 +2030,8 @@ private fun RoomViewport(
     yaw: Float,
     pitch: Float,
     distance: Float,
+    isOrtho: Boolean = false,
+    orthoSize: Float = 3.0f,
     modifier: Modifier = Modifier,
     selectedContainerId: String? = null,
     onOrbit: (Float, Float) -> Unit,
@@ -1989,6 +2056,8 @@ private fun RoomViewport(
             yawAngleDegrees = yaw,
             pitchAngleDegrees = pitch,
             distance = distance,
+            isOrtho = isOrtho,
+            orthoSize = orthoSize,
             selectedContainerId = selectedContainerId,
         )
     }

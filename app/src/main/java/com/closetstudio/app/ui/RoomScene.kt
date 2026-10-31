@@ -55,6 +55,8 @@ fun RoomScene(
     modifier: Modifier = Modifier,
     pitchAngleDegrees: Float = 0f,
     distance: Float = 2.45f,
+    isOrtho: Boolean = false,
+    orthoSize: Float = 3.0f,
     selectedContainerId: String? = null,
 ) {
     val parts = remember(room, selectedContainerId) {
@@ -80,44 +82,50 @@ fun RoomScene(
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val aspect = (maxWidth.value / maxHeight.value.coerceAtLeast(1f)).toDouble()
 
-        LaunchedEffect(room, target, yawAngleDegrees, pitchAngleDegrees, distance, cameraNode, aspect) {
+        LaunchedEffect(room, target, yawAngleDegrees, pitchAngleDegrees, distance, isOrtho, orthoSize, cameraNode, aspect) {
             val yawRad = Math.toRadians(yawAngleDegrees.toDouble()).toFloat()
             val pitchRad = Math.toRadians(pitchAngleDegrees.toDouble()).toFloat()
 
-            // Vector unitario de dirección de la mirada (desde eye hacia target)
+            // Unit gaze direction vector (from eye toward target)
             val dirX = sin(yawRad) * cos(pitchRad)
             val dirY = sin(pitchRad)
             val dirZ = -cos(yawRad) * cos(pitchRad)
 
-            // Enfoque B (Maqueta/Dollhouse): La cámara orbita libremente en 3D
-            // sin topes artificiales. La distancia se mantiene constante para evitar
-            // cualquier compresión o deformación de perspectiva (ojo de pez).
+            // When orthographic, distance only sets the depth placement between near and far planes
+            val eyeDist = if (isOrtho) maxOf(distance, 4.0f) else distance
             val eye = Float3(
-                target.x - (dirX * distance),
-                (target.y - (dirY * distance)).coerceAtLeast(0.10f),
-                target.z - (dirZ * distance),
+                target.x - (dirX * eyeDist),
+                if (isOrtho && kotlin.math.abs(pitchAngleDegrees) < 5f) target.y else (target.y - (dirY * eyeDist)).coerceAtLeast(0.10f),
+                target.z - (dirZ * eyeDist),
             )
 
             manipulator.eye = eye
             manipulator.target = target
 
-            // Lente arquitectónico natural (48° vertical en horizontal, 58° horizontal en vertical)
-            // Elimina la deformación de gran angular en las esquinas (elimina el "ojo de pez")
-            val (fov, direction) = if (aspect >= 1.0) {
-                48.0 to Camera.Fov.VERTICAL
-            } else {
-                58.0 to Camera.Fov.HORIZONTAL
-            }
-
-            android.util.Log.d("RoomScene", "aspect=$aspect fov=$fov dir=$direction eye=$eye target=$target dist=$distance")
             try {
-                cameraNode.setProjection(
-                    fov,
-                    aspect,
-                    0.05,
-                    50.0,
-                    direction,
-                )
+                if (isOrtho) {
+                    val halfH = (orthoSize * 0.5f).toDouble()
+                    val halfW = halfH * aspect
+                    cameraNode.setProjection(
+                        Camera.Projection.ORTHO,
+                        -halfW, halfW,
+                        -halfH, halfH,
+                        0.05, 50.0,
+                    )
+                } else {
+                    val (fov, direction) = if (aspect >= 1.0) {
+                        48.0 to Camera.Fov.VERTICAL
+                    } else {
+                        58.0 to Camera.Fov.HORIZONTAL
+                    }
+                    cameraNode.setProjection(
+                        fov,
+                        aspect,
+                        0.05,
+                        50.0,
+                        direction,
+                    )
+                }
             } catch (t: Throwable) {
                 android.util.Log.e("RoomScene", "setProjection error", t)
             }
