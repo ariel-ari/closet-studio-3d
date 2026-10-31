@@ -39,11 +39,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.Label
+import androidx.compose.material.icons.automirrored.filled.LabelOff
 import androidx.compose.material.icons.automirrored.filled.MergeType
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
@@ -114,6 +117,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -210,6 +214,131 @@ private fun getWallLengthMm(wall: WallIndex, room: RoomSpec): Float {
     val dx = pEnd.x - pStart.x
     val dz = pEnd.z - pStart.z
     return kotlin.math.sqrt(dx * dx + dz * dz).coerceAtLeast(100f)
+}
+
+private data class WallAnchor(
+    val wall: WallIndex,
+    val name: String,
+    val lengthMm: Float,
+    val topCenter3D: Float3,
+    val normal: Float3,
+)
+
+private fun getWallAnchors(room: RoomSpec, lang: AppLanguage): List<WallAnchor> {
+    val nw = room.vertexNW
+    val ne = room.vertexNE
+    val se = room.vertexSE
+    val sw = room.vertexSW
+    val topY = (room.clearHeightMm + 40f) * MM_TO_M
+
+    val wallA = WallAnchor(
+        wall = WallIndex.WEST,
+        name = wallDisplayName(WallIndex.WEST, lang),
+        lengthMm = getWallLengthMm(WallIndex.WEST, room),
+        topCenter3D = Float3((sw.x + nw.x) * 0.5f * MM_TO_M, topY, (sw.z + nw.z) * 0.5f * MM_TO_M),
+        normal = Float3(1f, 0f, 0f),
+    )
+    val wallB = WallAnchor(
+        wall = WallIndex.NORTH,
+        name = wallDisplayName(WallIndex.NORTH, lang),
+        lengthMm = getWallLengthMm(WallIndex.NORTH, room),
+        topCenter3D = Float3((nw.x + ne.x) * 0.5f * MM_TO_M, topY, (nw.z + ne.z) * 0.5f * MM_TO_M),
+        normal = Float3(0f, 0f, 1f),
+    )
+    val wallC = WallAnchor(
+        wall = WallIndex.EAST,
+        name = wallDisplayName(WallIndex.EAST, lang),
+        lengthMm = getWallLengthMm(WallIndex.EAST, room),
+        topCenter3D = Float3((ne.x + se.x) * 0.5f * MM_TO_M, topY, (ne.z + se.z) * 0.5f * MM_TO_M),
+        normal = Float3(-1f, 0f, 0f),
+    )
+    val wallSouth = WallAnchor(
+        wall = WallIndex.SOUTH,
+        name = wallDisplayName(WallIndex.SOUTH, lang),
+        lengthMm = getWallLengthMm(WallIndex.SOUTH, room),
+        topCenter3D = Float3((se.x + sw.x) * 0.5f * MM_TO_M, topY, (se.z + sw.z) * 0.5f * MM_TO_M),
+        normal = Float3(0f, 0f, -1f),
+    )
+    return listOf(wallA, wallB, wallC, wallSouth)
+}
+
+private fun project3DToScreen(
+    point: Float3,
+    targetX: Float,
+    targetY: Float,
+    targetZ: Float,
+    yawDeg: Float,
+    pitchDeg: Float,
+    distanceM: Float,
+    isOrtho: Boolean,
+    orthoSize: Float,
+    viewportWidth: Float,
+    viewportHeight: Float,
+): Offset? {
+    if (viewportWidth <= 10f || viewportHeight <= 10f) return null
+
+    val yawRad = Math.toRadians(yawDeg.toDouble()).toFloat()
+    val pitchRad = Math.toRadians(pitchDeg.toDouble()).toFloat()
+
+    val forwardX = sin(yawRad) * cos(pitchRad)
+    val forwardY = sin(pitchRad)
+    val forwardZ = -cos(yawRad) * cos(pitchRad)
+
+    val eyeDist = if (isOrtho) maxOf(distanceM, 4.0f) else distanceM
+    val eyeX = targetX - forwardX * eyeDist
+    val eyeY = if (isOrtho && kotlin.math.abs(pitchDeg) < 5f) targetY else (targetY - forwardY * eyeDist).coerceAtLeast(0.10f)
+    val eyeZ = targetZ - forwardZ * eyeDist
+
+    val vx = point.x - eyeX
+    val vy = point.y - eyeY
+    val vz = point.z - eyeZ
+
+    val rightLen = sqrt(forwardZ * forwardZ + forwardX * forwardX).coerceAtLeast(0.001f)
+    val rightX = -forwardZ / rightLen
+    val rightY = 0f
+    val rightZ = forwardX / rightLen
+
+    val upX = -rightZ * forwardY
+    val upY = rightZ * forwardX - rightX * forwardZ
+    val upZ = rightX * forwardY
+
+    val camX = vx * rightX + vy * rightY + vz * rightZ
+    val camY = vx * upX + vy * upY + vz * upZ
+    val camZ = vx * forwardX + vy * forwardY + vz * forwardZ
+
+    if (camZ <= 0.05f) return null
+
+    val aspect = (viewportWidth / viewportHeight).toDouble()
+    val ndcX: Float
+    val ndcY: Float
+
+    if (isOrtho) {
+        val halfH = orthoSize * 0.5f
+        val halfW = (halfH * aspect).toFloat()
+        ndcX = camX / halfW
+        ndcY = camY / halfH
+    } else {
+        val (fov, isVertical) = if (aspect >= 1.0) {
+            48.0 to true
+        } else {
+            58.0 to false
+        }
+        val (tanHalfW, tanHalfH) = if (isVertical) {
+            val tanV = kotlin.math.tan(Math.toRadians(fov * 0.5)).toFloat()
+            (tanV * aspect.toFloat()) to tanV
+        } else {
+            val tanH = kotlin.math.tan(Math.toRadians(fov * 0.5)).toFloat()
+            tanH to (tanH / aspect.toFloat())
+        }
+        ndcX = camX / (camZ * tanHalfW)
+        ndcY = camY / (camZ * tanHalfH)
+    }
+
+    if (ndcX < -1.35f || ndcX > 1.35f || ndcY < -1.35f || ndcY > 1.35f) return null
+
+    val screenX = (ndcX * 0.5f + 0.5f) * viewportWidth
+    val screenY = (1.0f - (ndcY * 0.5f + 0.5f)) * viewportHeight
+    return Offset(screenX, screenY)
 }
 
 enum class RoomViewMode {
@@ -445,6 +574,7 @@ fun RoomScreen() {
 
     // View Mode (3D Perspective, Top-Down, Front 2D)
     var currentViewMode by remember { mutableStateOf(RoomViewMode.PERSPECTIVE_3D) }
+    var showWallLabels by remember { mutableStateOf(true) }
     var viewportWidthPx by remember { mutableFloatStateOf(1f) }
     var viewportHeightPx by remember { mutableFloatStateOf(1f) }
 
@@ -971,6 +1101,24 @@ fun RoomScreen() {
                                 )
                             }
 
+                            // Toggle Wall Labels (A, B, C, D)
+                            IconButton(
+                                onClick = {
+                                    showWallLabels = !showWallLabels
+                                    coroutineScope.launch {
+                                        messageHostState.showSnackbar(
+                                            if (showWallLabels) s.wallLabelsShownToast else s.wallLabelsHiddenToast
+                                        )
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = if (showWallLabels) Icons.AutoMirrored.Filled.Label else Icons.AutoMirrored.Filled.LabelOff,
+                                    contentDescription = s.toggleWallLabels,
+                                    tint = if (showWallLabels) Color.White else Color.White.copy(alpha = 0.55f),
+                                )
+                            }
+
                             // Info (ⓘ)
                             IconButton(
                                 onClick = { showInfoDialog = true },
@@ -1028,6 +1176,35 @@ fun RoomScreen() {
                                         onClick = {
                                             showOverflowMenu = false
                                             showLanguageDialog = true
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Text(s.toggleWallLabels)
+                                                if (showWallLabels) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (showWallLabels) Icons.AutoMirrored.Filled.Label else Icons.AutoMirrored.Filled.LabelOff,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            showWallLabels = !showWallLabels
                                         },
                                     )
                                 }
@@ -1137,6 +1314,149 @@ fun RoomScreen() {
                                 modifier = Modifier.fillMaxSize(),
                             )
 
+                            // Floating Wall Labels (A, B, C, D)
+                            if (showWallLabels && !showDimensionsSheet) {
+                                if (currentViewMode == RoomViewMode.FRONT_2D) {
+                                    val currentWall = wallIndexFromStep(wallStep.intValue)
+                                    val wallLenMm = getWallLengthMm(currentWall, room).roundToInt()
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
+                                        shadowElevation = 6.dp,
+                                        modifier = Modifier
+                                            .align(Alignment.TopCenter)
+                                            .padding(top = 16.dp),
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Label,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                            Text(
+                                                text = getWallName(wallStep.intValue, appLanguage),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .width(1.dp)
+                                                    .height(14.dp)
+                                                    .background(MaterialTheme.colorScheme.outlineVariant),
+                                            )
+                                            Text(
+                                                text = "$wallLenMm mm",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    val anchors = remember(room, appLanguage) { getWallAnchors(room, appLanguage) }
+                                    val currentFocusedWall = wallIndexFromStep(wallStep.intValue)
+                                    val isTopDown = currentViewMode == RoomViewMode.TOP_DOWN
+
+                                    val yawRad = Math.toRadians(yawAnim.value.toDouble()).toFloat()
+                                    val pitchRad = Math.toRadians(pitchAnim.value.toDouble()).toFloat()
+                                    val dirX = sin(yawRad) * cos(pitchRad)
+                                    val dirY = sin(pitchRad)
+                                    val dirZ = -cos(yawRad) * cos(pitchRad)
+                                    val eyeDist = if (isOrthoMode) maxOf(distanceAnim.value, 4.0f) else distanceAnim.value
+                                    val eyeX = targetXAnim.value - dirX * eyeDist
+                                    val eyeY = if (isOrthoMode && kotlin.math.abs(pitchAnim.value) < 5f) targetYAnim.value else (targetYAnim.value - dirY * eyeDist).coerceAtLeast(0.10f)
+                                    val eyeZ = targetZAnim.value - dirZ * eyeDist
+
+                                    anchors.forEach { anchor ->
+                                        val toWallX = anchor.topCenter3D.x - eyeX
+                                        val toWallY = anchor.topCenter3D.y - eyeY
+                                        val toWallZ = anchor.topCenter3D.z - eyeZ
+                                        val dotNormal = toWallX * anchor.normal.x + toWallY * anchor.normal.y + toWallZ * anchor.normal.z
+
+                                        val isVisibleFacing = isTopDown || dotNormal < 0.25f
+
+                                        if (isVisibleFacing) {
+                                            val screenPos = project3DToScreen(
+                                                point = anchor.topCenter3D,
+                                                targetX = targetXAnim.value,
+                                                targetY = targetYAnim.value,
+                                                targetZ = targetZAnim.value,
+                                                yawDeg = yawAnim.value,
+                                                pitchDeg = pitchAnim.value,
+                                                distanceM = distanceAnim.value,
+                                                isOrtho = isOrthoMode,
+                                                orthoSize = orthoSizeAnim.value,
+                                                viewportWidth = viewportWidthPx,
+                                                viewportHeight = viewportHeightPx,
+                                            )
+
+                                            if (screenPos != null) {
+                                                val isWallActive = anchor.wall == currentFocusedWall
+                                                val isContainerOnThisWall = activeContainer?.wall == anchor.wall
+
+                                                Box(
+                                                    modifier = Modifier.layout { measurable, constraints ->
+                                                        val placeable = measurable.measure(constraints)
+                                                        layout(placeable.width, placeable.height) {
+                                                            val minX = 16
+                                                            val maxX = (viewportWidthPx.toInt() - placeable.width - 16).coerceAtLeast(minX)
+                                                            val minY = 16
+                                                            val maxY = (viewportHeightPx.toInt() - placeable.height - 80).coerceAtLeast(minY)
+                                                            val x = (screenPos.x - placeable.width / 2f).roundToInt().coerceIn(minX, maxX)
+                                                            val y = (screenPos.y - placeable.height / 2f).roundToInt().coerceIn(minY, maxY)
+                                                            placeable.place(x, y)
+                                                        }
+                                                    }
+                                                ) {
+                                                    Surface(
+                                                        onClick = {
+                                                            switchWall(stepFromWallIndex(anchor.wall))
+                                                        },
+                                                        shape = RoundedCornerShape(14.dp),
+                                                        color = when {
+                                                            isContainerOnThisWall -> Color(0xFF1E6B47)
+                                                            isWallActive -> Color(0xFF2C55B5)
+                                                            else -> Color(0xFF1E293B).copy(alpha = 0.88f)
+                                                        },
+                                                        border = BorderStroke(
+                                                            1.5.dp,
+                                                            if (isContainerOnThisWall || isWallActive) Color.White else Color.White.copy(alpha = 0.65f),
+                                                        ),
+                                                        shadowElevation = 5.dp,
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.AutoMirrored.Filled.Label,
+                                                                contentDescription = null,
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(13.dp),
+                                                            )
+                                                            Text(
+                                                                text = "${anchor.name} (${(anchor.lengthMm / 10f).roundToInt() / 100f}m)",
+                                                                style = MaterialTheme.typography.labelMedium,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color.White,
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             // Left Navigation Button (<)
                             FilledIconButton(
                                 onClick = { switchWall(wallStep.intValue - 1) },
@@ -1146,6 +1466,7 @@ fun RoomScreen() {
                                 ),
                                 modifier = Modifier
                                     .align(Alignment.CenterStart)
+                                    .offset(y = (-36).dp)
                                     .padding(start = 16.dp)
                                     .size(48.dp)
                                     .shadow(4.dp, CircleShape),
@@ -1160,13 +1481,29 @@ fun RoomScreen() {
                             // Floating Action Buttons for Selected Container (Edit ✏️, Duplicate ❐, Delete 🗑️)
                             if (activeContainer != null) {
                                 Column(
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(if (isLandscape) 8.dp else 12.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     modifier = Modifier
                                         .align(Alignment.BottomStart)
                                         .navigationBarsPadding()
-                                        .padding(start = 16.dp, bottom = 76.dp),
+                                        .padding(start = 16.dp, bottom = if (isLandscape) 18.dp else 76.dp),
                                 ) {
+                                    // Wall Badge for active container
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = Color(0xFF2C55B5),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.85f)),
+                                        shadowElevation = 4.dp,
+                                    ) {
+                                        Text(
+                                            text = wallDisplayName(activeContainer.wall, appLanguage),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        )
+                                    }
+
                                     // 1. Edit Button (✏️ opens right-side size inspector)
                                     Surface(
                                         onClick = {
@@ -1182,7 +1519,7 @@ fun RoomScreen() {
                                         },
                                         border = BorderStroke(2.dp, Color(0xFF4355B9)),
                                         shadowElevation = 6.dp,
-                                        modifier = Modifier.size(52.dp),
+                                        modifier = Modifier.size(if (isLandscape) 46.dp else 52.dp),
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
@@ -1193,7 +1530,7 @@ fun RoomScreen() {
                                                 } else {
                                                     Color(0xFF3949AB)
                                                 },
-                                                modifier = Modifier.size(24.dp),
+                                                modifier = Modifier.size(if (isLandscape) 22.dp else 24.dp),
                                             )
                                         }
                                     }
@@ -1214,14 +1551,14 @@ fun RoomScreen() {
                                         color = Color(0xFFE5DFDA).copy(alpha = 0.95f),
                                         border = BorderStroke(2.dp, Color(0xFF4355B9)),
                                         shadowElevation = 6.dp,
-                                        modifier = Modifier.size(52.dp),
+                                        modifier = Modifier.size(if (isLandscape) 46.dp else 52.dp),
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
                                                 imageVector = Icons.Default.ContentCopy,
                                                 contentDescription = s.duplicateContainerDesc,
                                                 tint = Color(0xFF3949AB),
-                                                modifier = Modifier.size(23.dp),
+                                                modifier = Modifier.size(if (isLandscape) 21.dp else 23.dp),
                                             )
                                         }
                                     }
@@ -1243,14 +1580,14 @@ fun RoomScreen() {
                                         color = Color(0xFFE5DFDA).copy(alpha = 0.95f),
                                         border = BorderStroke(2.dp, Color(0xFF4355B9)),
                                         shadowElevation = 6.dp,
-                                        modifier = Modifier.size(52.dp),
+                                        modifier = Modifier.size(if (isLandscape) 46.dp else 52.dp),
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
                                                 imageVector = Icons.Default.DeleteOutline,
                                                 contentDescription = s.deleteContainerDesc,
                                                 tint = Color(0xFF651FFF),
-                                                modifier = Modifier.size(25.dp),
+                                                modifier = Modifier.size(if (isLandscape) 23.dp else 25.dp),
                                             )
                                         }
                                     }
@@ -1266,6 +1603,7 @@ fun RoomScreen() {
                                 ),
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
+                                    .offset(y = (-36).dp)
                                     .padding(end = 16.dp)
                                     .size(48.dp)
                                     .shadow(4.dp, CircleShape),
@@ -1355,7 +1693,7 @@ fun RoomScreen() {
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
                                     .navigationBarsPadding()
-                                    .padding(end = 16.dp, bottom = 76.dp),
+                                    .padding(end = 16.dp, bottom = if (isLandscape) 18.dp else 76.dp),
                             ) {
                                 Column(
                                     horizontalAlignment = Alignment.End,

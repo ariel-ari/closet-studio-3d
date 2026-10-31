@@ -116,6 +116,9 @@ data class UiStrings(
     val unfuseCornerButton: String,
     val cornerFusedToast: String,
     val cornerUnfusedToast: String,
+    val toggleWallLabels: String,
+    val wallLabelsShownToast: String,
+    val wallLabelsHiddenToast: String,
 )
 
 private val SpanishStrings = UiStrings(
@@ -206,6 +209,9 @@ private val SpanishStrings = UiStrings(
     unfuseCornerButton = "Separar Esquina",
     cornerFusedToast = "Esquina fusionada en L",
     cornerUnfusedToast = "Esquina separada",
+    toggleWallLabels = "Nombres de paredes",
+    wallLabelsShownToast = "Nombres de paredes visibles",
+    wallLabelsHiddenToast = "Nombres de paredes ocultos",
 )
 
 private val EnglishStrings = UiStrings(
@@ -296,6 +302,9 @@ private val EnglishStrings = UiStrings(
     unfuseCornerButton = "Unmerge Corner",
     cornerFusedToast = "Corner merged into L-joint",
     cornerUnfusedToast = "Corner unmerged",
+    toggleWallLabels = "Wall labels",
+    wallLabelsShownToast = "Wall labels visible",
+    wallLabelsHiddenToast = "Wall labels hidden",
 )
 
 fun stringsFor(lang: AppLanguage): UiStrings = when (lang) {
