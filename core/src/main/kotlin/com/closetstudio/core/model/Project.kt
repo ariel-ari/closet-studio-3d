@@ -30,6 +30,7 @@ data class DoorSpec(
     val widthMm: Float = 900f,
     val heightMm: Float = 2100f,
     val frameThicknessMm: Float = 40f,
+    val lockWidth: Boolean = true,
 ) {
     init {
         require(offsetMm >= 0f) { "door offset must be non-negative" }
@@ -178,35 +179,55 @@ data class RoomSpec(
         return copy(door = door.copy(offsetMm = centered))
     }
 
-    private fun applyDoorAdaptation(keepCentered: Boolean): RoomSpec {
-        return if (keepCentered) {
-            withCenteredDoor()
+    /**
+     * Adapts the door opening and segments D/E when the room polygon changes:
+     * - If `door.lockWidth == true` (default): `door.widthMm` stays strictly invariant (`🔒`)
+     *   and does NOT grow or shrink with the walls; only segments D and E absorb the wall length change.
+     * - If `door.lockWidth == false` (`🔓`): `door.widthMm` scales proportionally with the door wall length.
+     */
+    private fun applyDoorAdaptation(
+        keepCentered: Boolean,
+        previousWallLengthMm: Float = doorWallLengthMm,
+    ): RoomSpec {
+        val currentWallLen = doorWallLengthMm
+        val updatedWidth = if (door.lockWidth || previousWallLengthMm <= 1f) {
+            door.widthMm
         } else {
-            val clampedOffset = door.offsetMm.coerceIn(0f, maxDoorOffset())
-            copy(door = door.copy(offsetMm = clampedOffset))
+            val ratio = currentWallLen / previousWallLengthMm
+            ((door.widthMm * ratio / 10f).let { kotlin.math.round(it) * 10f })
+                .coerceIn(500f, (currentWallLen - 200f).coerceAtLeast(500f))
         }
+        val maxOffset = (currentWallLen - updatedWidth).coerceAtLeast(0f)
+        val updatedOffset = if (keepCentered) {
+            maxOffset / 2f
+        } else {
+            door.offsetMm.coerceIn(0f, maxOffset)
+        }
+        return copy(door = door.copy(widthMm = updatedWidth, offsetMm = updatedOffset))
     }
 
     /** Resets the room to orthogonal 90° corners with B = C and A = South. */
     fun withOrthogonalReset(keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         return copy(
             wallBMm = clearDepthMm,
             angleACDeg = 90f,
             angleABDeg = 90f,
-        ).applyDoorAdaptation(keepDoorCentered)
+        ).applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
     }
 
     /** Updates Wall A (North), propagating constraints if South wall or bottom corners are locked. */
     fun withWallA(newAMm: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         val clampedA = newAMm.coerceIn(1500f, 6000f)
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
         var next = copy(clearWidthMm = clampedA)
         next = when {
-            lockAngleCD -> next.solveBForTargetCD(oldCD, keepDoorCentered)
+            lockAngleCD -> next.solveBForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
             lockAngleBE -> {
                 val targetCD = 360f - next.angleACDeg - next.angleABDeg - oldBE
-                next.solveBForTargetCD(targetCD, keepDoorCentered)
+                next.solveBForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
             }
             lockWallSouth && !lockWallB -> {
                 val targetSouth = wallSouthMm
@@ -221,21 +242,22 @@ data class RoomSpec(
             }
             else -> next
         }
-        return next.applyDoorAdaptation(keepDoorCentered)
+        return next.applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
     }
 
     /** Updates Wall B (East) independently, adapting unlocked walls/angles to close polygon. */
     fun withWallB(newBMm: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         val clampedB = newBMm.coerceIn(1500f, 6000f)
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
         val targetSouth = wallSouthMm
         var next = copy(wallBMm = clampedB)
         next = when {
-            lockAngleBE && !lockWallC -> next.solveCForTargetBE(oldBE, keepDoorCentered)
+            lockAngleBE && !lockWallC -> next.solveCForTargetBE(oldBE, keepDoorCentered, prevDoorWallLen)
             lockAngleCD && !lockWallC -> {
                 val targetBE = 360f - next.angleACDeg - next.angleABDeg - oldCD
-                next.solveCForTargetBE(targetBE, keepDoorCentered)
+                next.solveCForTargetBE(targetBE, keepDoorCentered, prevDoorWallLen)
             }
             lockWallSouth && !lockWallA -> {
                 val sw = next.vertexSW
@@ -257,21 +279,22 @@ data class RoomSpec(
             }
             else -> next
         }
-        return next.applyDoorAdaptation(keepDoorCentered)
+        return next.applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
     }
 
     /** Updates Wall C (West) independently, adapting unlocked walls/angles to close polygon. */
     fun withWallC(newCMm: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         val clampedC = newCMm.coerceIn(1500f, 6000f)
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
         val targetSouth = wallSouthMm
         var next = copy(clearDepthMm = clampedC)
         next = when {
-            lockAngleCD && !lockWallB -> next.solveBForTargetCD(oldCD, keepDoorCentered)
+            lockAngleCD && !lockWallB -> next.solveBForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
             lockAngleBE && !lockWallB -> {
                 val targetCD = 360f - next.angleACDeg - next.angleABDeg - oldBE
-                next.solveBForTargetCD(targetCD, keepDoorCentered)
+                next.solveBForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
             }
             lockWallSouth && !lockWallA -> {
                 val sw = next.vertexSW
@@ -294,11 +317,12 @@ data class RoomSpec(
             }
             else -> next
         }
-        return next.applyDoorAdaptation(keepDoorCentered)
+        return next.applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
     }
 
     /** Directly updates the total length of the South Wall (Door wall), adapting unlocked Wall A or Wall B. */
     fun withWallSouth(targetSouthMm: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         val clampedS = targetSouthMm.coerceIn(1500f, 6000f)
         val sw = vertexSW
         val se = vertexSE
@@ -306,7 +330,7 @@ data class RoomSpec(
         val dz = se.z - sw.z
         val dx = sqrt((clampedS * clampedS - dz * dz).coerceAtLeast(250_000f))
         val newA = (sw.x + dx + wallBMm * cos(radAB)).coerceIn(1500f, 6000f)
-        return copy(clearWidthMm = newA).applyDoorAdaptation(keepDoorCentered)
+        return copy(clearWidthMm = newA).applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
     }
 
     /**
@@ -315,7 +339,11 @@ data class RoomSpec(
      * adjusting ONLY `wallBMm` so that `angleACDeg`, `angleABDeg`, and `angleCDDeg` are exact,
      * and the remaining corner `angleBEDeg = 360° - (AC + AB + CD)`.
      */
-    private fun solveBForTargetCD(targetCDDeg: Float, keepDoorCentered: Boolean): RoomSpec {
+    private fun solveBForTargetCD(
+        targetCDDeg: Float,
+        keepDoorCentered: Boolean,
+        previousWallLengthMm: Float = doorWallLengthMm,
+    ): RoomSpec {
         val clampedCD = targetCDDeg.coerceIn(45f, 135f)
         val sw = vertexSW
         val ne = vertexNE
@@ -338,9 +366,9 @@ data class RoomSpec(
         val denom = dBZ * dSurX - dBX * dSurZ
         if (abs(denom) > 1e-4f) {
             val newB = (((sw.z - ne.z) * dSurX - (sw.x - ne.x) * dSurZ) / denom).coerceIn(500f, 9000f)
-            return copy(wallBMm = newB).applyDoorAdaptation(keepDoorCentered)
+            return copy(wallBMm = newB).applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
         }
-        return applyDoorAdaptation(keepDoorCentered)
+        return applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
     }
 
     /**
@@ -349,7 +377,11 @@ data class RoomSpec(
      * adjusting ONLY `clearDepthMm` (Wall C) so that `angleACDeg`, `angleABDeg`, and `angleBEDeg` are exact,
      * and the remaining corner `angleCDDeg = 360° - (AC + AB + BE)`.
      */
-    private fun solveCForTargetBE(targetBEDeg: Float, keepDoorCentered: Boolean): RoomSpec {
+    private fun solveCForTargetBE(
+        targetBEDeg: Float,
+        keepDoorCentered: Boolean,
+        previousWallLengthMm: Float = doorWallLengthMm,
+    ): RoomSpec {
         val clampedBE = targetBEDeg.coerceIn(45f, 135f)
         val se = vertexSE
         val nw = vertexNW
@@ -372,9 +404,9 @@ data class RoomSpec(
         val denom = dCZ * dSurX - dCX * dSurZ
         if (abs(denom) > 1e-4f) {
             val newC = (((se.z - nw.z) * dSurX - (se.x - nw.x) * dSurZ) / denom).coerceIn(500f, 9000f)
-            return copy(clearDepthMm = newC).applyDoorAdaptation(keepDoorCentered)
+            return copy(clearDepthMm = newC).applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
         }
-        return applyDoorAdaptation(keepDoorCentered)
+        return applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
     }
 
     /**
@@ -383,6 +415,7 @@ data class RoomSpec(
      * and adapting the required wall lengths (`Wall B` or `Wall C`).
      */
     fun withAngleAC(newAngleDeg: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         val clamped = newAngleDeg.coerceIn(65f, 115f)
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
@@ -393,7 +426,7 @@ data class RoomSpec(
             lockAngleCD && lockAngleBE -> {
                 if (!lockAngleAB) {
                     val newAB = (angleABDeg - delta).coerceIn(65f, 115f)
-                    copy(angleACDeg = clamped, angleABDeg = newAB).solveBForTargetCD(oldCD, keepDoorCentered)
+                    copy(angleACDeg = clamped, angleABDeg = newAB).solveBForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
                 } else {
                     // All other 3 corners are locked -> geometrically impossible to change 1 angle in a quad
                     this
@@ -401,12 +434,12 @@ data class RoomSpec(
             }
             // Corner C-D is locked -> preserve oldCD and let unlocked Corner B-E (or A-B) absorb the change
             lockAngleCD -> {
-                copy(angleACDeg = clamped).solveBForTargetCD(oldCD, keepDoorCentered)
+                copy(angleACDeg = clamped).solveBForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
             }
             // Corner B-E is locked -> preserve oldBE and let unlocked Corner C-D absorb the change
             lockAngleBE -> {
                 val targetCD = 360f - clamped - angleABDeg - oldBE
-                copy(angleACDeg = clamped).solveBForTargetCD(targetCD, keepDoorCentered)
+                copy(angleACDeg = clamped).solveBForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
             }
             // Both C-D and B-E are unlocked -> keep Wall C & B lengths or adapt South if locked
             else -> {
@@ -421,7 +454,7 @@ data class RoomSpec(
                     val newA = (sw.x + dx + wallBMm * cos(radAB)).coerceIn(1500f, 6000f)
                     next = next.copy(clearWidthMm = newA)
                 }
-                next.applyDoorAdaptation(keepDoorCentered)
+                next.applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
             }
         }
     }
@@ -432,6 +465,7 @@ data class RoomSpec(
      * and adapting the required wall lengths (`Wall B` or `Wall C`).
      */
     fun withAngleAB(newAngleDeg: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         val clamped = newAngleDeg.coerceIn(65f, 115f)
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
@@ -442,7 +476,7 @@ data class RoomSpec(
             lockAngleCD && lockAngleBE -> {
                 if (!lockAngleAC) {
                     val newAC = (angleACDeg - delta).coerceIn(65f, 115f)
-                    copy(angleABDeg = clamped, angleACDeg = newAC).solveBForTargetCD(oldCD, keepDoorCentered)
+                    copy(angleABDeg = clamped, angleACDeg = newAC).solveBForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
                 } else {
                     this
                 }
@@ -450,11 +484,11 @@ data class RoomSpec(
             // Corner B-E is locked -> preserve oldBE and let unlocked Corner C-D absorb the change
             lockAngleBE -> {
                 val targetCD = 360f - angleACDeg - clamped - oldBE
-                copy(angleABDeg = clamped).solveBForTargetCD(targetCD, keepDoorCentered)
+                copy(angleABDeg = clamped).solveBForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
             }
             // Corner C-D is locked -> preserve oldCD and let unlocked Corner B-E absorb the change
             lockAngleCD -> {
-                copy(angleABDeg = clamped).solveBForTargetCD(oldCD, keepDoorCentered)
+                copy(angleABDeg = clamped).solveBForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
             }
             // Both C-D and B-E are unlocked
             else -> {
@@ -469,7 +503,7 @@ data class RoomSpec(
                     val newA = (sw.x + dx + wallBMm * cos(radAB)).coerceIn(1500f, 6000f)
                     next = next.copy(clearWidthMm = newA)
                 }
-                next.applyDoorAdaptation(keepDoorCentered)
+                next.applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
             }
         }
     }
@@ -479,6 +513,7 @@ data class RoomSpec(
      * `lockAngleAB`, `lockAngleBE`).
      */
     fun withAngleCD(targetCDDeg: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         val clamped = targetCDDeg.coerceIn(65f, 115f)
         val delta = clamped - angleCDDeg
 
@@ -486,21 +521,21 @@ data class RoomSpec(
             // If Corner B-E is unlocked (and unless Wall B is locked while Angle A-C is unlocked),
             // keep both top angles AC and AB intact and adapt Wall B so B-E absorbs -delta
             !lockAngleBE && (!lockWallB || lockAngleAC) -> {
-                solveBForTargetCD(clamped, keepDoorCentered)
+                solveBForTargetCD(clamped, keepDoorCentered, prevDoorWallLen)
             }
             // If Corner B-E is locked (or Wall B is locked) and Angle A-C is unlocked -> A-C absorbs -delta, preserving B-E!
             !lockAngleAC -> {
                 val newAC = (angleACDeg - delta).coerceIn(65f, 115f)
-                copy(angleACDeg = newAC).solveBForTargetCD(clamped, keepDoorCentered)
+                copy(angleACDeg = newAC).solveBForTargetCD(clamped, keepDoorCentered, prevDoorWallLen)
             }
             // If Corner B-E and A-C are locked, but Angle A-B is unlocked -> A-B absorbs -delta, preserving B-E and A-C!
             !lockAngleAB -> {
                 val newAB = (angleABDeg - delta).coerceIn(65f, 115f)
-                copy(angleABDeg = newAB).solveBForTargetCD(clamped, keepDoorCentered)
+                copy(angleABDeg = newAB).solveBForTargetCD(clamped, keepDoorCentered, prevDoorWallLen)
             }
             // Fallback if B-E is unlocked
             !lockAngleBE -> {
-                solveBForTargetCD(clamped, keepDoorCentered)
+                solveBForTargetCD(clamped, keepDoorCentered, prevDoorWallLen)
             }
             else -> {
                 // All other 3 corners (AC, AB, BE) are locked -> cannot change 1 angle alone
@@ -514,6 +549,7 @@ data class RoomSpec(
      * `lockAngleAB`, `lockAngleCD`).
      */
     fun withAngleBE(targetBEDeg: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
+        val prevDoorWallLen = doorWallLengthMm
         val clamped = targetBEDeg.coerceIn(65f, 115f)
         val oldCD = angleCDDeg
         val delta = clamped - angleBEDeg
@@ -523,25 +559,25 @@ data class RoomSpec(
             // keep both top angles AC and AB intact and adapt Wall C (or Wall B) so C-D absorbs -delta
             !lockAngleCD && (!lockWallC || lockAngleAB) -> {
                 if (!lockWallC || lockWallB) {
-                    solveCForTargetBE(clamped, keepDoorCentered)
+                    solveCForTargetBE(clamped, keepDoorCentered, prevDoorWallLen)
                 } else {
                     val targetCD = 360f - angleACDeg - angleABDeg - clamped
-                    solveBForTargetCD(targetCD, keepDoorCentered)
+                    solveBForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
                 }
             }
             // If Corner C-D is locked (or Wall C is locked) and Angle A-B is unlocked -> A-B absorbs -delta, preserving C-D!
             !lockAngleAB -> {
                 val newAB = (angleABDeg - delta).coerceIn(65f, 115f)
-                copy(angleABDeg = newAB).solveBForTargetCD(oldCD, keepDoorCentered)
+                copy(angleABDeg = newAB).solveBForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
             }
             // If Corner C-D and A-B are locked, but Angle A-C is unlocked -> A-C absorbs -delta, preserving C-D and A-B!
             !lockAngleAC -> {
                 val newAC = (angleACDeg - delta).coerceIn(65f, 115f)
-                copy(angleACDeg = newAC).solveBForTargetCD(oldCD, keepDoorCentered)
+                copy(angleACDeg = newAC).solveBForTargetCD(oldCD, keepDoorCentered, prevDoorWallLen)
             }
             // Fallback if C-D is unlocked
             !lockAngleCD -> {
-                solveCForTargetBE(clamped, keepDoorCentered)
+                solveCForTargetBE(clamped, keepDoorCentered, prevDoorWallLen)
             }
             else -> {
                 // All other 3 corners (AC, AB, CD) are locked -> cannot change 1 angle alone

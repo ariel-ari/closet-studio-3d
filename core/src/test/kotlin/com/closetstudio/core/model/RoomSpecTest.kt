@@ -136,4 +136,31 @@ class RoomSpecTest {
         assertEquals(97f, updated.angleCDDeg, 0.05f)
         assertEquals(90f, updated.angleBEDeg, 0.05f) // Locked B-E stays 90°!
     }
+
+    @Test
+    fun `locked door width remains strictly invariant when walls or angles grow`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            door = DoorSpec(widthMm = 900f, lockWidth = true),
+        )
+        val widened = room.withWallA(4800f, keepDoorCentered = true)
+        assertEquals(900f, widened.door.widthMm, 0.01f)
+        assertEquals(1950f, widened.segmentDMm, 0.5f)
+        assertEquals(1950f, widened.segmentEMm, 0.5f)
+
+        val angled = widened.withAngleAC(100f, keepDoorCentered = true)
+        assertEquals(900f, angled.door.widthMm, 0.01f)
+    }
+
+    @Test
+    fun `unlocked door width scales proportionally when door wall grows`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            door = DoorSpec(widthMm = 900f, lockWidth = false),
+        )
+        val widened = room.withWallSouth(4800f, keepDoorCentered = true)
+        assertEquals(1200f, widened.door.widthMm, 10f)
+    }
 }

@@ -692,7 +692,7 @@ private fun DoorWallInspectorCard(
                         color = Color(0xFF2C55B5),
                     )
                     Text(
-                        text = "+ 🚪 ${room.door.widthMm.roundToInt()} mm +",
+                        text = "+ 🚪 ${room.door.widthMm.roundToInt()} mm ${if (room.door.lockWidth) "🔒" else "🔓"} +",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF8B5A2B),
@@ -711,15 +711,80 @@ private fun DoorWallInspectorCard(
                 }
             }
 
-            DimensionSlider(
-                label = "Ancho de Puerta (Inmutable al mover lados)",
-                valueMm = room.door.widthMm,
-                rangeMm = 600f..1400f,
-                stepMm = 50f,
-                onValueChange = { newDoorW ->
-                    onRoomChange(room.withDoorWidth(newDoorW, keepCentered = doorCentered))
-                },
-            )
+            // Door Width Lock + Slider section
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (room.door.lockWidth) {
+                        "Ancho de Puerta 🔒 (no crece con las paredes)"
+                    } else {
+                        "Ancho de Puerta 🔓 (escala con la pared)"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+
+                FilterChip(
+                    selected = room.door.lockWidth,
+                    onClick = {
+                        onRoomChange(room.copy(door = room.door.copy(lockWidth = !room.door.lockWidth)))
+                    },
+                    label = {
+                        Text(
+                            text = if (room.door.lockWidth) "Puerta Fija 🔒" else "Escalar 🔓",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (room.door.lockWidth) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    },
+                )
+            }
+
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "${room.door.widthMm.roundToInt()} mm (${String.format(Locale.US, "%.2f", room.door.widthMm / 1000f)} m)",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF8B5A2B),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StepButton("-50") {
+                            if (!room.door.lockWidth) {
+                                onRoomChange(room.withDoorWidth((room.door.widthMm - 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
+                            }
+                        }
+                        StepButton("+50") {
+                            if (!room.door.lockWidth) {
+                                onRoomChange(room.withDoorWidth((room.door.widthMm + 50f).coerceIn(600f, 1400f), keepCentered = doorCentered))
+                            }
+                        }
+                    }
+                }
+                Slider(
+                    value = room.door.widthMm.coerceIn(600f, 1400f),
+                    enabled = !room.door.lockWidth,
+                    onValueChange = { raw ->
+                        val snapped = (raw / 50f).roundToInt() * 50f
+                        onRoomChange(room.withDoorWidth(snapped.coerceIn(600f, 1400f), keepCentered = doorCentered))
+                    },
+                    valueRange = 600f..1400f,
+                    steps = 15,
+                )
+            }
 
             val maxSide = room.maxDoorOffset().coerceAtLeast(100f)
             DimensionSlider(
