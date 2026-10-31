@@ -17,6 +17,7 @@ class ProjectStorage(context: Context) {
     private val indexFile = File(storageDir, "projects.json")
     private val activeMetaFile = File(storageDir, "active_project_id.txt")
     private val languageFile = File(storageDir, "app_language.txt")
+    private val unitSystemFile = File(storageDir, "app_unit_system.txt")
 
     fun getLanguageCode(): String {
         if (!languageFile.exists()) return "ES"
@@ -26,6 +27,16 @@ class ProjectStorage(context: Context) {
 
     fun setLanguageCode(code: String) {
         runCatching { languageFile.writeText(code.trim().uppercase()) }
+    }
+
+    fun getUnitSystemCode(): String {
+        if (!unitSystemFile.exists()) return "mm"
+        return runCatching { unitSystemFile.readText().trim().lowercase().ifEmpty { "mm" } }
+            .getOrDefault("mm")
+    }
+
+    fun setUnitSystemCode(code: String) {
+        runCatching { unitSystemFile.writeText(code.trim().lowercase()) }
     }
 
     fun loadAllProjects(): List<SavedProject> {

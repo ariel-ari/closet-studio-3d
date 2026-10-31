@@ -74,6 +74,7 @@ fun RoomDimensionsPanel(
     modifier: Modifier = Modifier,
 ) {
     val lang = LocalAppLanguage.current
+    val unitSystem = LocalAppUnitSystem.current
     var doorCentered by remember(room.isDoorCentered) { mutableStateOf(room.isDoorCentered) }
 
     Surface(
@@ -380,6 +381,7 @@ private fun WallInspectorCard(
     onMatchOpposite: () -> Unit,
 ) {
     val lang = LocalAppLanguage.current
+    val unitSystem = LocalAppUnitSystem.current
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
@@ -446,20 +448,25 @@ private fun WallInspectorCard(
 
             // Direct Numeric Input + Fine-tuning step buttons
             DirectNumericInputRow(
-                label = tr(lang, "Medida $letter (mm)", "Dimension $letter (mm)"),
-                currentValueText = valueMm.roundToInt().toString(),
-                unitSuffix = "mm",
+                label = tr(lang, "Medida $letter (${unitSystem.symbol})", "Dimension $letter (${unitSystem.symbol})"),
+                currentValueText = unitSystem.formatInput(valueMm),
+                unitSuffix = unitSystem.symbol,
                 enabled = !isLocked,
-                onCommitValue = { parsed ->
+                isDecimal = unitSystem != AppUnitSystem.MM,
+                isImperial = unitSystem == AppUnitSystem.INCH || unitSystem == AppUnitSystem.FEET_INCHES,
+                onCommitText = { rawText ->
                     if (!isLocked) {
-                        onValueChange(parsed.coerceAtLeast(0f))
+                        unitSystem.parseInput(rawText)?.let { parsed ->
+                            onValueChange(parsed.coerceAtLeast(0f))
+                        }
                     }
                 },
                 trailingButtons = {
-                    StepButton("-100", enabled = !isLocked) { onValueChange((valueMm - 100f).coerceAtLeast(0f)) }
-                    StepButton("-25", enabled = !isLocked) { onValueChange((valueMm - 25f).coerceAtLeast(0f)) }
-                    StepButton("+25", enabled = !isLocked) { onValueChange((valueMm + 25f).coerceAtLeast(0f)) }
-                    StepButton("+100", enabled = !isLocked) { onValueChange((valueMm + 100f).coerceAtLeast(0f)) }
+                    unitSystem.stepValues().forEach { (stepLabel, stepDeltaMm) ->
+                        StepButton(stepLabel, enabled = !isLocked) {
+                            onValueChange((valueMm + stepDeltaMm).coerceAtLeast(0f))
+                        }
+                    }
                 },
             )
 
@@ -467,7 +474,7 @@ private fun WallInspectorCard(
                 label = tr(lang, "Deslizar medida ($letter)", "Slide dimension ($letter)"),
                 valueMm = valueMm,
                 rangeMm = rangeMm,
-                stepMm = 25f,
+                stepMm = unitSystem.sliderStepMm(),
                 enabled = !isLocked,
                 onValueChange = onValueChange,
             )
@@ -500,6 +507,7 @@ private fun CornerInspectorCard(
     onAngleChange: (Float) -> Unit,
 ) {
     val lang = LocalAppLanguage.current
+    val unitSystem = LocalAppUnitSystem.current
     val canEdit = !isLocked && !allOthersLocked
     Card(
         colors = CardDefaults.cardColors(
@@ -640,6 +648,7 @@ private fun DoorWallInspectorCard(
     onRoomChange: (RoomSpec) -> Unit,
 ) {
     val lang = LocalAppLanguage.current
+    val unitSystem = LocalAppUnitSystem.current
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
@@ -743,7 +752,7 @@ private fun DoorWallInspectorCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "E: ${room.segmentDMm.roundToInt()} mm",
+                        text = "E: ${unitSystem.formatCompact(room.segmentDMm)}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF2C55B5),
@@ -765,20 +774,20 @@ private fun DoorWallInspectorCard(
                             modifier = Modifier.size(14.dp),
                         )
                         Text(
-                            text = "${room.door.widthMm.roundToInt()} mm +",
+                            text = "${unitSystem.formatCompact(room.door.widthMm)} +",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF8B5A2B),
                         )
                     }
                     Text(
-                        text = "D: ${room.segmentEMm.roundToInt()} mm",
+                        text = "D: ${unitSystem.formatCompact(room.segmentEMm)}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF2C55B5),
                     )
                     Text(
-                        text = "= ${room.doorWallLengthMm.roundToInt()} mm",
+                        text = "= ${unitSystem.formatCompact(room.doorWallLengthMm)}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -787,27 +796,24 @@ private fun DoorWallInspectorCard(
 
             // Total Wall E-D Direct Input & Slider
             DirectNumericInputRow(
-                label = tr(lang, "Total Pared E-D (mm)", "Total Wall E-D (mm)"),
-                currentValueText = room.doorWallLengthMm.roundToInt().toString(),
-                unitSuffix = "mm",
+                label = tr(lang, "Total Pared E-D (${unitSystem.symbol})", "Total Wall E-D (${unitSystem.symbol})"),
+                currentValueText = unitSystem.formatInput(room.doorWallLengthMm),
+                unitSuffix = unitSystem.symbol,
                 enabled = !totalLocked,
-                onCommitValue = { parsed ->
+                isDecimal = unitSystem != AppUnitSystem.MM,
+                isImperial = unitSystem == AppUnitSystem.INCH || unitSystem == AppUnitSystem.FEET_INCHES,
+                onCommitText = { rawText ->
                     if (!totalLocked) {
-                        onRoomChange(room.withWallSouth(parsed.coerceAtLeast(0f), keepDoorCentered = doorCentered))
+                        unitSystem.parseInput(rawText)?.let { parsed ->
+                            onRoomChange(room.withWallSouth(parsed.coerceAtLeast(0f), keepDoorCentered = doorCentered))
+                        }
                     }
                 },
                 trailingButtons = {
-                    StepButton("-100", enabled = !totalLocked) {
-                        onRoomChange(room.withWallSouth((room.doorWallLengthMm - 100f).coerceAtLeast(0f), keepDoorCentered = doorCentered))
-                    }
-                    StepButton("-25", enabled = !totalLocked) {
-                        onRoomChange(room.withWallSouth((room.doorWallLengthMm - 25f).coerceAtLeast(0f), keepDoorCentered = doorCentered))
-                    }
-                    StepButton("+25", enabled = !totalLocked) {
-                        onRoomChange(room.withWallSouth((room.doorWallLengthMm + 25f).coerceAtLeast(0f), keepDoorCentered = doorCentered))
-                    }
-                    StepButton("+100", enabled = !totalLocked) {
-                        onRoomChange(room.withWallSouth((room.doorWallLengthMm + 100f).coerceAtLeast(0f), keepDoorCentered = doorCentered))
+                    unitSystem.stepValues().forEach { (stepLabel, stepDeltaMm) ->
+                        StepButton(stepLabel, enabled = !totalLocked) {
+                            onRoomChange(room.withWallSouth((room.doorWallLengthMm + stepDeltaMm).coerceAtLeast(0f), keepDoorCentered = doorCentered))
+                        }
                     }
                 },
             )
@@ -820,6 +826,7 @@ private fun DoorWallInspectorCard(
                 },
                 valueMm = room.doorWallLengthMm,
                 rangeMm = 0f..maxOf(10000f, room.doorWallLengthMm * 1.5f),
+                stepMm = unitSystem.sliderStepMm(),
                 enabled = !totalLocked,
             ) { newTotal ->
                 if (!totalLocked) {
@@ -876,21 +883,24 @@ private fun DoorWallInspectorCard(
             }
 
             DirectNumericInputRow(
-                label = tr(lang, "Puerta (mm)", "Door (mm)"),
-                currentValueText = room.door.widthMm.roundToInt().toString(),
-                unitSuffix = "mm",
+                label = tr(lang, "Puerta (${unitSystem.symbol})", "Door (${unitSystem.symbol})"),
+                currentValueText = unitSystem.formatInput(room.door.widthMm),
+                unitSuffix = unitSystem.symbol,
                 enabled = !room.door.lockWidth,
-                onCommitValue = { parsed ->
+                isDecimal = unitSystem != AppUnitSystem.MM,
+                isImperial = unitSystem == AppUnitSystem.INCH || unitSystem == AppUnitSystem.FEET_INCHES,
+                onCommitText = { rawText ->
                     if (!room.door.lockWidth) {
-                        onRoomChange(room.withDoorWidth(parsed.coerceAtLeast(0f), keepCentered = doorCentered))
+                        unitSystem.parseInput(rawText)?.let { parsed ->
+                            onRoomChange(room.withDoorWidth(parsed.coerceAtLeast(0f), keepCentered = doorCentered))
+                        }
                     }
                 },
                 trailingButtons = {
-                    StepButton("-50", enabled = !room.door.lockWidth) {
-                        onRoomChange(room.withDoorWidth((room.door.widthMm - 50f).coerceAtLeast(0f), keepCentered = doorCentered))
-                    }
-                    StepButton("+50", enabled = !room.door.lockWidth) {
-                        onRoomChange(room.withDoorWidth((room.door.widthMm + 50f).coerceAtLeast(0f), keepCentered = doorCentered))
+                    unitSystem.stepValues().forEach { (stepLabel, stepDeltaMm) ->
+                        StepButton(stepLabel, enabled = !room.door.lockWidth) {
+                            onRoomChange(room.withDoorWidth((room.door.widthMm + stepDeltaMm).coerceAtLeast(0f), keepCentered = doorCentered))
+                        }
                     }
                 },
             )
@@ -899,6 +909,7 @@ private fun DoorWallInspectorCard(
                 label = tr(lang, "Deslizar Puerta", "Slide Door Width"),
                 valueMm = room.door.widthMm,
                 rangeMm = 0f..maxOf(3000f, room.doorWallLengthMm, room.door.widthMm * 1.5f),
+                stepMm = unitSystem.sliderStepMm(),
                 enabled = !room.door.lockWidth,
             ) { newW ->
                 if (!room.door.lockWidth) {
@@ -954,24 +965,26 @@ private fun DoorWallInspectorCard(
             }
 
             DirectNumericInputRow(
-                label = tr(lang, "Tramo E (mm)", "Segment E (mm)"),
-                currentValueText = room.segmentDMm.roundToInt().toString(),
-                unitSuffix = "mm",
+                label = tr(lang, "Tramo E (${unitSystem.symbol})", "Segment E (${unitSystem.symbol})"),
+                currentValueText = unitSystem.formatInput(room.segmentDMm),
+                unitSuffix = unitSystem.symbol,
                 enabled = canEditE,
-                onCommitValue = { parsed ->
+                isDecimal = unitSystem != AppUnitSystem.MM,
+                isImperial = unitSystem == AppUnitSystem.INCH || unitSystem == AppUnitSystem.FEET_INCHES,
+                onCommitText = { rawText ->
                     if (canEditE) {
-                        if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentD(parsed.coerceAtLeast(0f)))
+                        unitSystem.parseInput(rawText)?.let { parsed ->
+                            if (doorCentered) onDoorCenteredChange(false)
+                            onRoomChange(room.withSegmentD(parsed.coerceAtLeast(0f)))
+                        }
                     }
                 },
                 trailingButtons = {
-                    StepButton("-50", enabled = canEditE) {
-                        if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentD((room.segmentDMm - 50f).coerceAtLeast(0f)))
-                    }
-                    StepButton("+50", enabled = canEditE) {
-                        if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentD((room.segmentDMm + 50f).coerceAtLeast(0f)))
+                    unitSystem.stepValues().forEach { (stepLabel, stepDeltaMm) ->
+                        StepButton(stepLabel, enabled = canEditE) {
+                            if (doorCentered) onDoorCenteredChange(false)
+                            onRoomChange(room.withSegmentD((room.segmentDMm + stepDeltaMm).coerceAtLeast(0f)))
+                        }
                     }
                 },
             )
@@ -984,6 +997,7 @@ private fun DoorWallInspectorCard(
                 },
                 valueMm = room.segmentDMm,
                 rangeMm = 0f..maxSliderSide,
+                stepMm = unitSystem.sliderStepMm(),
                 enabled = canEditE,
             ) { newE ->
                 if (canEditE) {
@@ -1032,24 +1046,26 @@ private fun DoorWallInspectorCard(
             }
 
             DirectNumericInputRow(
-                label = tr(lang, "Tramo D (mm)", "Segment D (mm)"),
-                currentValueText = room.segmentEMm.roundToInt().toString(),
-                unitSuffix = "mm",
+                label = tr(lang, "Tramo D (${unitSystem.symbol})", "Segment D (${unitSystem.symbol})"),
+                currentValueText = unitSystem.formatInput(room.segmentEMm),
+                unitSuffix = unitSystem.symbol,
                 enabled = canEditD,
-                onCommitValue = { parsed ->
+                isDecimal = unitSystem != AppUnitSystem.MM,
+                isImperial = unitSystem == AppUnitSystem.INCH || unitSystem == AppUnitSystem.FEET_INCHES,
+                onCommitText = { rawText ->
                     if (canEditD) {
-                        if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentE(parsed.coerceAtLeast(0f)))
+                        unitSystem.parseInput(rawText)?.let { parsed ->
+                            if (doorCentered) onDoorCenteredChange(false)
+                            onRoomChange(room.withSegmentE(parsed.coerceAtLeast(0f)))
+                        }
                     }
                 },
                 trailingButtons = {
-                    StepButton("-50", enabled = canEditD) {
-                        if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentE((room.segmentEMm - 50f).coerceAtLeast(0f)))
-                    }
-                    StepButton("+50", enabled = canEditD) {
-                        if (doorCentered) onDoorCenteredChange(false)
-                        onRoomChange(room.withSegmentE((room.segmentEMm + 50f).coerceAtLeast(0f)))
+                    unitSystem.stepValues().forEach { (stepLabel, stepDeltaMm) ->
+                        StepButton(stepLabel, enabled = canEditD) {
+                            if (doorCentered) onDoorCenteredChange(false)
+                            onRoomChange(room.withSegmentE((room.segmentEMm + stepDeltaMm).coerceAtLeast(0f)))
+                        }
                     }
                 },
             )
@@ -1062,6 +1078,7 @@ private fun DoorWallInspectorCard(
                 },
                 valueMm = room.segmentEMm,
                 rangeMm = 0f..maxSliderSide,
+                stepMm = unitSystem.sliderStepMm(),
                 enabled = canEditD,
             ) { newD ->
                 if (canEditD) {
@@ -1080,7 +1097,9 @@ private fun DirectNumericInputRow(
     unitSuffix: String,
     enabled: Boolean,
     isDecimal: Boolean = false,
-    onCommitValue: (Float) -> Unit,
+    isImperial: Boolean = false,
+    onCommitValue: ((Float) -> Unit)? = null,
+    onCommitText: ((String) -> Unit)? = null,
     trailingButtons: @Composable () -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
@@ -1091,12 +1110,16 @@ private fun DirectNumericInputRow(
     }
 
     fun applyInput() {
-        val normalized = textValue.trim().replace(',', '.')
-        val parsed = normalized.toFloatOrNull()
-        if (parsed != null) {
-            onCommitValue(parsed)
-        } else {
-            textValue = currentValueText
+        if (onCommitText != null) {
+            onCommitText(textValue)
+        } else if (onCommitValue != null) {
+            val normalized = textValue.trim().replace(',', '.')
+            val parsed = normalized.toFloatOrNull()
+            if (parsed != null) {
+                onCommitValue(parsed)
+            } else {
+                textValue = currentValueText
+            }
         }
         focusManager.clearFocus()
     }
@@ -1109,7 +1132,11 @@ private fun DirectNumericInputRow(
         OutlinedTextField(
             value = textValue,
             onValueChange = { raw ->
-                val filtered = raw.filter { (it.isDigit()) || (isDecimal && ((it == '.') || (it == ','))) }
+                val filtered = if (isImperial) {
+                    raw.filter { it.isDigit() || it == '.' || it == ',' || it == '\'' || it == '"' || it == '/' || it == ' ' }
+                } else {
+                    raw.filter { (it.isDigit()) || (isDecimal && ((it == '.') || (it == ','))) }
+                }
                 textValue = filtered
             },
             enabled = enabled,
@@ -1132,7 +1159,7 @@ private fun DirectNumericInputRow(
                 }
             },
             keyboardOptions = KeyboardOptions(
-                keyboardType = if (isDecimal) KeyboardType.Decimal else KeyboardType.Number,
+                keyboardType = if (isImperial) KeyboardType.Text else if (isDecimal) KeyboardType.Decimal else KeyboardType.Number,
                 imeAction = ImeAction.Done,
             ),
             keyboardActions = KeyboardActions(
@@ -1208,6 +1235,7 @@ private fun DimensionSlider(
     stepMm: Float = 25f,
     onValueChange: (Float) -> Unit,
 ) {
+    val unitSystem = LocalAppUnitSystem.current
     val steps = ((rangeMm.endInclusive - rangeMm.start) / stepMm).toInt() - 1
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -1222,7 +1250,7 @@ private fun DimensionSlider(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "${valueMm.roundToInt()} mm (${String.format(Locale.US, "%.2f", valueMm / 1000f)} m)",
+                text = unitSystem.format(valueMm),
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF2C55B5),

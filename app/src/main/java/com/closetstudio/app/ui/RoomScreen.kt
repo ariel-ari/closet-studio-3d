@@ -729,6 +729,10 @@ fun RoomScreen() {
     var showCreateNewDialog by remember { mutableStateOf(false) }
     var showMyProjectsDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showUnitSystemDialog by remember { mutableStateOf(false) }
+    var appUnitSystem by remember {
+        mutableStateOf(AppUnitSystem.fromCode(projectStorage.getUnitSystemCode()))
+    }
     var showUnitsColumn by remember { mutableStateOf(false) }
     var isEditingContainerInPanel by remember { mutableStateOf(false) }
     var selectedContainerId by remember { mutableStateOf<String?>(null) }
@@ -967,14 +971,31 @@ fun RoomScreen() {
         }
     }
 
-    CompositionLocalProvider(LocalAppLanguage provides appLanguage) {
+    fun selectUnitSystem(unit: AppUnitSystem) {
+        appUnitSystem = unit
+        projectStorage.setUnitSystemCode(unit.code)
+        coroutineScope.launch {
+            messageHostState.showSnackbar("${s.unitsChangedToast} ${unit.displayName(appLanguage)}")
+        }
+    }
+
+    CompositionLocalProvider(
+        LocalAppLanguage provides appLanguage,
+        LocalAppUnitSystem provides appUnitSystem,
+    ) {
         ModalNavigationDrawer(
             drawerState = drawerState,
             drawerContent = {
                 ModalDrawerSheet(
                     modifier = Modifier.width(300.dp),
                 ) {
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 24.dp),
+                    ) {
+                        Spacer(modifier = Modifier.height(20.dp))
                     Text(
                         text = "Closet Studio 3D",
                         style = MaterialTheme.typography.titleLarge,
@@ -1138,8 +1159,41 @@ fun RoomScreen() {
                         },
                         modifier = Modifier.padding(horizontal = 12.dp),
                     )
+
+                    NavigationDrawerItem(
+                        label = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(s.unitsMenuLabel)
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFF2C55B5),
+                                ) {
+                                    Text(
+                                        text = appUnitSystem.symbol.uppercase(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    )
+                                }
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Straighten, contentDescription = null) },
+                        selected = false,
+                        onClick = {
+                            coroutineScope.launch { drawerState.close() }
+                            showUnitSystemDialog = true
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-            },
+            }
+        },
         ) {
             BoxWithConstraints(
                 modifier = Modifier
@@ -1352,6 +1406,14 @@ fun RoomScreen() {
                                         onClick = {
                                             showOverflowMenu = false
                                             showLanguageDialog = true
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("${s.unitsMenuLabel}: ${appUnitSystem.symbol.uppercase()}") },
+                                        leadingIcon = { Icon(Icons.Default.Straighten, null) },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            showUnitSystemDialog = true
                                         },
                                     )
                                     DropdownMenuItem(
@@ -1580,7 +1642,7 @@ fun RoomScreen() {
                                                     .background(MaterialTheme.colorScheme.outlineVariant),
                                             )
                                             Text(
-                                                text = "$wallLenMm mm",
+                                                text = appUnitSystem.format(wallLenMm.toFloat()),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1684,7 +1746,7 @@ fun RoomScreen() {
                                                                 modifier = Modifier.size(13.dp),
                                                             )
                                                             Text(
-                                                                text = "${anchor.letter} (${(anchor.lengthMm / 10f).roundToInt() / 100f}m)",
+                                                                text = "${anchor.letter} (${appUnitSystem.formatCompact(anchor.lengthMm)})",
                                                                 style = MaterialTheme.typography.labelMedium,
                                                                 fontWeight = FontWeight.Bold,
                                                                 color = Color.White,
@@ -2301,12 +2363,12 @@ fun RoomScreen() {
                         text = {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text("• ${s.projectLabel}: $currentProjectName")
-                                Text("• ${s.wallALabel}: ${room.wallCMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallCMm / 1000f)} m)")
-                                Text("• ${s.wallBLabel}: ${room.wallAMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallAMm / 1000f)} m)")
-                                Text("• ${s.wallCLabel}: ${room.wallBMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallBMm / 1000f)} m)")
-                                Text("• ${s.wallEDTotalLabel}: ${room.wallSouthMm.toInt()} mm (E:${room.segmentDMm.toInt()} + ${s.doorWord}:${room.door.widthMm.toInt()} + D:${room.segmentEMm.toInt()})")
+                                Text("• ${s.wallALabel}: ${appUnitSystem.format(room.wallCMm)}")
+                                Text("• ${s.wallBLabel}: ${appUnitSystem.format(room.wallAMm)}")
+                                Text("• ${s.wallCLabel}: ${appUnitSystem.format(room.wallBMm)}")
+                                Text("• ${s.wallEDTotalLabel}: ${appUnitSystem.format(room.wallSouthMm)} (E:${appUnitSystem.formatCompact(room.segmentDMm)} + ${s.doorWord}:${appUnitSystem.formatCompact(room.door.widthMm)} + D:${appUnitSystem.formatCompact(room.segmentEMm)})")
                                 Text("• ${s.anglesLabel}: A-B=${String.format(Locale.US, "%.1f°", room.angleACDeg)}, B-C=${String.format(Locale.US, "%.1f°", room.angleABDeg)}, C-D=${String.format(Locale.US, "%.1f°", room.angleBEDeg)}, A-E=${String.format(Locale.US, "%.1f°", room.angleCDDeg)}")
-                                Text("• ${s.heightYLabel}: ${room.clearHeightMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearHeightMm / 1000f)} m)")
+                                Text("• ${s.heightYLabel}: ${appUnitSystem.format(room.clearHeightMm)}")
                                 Text("• ${s.currentViewLabel}: ${getWallName(wallStep.intValue, appLanguage, splitDoorWall)}")
                             }
                         },
@@ -2345,7 +2407,7 @@ fun RoomScreen() {
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Text(
-                                        text = "A: ${room.wallCMm.roundToInt()} • B: ${room.wallAMm.roundToInt()} • C: ${room.wallBMm.roundToInt()} • E-D: ${room.wallSouthMm.roundToInt()} mm",
+                                        text = "A: ${appUnitSystem.formatCompact(room.wallCMm)} • B: ${appUnitSystem.formatCompact(room.wallAMm)} • C: ${appUnitSystem.formatCompact(room.wallBMm)} • E-D: ${appUnitSystem.formatCompact(room.wallSouthMm)}",
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color(0xFF2C55B5),
@@ -2589,7 +2651,12 @@ fun RoomScreen() {
                         icon = { Icon(Icons.Default.Language, contentDescription = null, tint = Color(0xFF2C55B5)) },
                         title = { Text(s.selectLanguageTitle) },
                         text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
                                 Text(
                                     text = s.selectLanguageSubtitle,
                                     style = MaterialTheme.typography.bodySmall,
@@ -2669,6 +2736,104 @@ fun RoomScreen() {
                         },
                         confirmButton = {
                             TextButton(onClick = { showLanguageDialog = false }) {
+                                Text(s.closeButton)
+                            }
+                        },
+                    )
+                }
+
+                // Measurement Units Selector Dialog
+                if (showUnitSystemDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showUnitSystemDialog = false },
+                        icon = { Icon(Icons.Default.Straighten, contentDescription = null, tint = Color(0xFF2C55B5)) },
+                        title = { Text(s.selectUnitsTitle) },
+                        text = {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(
+                                    text = s.selectUnitsSubtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                AppUnitSystem.entries.forEach { unitOption ->
+                                    val isSelected = unitOption == appUnitSystem
+                                    Card(
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isSelected) {
+                                                Color(0xFF2C55B5).copy(alpha = 0.14f)
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                            },
+                                        ),
+                                        onClick = {
+                                            selectUnitSystem(unitOption)
+                                            showUnitSystemDialog = false
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = if (isSelected) Color(0xFF2C55B5) else MaterialTheme.colorScheme.surface,
+                                                ) {
+                                                    Text(
+                                                        text = unitOption.symbol.uppercase(),
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    )
+                                                }
+                                                Column {
+                                                    Text(
+                                                        text = unitOption.displayName(appLanguage),
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isSelected) Color(0xFF2C55B5) else MaterialTheme.colorScheme.onSurface,
+                                                    )
+                                                    Text(
+                                                        text = unitOption.subtitle(appLanguage),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                            }
+                                            if (isSelected) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = Color(0xFF2C55B5),
+                                                ) {
+                                                    Text(
+                                                        text = s.activeBadge,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = Color.White,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showUnitSystemDialog = false }) {
                                 Text(s.closeButton)
                             }
                         },
@@ -3028,6 +3193,7 @@ private fun ContainerDimensionControlCard(
     maxMm: Float,
     onValueChange: (Float) -> Unit,
 ) {
+    val unitSystem = LocalAppUnitSystem.current
     val safeMax = maxMm.coerceAtLeast(minMm + 1f)
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -3049,7 +3215,7 @@ private fun ContainerDimensionControlCard(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "${valueMm.roundToInt()} mm (max ${maxMm.roundToInt()})",
+                    text = "${unitSystem.format(valueMm)} (max ${unitSystem.format(maxMm)})",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2C55B5),
@@ -3060,7 +3226,7 @@ private fun ContainerDimensionControlCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                listOf(-100f, -25f, +25f, +100f).forEach { delta ->
+                unitSystem.stepValues().forEach { (stepLabel, delta) ->
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.surface,
@@ -3075,7 +3241,7 @@ private fun ContainerDimensionControlCard(
                             modifier = Modifier.padding(vertical = 6.dp),
                         ) {
                             Text(
-                                text = if (delta > 0) "+${delta.toInt()}" else "${delta.toInt()}",
+                                text = stepLabel,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF2C55B5),

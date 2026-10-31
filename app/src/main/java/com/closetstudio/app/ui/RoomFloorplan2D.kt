@@ -85,6 +85,7 @@ fun RoomFloorplan2D(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
+    val unitSystem = LocalAppUnitSystem.current
     val padX = with(density) { 102.dp.toPx() }
     val padTop = with(density) { 62.dp.toPx() }
     val padBottom = with(density) { 76.dp.toPx() }
@@ -468,7 +469,7 @@ fun RoomFloorplan2D(
                 outwardSign = -1f,
                 offsetPx = wallOffsetA,
                 letter = "B",
-                valueText = "${room.wallAMm.roundToInt()} mm",
+                valueText = unitSystem.format(room.wallAMm),
                 isLocked = room.lockWallA,
                 isSelected = selectedElement == FloorplanElement.WallB,
                 badgeColor = Color(0xFF2C55B5),
@@ -480,7 +481,7 @@ fun RoomFloorplan2D(
                 outwardSign = -1f,
                 offsetPx = wallOffsetBC,
                 letter = "C",
-                valueText = "${room.wallBMm.roundToInt()} mm",
+                valueText = unitSystem.format(room.wallBMm),
                 isLocked = room.lockWallB,
                 isSelected = selectedElement == FloorplanElement.WallC,
                 badgeColor = Color(0xFF2C55B5),
@@ -492,7 +493,7 @@ fun RoomFloorplan2D(
                 outwardSign = -1f,
                 offsetPx = wallOffsetBC,
                 letter = "A",
-                valueText = "${room.wallCMm.roundToInt()} mm",
+                valueText = unitSystem.format(room.wallCMm),
                 isLocked = room.lockWallC,
                 isSelected = selectedElement == FloorplanElement.WallA,
                 badgeColor = Color(0xFF2C55B5),
@@ -521,7 +522,7 @@ fun RoomFloorplan2D(
             drawBadgePill(
                 center = midLeft,
                 letter = "E",
-                text = room.segmentDMm.roundToInt().toString(),
+                text = unitSystem.formatCompact(room.segmentDMm),
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
                 isLocked = room.lockSegmentD || room.lockWallSouth,
@@ -529,7 +530,7 @@ fun RoomFloorplan2D(
             drawBadgePill(
                 center = midDoor,
                 letter = "",
-                text = "${room.door.widthMm.roundToInt()} (Total: ${room.wallSouthMm.roundToInt()})",
+                text = "${unitSystem.formatCompact(room.door.widthMm)} (${unitSystem.formatCompact(room.wallSouthMm)})",
                 badgeColor = Color(0xFF8B5A2B),
                 isSelected = isSouthSelected,
                 isLocked = room.door.lockWidth || room.lockWallSouth,
@@ -538,7 +539,7 @@ fun RoomFloorplan2D(
             drawBadgePill(
                 center = midRight,
                 letter = "D",
-                text = room.segmentEMm.roundToInt().toString(),
+                text = unitSystem.formatCompact(room.segmentEMm),
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
                 isLocked = room.lockSegmentE || room.lockWallSouth,

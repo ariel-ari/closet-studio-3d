@@ -123,6 +123,10 @@ data class UiStrings(
     val unifyDoorWallButton: String,
     val doorWallSplitToast: String,
     val doorWallUnifiedToast: String,
+    val unitsMenuLabel: String,
+    val selectUnitsTitle: String,
+    val selectUnitsSubtitle: String,
+    val unitsChangedToast: String,
 )
 
 private val SpanishStrings = UiStrings(
@@ -220,6 +224,10 @@ private val SpanishStrings = UiStrings(
     unifyDoorWallButton = "Unir E-D",
     doorWallSplitToast = "Pared de puerta dividida en tramos E y D",
     doorWallUnifiedToast = "Pared de puerta unificada (E-D)",
+    unitsMenuLabel = "Unidades de medida",
+    selectUnitsTitle = "Seleccionar Unidades de Medida",
+    selectUnitsSubtitle = "Elegí el sistema de medición para visualizar y editar dimensiones",
+    unitsChangedToast = "Unidad de medida cambiada a",
 )
 
 private val EnglishStrings = UiStrings(
@@ -317,6 +325,10 @@ private val EnglishStrings = UiStrings(
     unifyDoorWallButton = "Unify E-D",
     doorWallSplitToast = "Door wall split into segments E and D",
     doorWallUnifiedToast = "Door wall unified (E-D)",
+    unitsMenuLabel = "Measurement units",
+    selectUnitsTitle = "Select Measurement Units",
+    selectUnitsSubtitle = "Choose the measurement system for displaying and editing dimensions",
+    unitsChangedToast = "Measurement unit changed to",
 )
 
 fun stringsFor(lang: AppLanguage): UiStrings = when (lang) {
