@@ -107,6 +107,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
@@ -1391,18 +1394,13 @@ fun RoomScreen() {
                                             ) {
                                                 Row(
                                                     verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                                 ) {
-                                                    Icon(
-                                                        imageVector = if (isFused) Icons.AutoMirrored.Filled.CallSplit else Icons.AutoMirrored.Filled.MergeType,
-                                                        contentDescription = if (isFused) {
-                                                            "${s.unfuseCornerButton} (${candidate.corner.codeLabel})"
-                                                        } else {
-                                                            "${s.fuseCornerButton} (${candidate.corner.codeLabel})"
-                                                        },
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(18.dp),
+                                                    CornerActionIcon(
+                                                        isFused = isFused,
+                                                        color = Color.White,
+                                                        modifier = Modifier.size(20.dp),
                                                     )
                                                     Text(
                                                         text = candidate.corner.codeLabel,
@@ -2592,5 +2590,106 @@ private fun ViewModePillButton(
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = contentColor,
         )
+    }
+}
+
+/**
+ * Custom architectural icon matching the user's reference:
+ * Two square modules meeting along a dashed diagonal miter seam.
+ * - When `isFused == true` (Separar): Arrows point OUTWARD (↖ and ↘) away from the seam.
+ * - When `isFused == false` (Fusionar): Arrows point INWARD (↘ and ↖) toward each other to fuse.
+ */
+@Composable
+fun CornerActionIcon(
+    isFused: Boolean,
+    modifier: Modifier = Modifier,
+    color: Color = Color.White,
+) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val strokeW = (w * 0.088f).coerceIn(1.6f, 3.5f)
+        val stroke = Stroke(
+            width = strokeW,
+            cap = StrokeCap.Square,
+            join = StrokeJoin.Miter,
+        )
+
+        val x0 = w * 0.08f
+        val y0 = h * 0.08f
+        val x1 = w * 0.40f
+        val y1 = h * 0.40f
+        val x2 = w * 0.60f
+        val y2 = h * 0.60f
+        val x3 = w * 0.92f
+        val y3 = h * 0.92f
+
+        // 1. Top-Left Square outline (open along diagonal seam from (x1, y2) to (x2, y1))
+        val pathTopLeft = Path().apply {
+            moveTo(x1, y2)
+            lineTo(x0, y2)
+            lineTo(x0, y0)
+            lineTo(x2, y0)
+            lineTo(x2, y1)
+        }
+        drawPath(pathTopLeft, color = color, style = stroke)
+
+        // 2. Bottom-Right Square outline (open along diagonal seam from (x2, y1) to (x1, y2))
+        val pathBottomRight = Path().apply {
+            moveTo(x2, y1)
+            lineTo(x3, y1)
+            lineTo(x3, y3)
+            lineTo(x1, y3)
+            lineTo(x1, y2)
+        }
+        drawPath(pathBottomRight, color = color, style = stroke)
+
+        // 3. Dashed diagonal seam connecting (x1, y2) and (x2, y1)
+        val dashEffect = PathEffect.dashPathEffect(
+            floatArrayOf(strokeW * 1.5f, strokeW * 1.3f),
+            0f,
+        )
+        drawLine(
+            color = color,
+            start = Offset(x1, y2),
+            end = Offset(x2, y1),
+            strokeWidth = strokeW,
+            cap = StrokeCap.Square,
+            pathEffect = dashEffect,
+        )
+
+        // 4. Arrows
+        val wingLen = w * 0.15f
+        if (isFused) {
+            // SEPARAR: Arrows point outward away from each other
+            // Top-Left arrow points ↖
+            val a1End = Offset(w * 0.17f, h * 0.17f)
+            val a1Start = Offset(w * 0.41f, h * 0.41f)
+            drawLine(color, a1Start, a1End, strokeWidth = strokeW, cap = StrokeCap.Square)
+            drawLine(color, a1End, Offset(a1End.x + wingLen, a1End.y), strokeWidth = strokeW, cap = StrokeCap.Square)
+            drawLine(color, a1End, Offset(a1End.x, a1End.y + wingLen), strokeWidth = strokeW, cap = StrokeCap.Square)
+
+            // Bottom-Right arrow points ↘
+            val a2End = Offset(w * 0.83f, h * 0.83f)
+            val a2Start = Offset(w * 0.59f, h * 0.59f)
+            drawLine(color, a2Start, a2End, strokeWidth = strokeW, cap = StrokeCap.Square)
+            drawLine(color, a2End, Offset(a2End.x - wingLen, a2End.y), strokeWidth = strokeW, cap = StrokeCap.Square)
+            drawLine(color, a2End, Offset(a2End.x, a2End.y - wingLen), strokeWidth = strokeW, cap = StrokeCap.Square)
+        } else {
+            // FUSIONAR: Arrows point inward toward each other
+            // Top-Left arrow points ↘ toward seam
+            val a1Start = Offset(w * 0.17f, h * 0.17f)
+            val a1End = Offset(w * 0.41f, h * 0.41f)
+            drawLine(color, a1Start, a1End, strokeWidth = strokeW, cap = StrokeCap.Square)
+            drawLine(color, a1End, Offset(a1End.x - wingLen, a1End.y), strokeWidth = strokeW, cap = StrokeCap.Square)
+            drawLine(color, a1End, Offset(a1End.x, a1End.y - wingLen), strokeWidth = strokeW, cap = StrokeCap.Square)
+
+            // Bottom-Right arrow points ↖ toward seam
+            val a2Start = Offset(w * 0.83f, h * 0.83f)
+            val a2End = Offset(w * 0.59f, h * 0.59f)
+            drawLine(color, a2Start, a2End, strokeWidth = strokeW, cap = StrokeCap.Square)
+            drawLine(color, a2End, Offset(a2End.x + wingLen, a2End.y), strokeWidth = strokeW, cap = StrokeCap.Square)
+            drawLine(color, a2End, Offset(a2End.x, a2End.y + wingLen), strokeWidth = strokeW, cap = StrokeCap.Square)
+        }
     }
 }
