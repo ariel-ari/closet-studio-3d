@@ -507,9 +507,8 @@ object RoomGeometryBuilder {
         val s1 = s0 + container.widthMm
         val totalH = container.heightMm
         val totalD = container.depthMm.coerceAtLeast(350f)
-        // Visible architectural carcass board thickness (28mm min so edges read clearly in 3D)
-        val t = container.panelThicknessMm.coerceAtLeast(28f).coerceAtMost((container.widthMm * 0.2f).coerceAtLeast(28f))
-        val plinthH = container.plinthHeightMm.coerceAtLeast(90f).coerceAtMost((totalH * 0.25f).coerceAtLeast(90f))
+        val t = container.effectivePanelThicknessMm
+        val plinthH = container.effectivePlinthHeightMm
         val backT = container.backThicknessMm.coerceIn(8f, 18f)
 
         val wallGap = 4f // 4mm offset from wall surface to prevent Z-fighting
@@ -663,15 +662,22 @@ object RoomGeometryBuilder {
         }
 
         // 7. Interior Partitions: Vertical Dividers & Horizontal Shelves
+        // Strict Carpentry Containment Invariant: interior bounds are strictly between bottom and top panels,
+        // and between left and right side panels. ZERO penetration into carcass boards.
+        val interiorBottomY = plinthH + t
+        val interiorTopY = (totalH - t).coerceAtLeast(interiorBottomY)
+        val interiorLeftS = s0 + t
+        val interiorRightS = (s1 - t).coerceAtLeast(interiorLeftS)
+
         val s0Inner = s0 + t
         val bays = container.getBays()
 
         // 7a. Vertical Dividers
         for (div in container.dividers) {
-            val divS0 = s0Inner + div.offsetXMm
-            val divS1 = divS0 + div.thicknessMm
-            val divY0 = plinthH + t + div.effectiveStartY()
-            val divY1 = plinthH + t + div.effectiveEndY(container.interiorHeightMm)
+            val divS0 = (s0Inner + div.offsetXMm).coerceIn(interiorLeftS, (interiorRightS - div.thicknessMm).coerceAtLeast(interiorLeftS))
+            val divS1 = (divS0 + div.thicknessMm).coerceIn(divS0, interiorRightS)
+            val divY0 = (interiorBottomY + div.effectiveStartY()).coerceIn(interiorBottomY, interiorTopY)
+            val divY1 = (interiorBottomY + div.effectiveEndY(container.interiorHeightMm)).coerceIn(divY0, interiorTopY)
             val divD0 = wallGap + backT
             val divD1 = wallGap + backT + div.effectiveDepth(container.interiorDepthMm)
 
@@ -685,42 +691,46 @@ object RoomGeometryBuilder {
                     frontEdgeBuilder = frontEdgesBuilder,
                 )
 
-                // Selection Highlight Outline (Crisp Purple Rim matching user screenshot)
+                // Selection Highlight Outline (Crisp Purple Rim matching user screenshot, strictly within carcass interior)
                 if (div.id == selectedPartitionId && partitionOutlineBuilder != null) {
-                    val pRim = 5f
+                    val pRim = 4f
                     val dOut0 = divD1 - 2f
                     val dOut1 = divD1 + 6f
+                    val outS0 = (divS0 - pRim).coerceAtLeast(interiorLeftS)
+                    val outS1 = (divS1 + pRim).coerceAtMost(interiorRightS)
+                    val outY0 = (divY0 - pRim).coerceAtLeast(interiorBottomY)
+                    val outY1 = (divY1 + pRim).coerceAtMost(interiorTopY)
                     // Front outline
                     addWallAlignedBox(
                         builder = partitionOutlineBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = divS0 - pRim, s1 = divS1 + pRim,
-                        y0 = divY0 - pRim, y1 = divY1 + pRim,
+                        s0 = outS0, s1 = outS1,
+                        y0 = outY0, y1 = outY1,
                         d0 = dOut0, d1 = dOut1,
                     )
-                    // Depth top edge
+                    // Depth top edge (staying strictly flush under top roof panel)
                     addWallAlignedBox(
                         builder = partitionOutlineBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = divS0 - pRim, s1 = divS1 + pRim,
-                        y0 = divY1 - pRim, y1 = divY1 + pRim,
+                        s0 = outS0, s1 = outS1,
+                        y0 = (divY1 - pRim).coerceAtLeast(interiorBottomY), y1 = divY1,
                         d0 = divD0, d1 = divD1,
                     )
-                    // Depth bottom edge
+                    // Depth bottom edge (staying strictly flush above bottom floor panel)
                     addWallAlignedBox(
                         builder = partitionOutlineBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = divS0 - pRim, s1 = divS1 + pRim,
-                        y0 = divY0 - pRim, y1 = divY0 + pRim,
+                        s0 = outS0, s1 = outS1,
+                        y0 = divY0, y1 = (divY0 + pRim).coerceAtMost(interiorTopY),
                         d0 = divD0, d1 = divD1,
                     )
                     // Back vertical edge
                     addWallAlignedBox(
                         builder = partitionOutlineBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = divS0 - pRim, s1 = divS1 + pRim,
+                        s0 = outS0, s1 = outS1,
                         y0 = divY0, y1 = divY1,
-                        d0 = divD0 - pRim, d1 = divD0 + pRim,
+                        d0 = divD0 - 2f, d1 = divD0 + 4f,
                     )
                 }
             }
@@ -729,14 +739,14 @@ object RoomGeometryBuilder {
         // 7b. Horizontal Shelves (Automatically adapted from left to right of its containing bay)
         for (shelf in container.shelves) {
             val bay = bays.getOrElse(shelf.bayIndex) { bays.last() }
-            val shelfS0 = s0Inner + bay.startXMm
-            val shelfS1 = s0Inner + bay.endXMm
-            val shelfY0 = plinthH + t + shelf.elevationYMm
-            val shelfY1 = shelfY0 + shelf.thicknessMm
+            val shelfS0 = (s0Inner + bay.startXMm).coerceIn(interiorLeftS, interiorRightS)
+            val shelfS1 = (s0Inner + bay.endXMm).coerceIn(shelfS0, interiorRightS)
+            val shelfY0 = (interiorBottomY + shelf.elevationYMm).coerceIn(interiorBottomY, (interiorTopY - shelf.thicknessMm).coerceAtLeast(interiorBottomY))
+            val shelfY1 = (shelfY0 + shelf.thicknessMm).coerceIn(shelfY0, interiorTopY)
             val shelfD0 = wallGap + backT
             val shelfD1 = wallGap + backT + shelf.effectiveDepth(container.interiorDepthMm)
 
-            if (shelfS1 > shelfS0 && shelfY1 > shelfY0 && shelfY1 <= totalH - t) {
+            if (shelfS1 > shelfS0 && shelfY1 > shelfY0) {
                 addWallAlignedBox(
                     builder = horizPanelsBuilder,
                     pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
@@ -746,33 +756,37 @@ object RoomGeometryBuilder {
                     frontEdgeBuilder = frontEdgesBuilder,
                 )
 
-                // Selection Highlight Outline (Crisp Purple Rim matching user screenshot)
+                // Selection Highlight Outline (Crisp Purple Rim matching user screenshot, strictly within carcass interior)
                 if (shelf.id == selectedPartitionId && partitionOutlineBuilder != null) {
-                    val pRim = 5f
+                    val pRim = 4f
                     val dOut0 = shelfD1 - 2f
                     val dOut1 = shelfD1 + 6f
+                    val outS0 = (shelfS0 - pRim).coerceAtLeast(interiorLeftS)
+                    val outS1 = (shelfS1 + pRim).coerceAtMost(interiorRightS)
+                    val outY0 = (shelfY0 - pRim).coerceAtLeast(interiorBottomY)
+                    val outY1 = (shelfY1 + pRim).coerceAtMost(interiorTopY)
                     // Front edge outline
                     addWallAlignedBox(
                         builder = partitionOutlineBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = shelfS0 - pRim, s1 = shelfS1 + pRim,
-                        y0 = shelfY0 - pRim, y1 = shelfY1 + pRim,
+                        s0 = outS0, s1 = outS1,
+                        y0 = outY0, y1 = outY1,
                         d0 = dOut0, d1 = dOut1,
                     )
                     // Left depth edge
                     addWallAlignedBox(
                         builder = partitionOutlineBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = shelfS0 - pRim, s1 = shelfS0 + pRim,
-                        y0 = shelfY0 - pRim, y1 = shelfY1 + pRim,
+                        s0 = shelfS0, s1 = (shelfS0 + pRim).coerceAtMost(shelfS1),
+                        y0 = outY0, y1 = outY1,
                         d0 = shelfD0, d1 = shelfD1,
                     )
                     // Right depth edge
                     addWallAlignedBox(
                         builder = partitionOutlineBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = shelfS1 - pRim, s1 = shelfS1 + pRim,
-                        y0 = shelfY0 - pRim, y1 = shelfY1 + pRim,
+                        s0 = (shelfS1 - pRim).coerceAtLeast(shelfS0), s1 = shelfS1,
+                        y0 = outY0, y1 = outY1,
                         d0 = shelfD0, d1 = shelfD1,
                     )
                     // Back depth edge
@@ -780,8 +794,8 @@ object RoomGeometryBuilder {
                         builder = partitionOutlineBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
                         s0 = shelfS0, s1 = shelfS1,
-                        y0 = shelfY0 - pRim, y1 = shelfY1 + pRim,
-                        d0 = shelfD0 - pRim, d1 = shelfD0 + pRim,
+                        y0 = outY0, y1 = outY1,
+                        d0 = shelfD0 - 2f, d1 = shelfD0 + 4f,
                     )
                 }
             }

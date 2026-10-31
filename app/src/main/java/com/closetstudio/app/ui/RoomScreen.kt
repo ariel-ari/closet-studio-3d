@@ -837,9 +837,9 @@ private fun projectScreenToContainerInterior(
     val relZ = hitZ - pStart.z
     val s = relX * ux + relZ * uz
 
-    val s0Inner = container.offsetMm + container.panelThicknessMm.coerceAtLeast(18f)
+    val s0Inner = container.offsetMm + container.effectivePanelThicknessMm
     val innerX = s - s0Inner
-    val innerY = hitY - (container.plinthHeightMm + container.panelThicknessMm.coerceAtLeast(18f))
+    val innerY = hitY - (container.effectivePlinthHeightMm + container.effectivePanelThicknessMm)
 
     return innerX to innerY
 }

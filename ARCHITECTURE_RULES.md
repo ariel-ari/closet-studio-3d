@@ -56,3 +56,29 @@ Every interior component has an independently configurable depth (`depthMm`):
    - When a component is selected, dragging it directly in the 3D viewport slides it within its valid compartment bounds.
    - **Vertical Dividers:** Dragging horizontally shifts position along the compartment's $X$ axis, stopping at the boundaries of adjacent dividers or carcass sides.
    - **Horizontal Shelves:** Dragging vertically adjusts elevation along the $Y$ axis; dragging horizontally across bay thresholds transfers the shelf into adjacent compartments, adapting its width automatically.
+
+---
+
+## 5. Strict Carpentry Containment Invariant (Zero-Penetration Rule / Regla de Oro de Armado de Melamina)
+This rule replicates physical cabinetry assembly where melamina boards must never collide with or penetrate through the carcass structural panels:
+
+1. **Absolute Structural Envelope:**
+   The carcass panels (top roof panel, bottom floor panel, left side panel, and right side panel) establish the impenetrable outer shell of the container:
+   - **Vertical Interior Space:**
+     $$Y \in [Y_{\text{floor, top}}, Y_{\text{roof, bottom}}] = [\text{plinthHeight} + t, \text{totalHeight} - t]$$
+     $$\text{Interior Height} = \text{totalHeight} - \text{plinthHeight} - 2t$$
+   - **Horizontal Interior Space:**
+     $$X \in [X_{\text{left, inner}}, X_{\text{right, inner}}] = [s_0 + t, s_1 - t]$$
+     $$\text{Interior Width} = \text{totalWidth} - 2t$$
+   where $t = \text{effectivePanelThicknessMm}$ and $\text{plinthHeight} = \text{effectivePlinthHeightMm}$.
+
+2. **Zero-Penetration Guarantee:**
+   - **Under NO circumstances** can any internal component (vertical dividers, horizontal shelves, future drawers, clothes rails, pant racks, lighting strips, or any accessory) penetrate, protrude into, or cut through the carcass roof, floor, or side panels.
+   - **Vertical Dividers:** Must rest flush on the top face of the bottom floor panel ($Y_{\min} = \text{plinthHeight} + t$) and terminate strictly flush against the bottom face of the top roof panel ($Y_{\max} = \text{totalHeight} - t$) or under an intervening horizontal shelf. They can never penetrate above $Y_{\text{roof, bottom}}$ or below $Y_{\text{floor, top}}$.
+   - **Horizontal Shelves:** Must remain bounded within $[Y_{\text{floor, top}}, Y_{\text{roof, bottom}} - \text{thickness}]$ and span strictly between adjacent vertical dividers or carcass sides $[X_{\min}, X_{\max}]$.
+   - **Selection Outlines & Visual Highlights:** Visual outlines and selection rims are clamped to the interior volume $[Y_{\text{floor, top}}, Y_{\text{roof, bottom}}]$ so that halos and highlight boxes never pierce or bleed into carcass boards.
+
+3. **Single Source of Truth:**
+   The carcass panel thickness $t$ (`effectivePanelThicknessMm`) and plinth height (`effectivePlinthHeightMm`) must remain mathematically identical across all subsystems: Core Model (`Project.kt`), 3D Geometry Generation (`RoomGeometry.kt`), Raycasting/Tap Picking, and Gesture Handlers (`RoomScreen.kt`). Clamping is strictly enforced at both the domain model and 3D mesh generator levels.
+
+

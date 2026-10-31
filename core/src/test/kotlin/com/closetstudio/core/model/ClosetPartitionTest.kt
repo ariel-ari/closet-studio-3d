@@ -265,4 +265,42 @@ class ClosetPartitionTest {
         assertNotNull(outline)
         assertTrue(outline.mesh.positions.isNotEmpty())
     }
+
+    @Test
+    fun `zero penetration rule - vertical divider sits flush between bottom and top panels without clipping`() {
+        val totalH = 2200f
+        val plinthH = 80f
+        val panelT = 18f
+        val container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 1800f,
+            heightMm = totalH,
+            depthMm = 600f,
+            panelThicknessMm = panelT,
+            plinthHeightMm = plinthH,
+        ).withAddedDivider()
+
+        val div = container.dividers.single()
+
+        // Effective bottom and top bounds of interior space
+        val floorPanelTopY = container.effectivePlinthHeightMm + container.effectivePanelThicknessMm
+        val roofPanelBottomY = totalH - container.effectivePanelThicknessMm
+        val expectedInteriorHeight = roofPanelBottomY - floorPanelTopY
+
+        assertMm(expectedInteriorHeight, container.interiorHeightMm)
+        assertMm(0f, div.effectiveStartY())
+        assertMm(container.interiorHeightMm, div.effectiveEndY(container.interiorHeightMm))
+
+        // Total divider world top Y: floorPanelTopY + div.effectiveEndY()
+        val divWorldTopY = floorPanelTopY + div.effectiveEndY(container.interiorHeightMm)
+        // Must match roofPanelBottomY EXACTLY to the millimeter — NEVER penetrate roof panel!
+        assertMm(roofPanelBottomY, divWorldTopY)
+        assertTrue(divWorldTopY <= roofPanelBottomY)
+        assertTrue(divWorldTopY < totalH) // Must be strictly below total closet height by panel thickness
+
+        // Even with an invalid manual endYMm that tries to exceed interior height, it must clamp:
+        val overflowingDiv = div.copy(endYMm = 9999f)
+        assertMm(container.interiorHeightMm, overflowingDiv.effectiveEndY(container.interiorHeightMm))
+    }
 }

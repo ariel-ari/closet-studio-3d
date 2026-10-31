@@ -81,10 +81,13 @@ data class VerticalDividerSpec(
         }
     }
 
-    fun effectiveStartY(): Float = startYMm
-    fun effectiveEndY(interiorHeightMm: Float): Float = (endYMm ?: interiorHeightMm).coerceAtLeast(startYMm + 10f)
-    fun effectiveHeight(interiorHeightMm: Float): Float = (effectiveEndY(interiorHeightMm) - startYMm).coerceAtLeast(10f)
-    fun effectiveDepth(interiorDepthMm: Float): Float = (depthMm ?: interiorDepthMm).coerceAtLeast(50f)
+    fun effectiveStartY(): Float = startYMm.coerceAtLeast(0f)
+    fun effectiveEndY(interiorHeightMm: Float): Float =
+        (endYMm ?: interiorHeightMm).coerceIn(effectiveStartY() + 10f, interiorHeightMm)
+    fun effectiveHeight(interiorHeightMm: Float): Float =
+        (effectiveEndY(interiorHeightMm) - effectiveStartY()).coerceAtLeast(10f)
+    fun effectiveDepth(interiorDepthMm: Float): Float =
+        (depthMm ?: interiorDepthMm).coerceAtLeast(50f)
 }
 
 @Serializable
@@ -129,11 +132,17 @@ data class ClosetContainerSpec(
         require(depthMm >= 0f) { "container depth must be non-negative" }
     }
 
+    val effectivePanelThicknessMm: Float
+        get() = panelThicknessMm.coerceIn(12f, 50f)
+
+    val effectivePlinthHeightMm: Float
+        get() = plinthHeightMm.coerceAtLeast(0f)
+
     val interiorWidthMm: Float
-        get() = (widthMm - panelThicknessMm * 2f).coerceAtLeast(0f)
+        get() = (widthMm - effectivePanelThicknessMm * 2f).coerceAtLeast(0f)
 
     val interiorHeightMm: Float
-        get() = (heightMm - plinthHeightMm - panelThicknessMm * 2f).coerceAtLeast(0f)
+        get() = (heightMm - effectivePlinthHeightMm - effectivePanelThicknessMm * 2f).coerceAtLeast(0f)
 
     val interiorDepthMm: Float
         get() = (depthMm - backThicknessMm).coerceAtLeast(0f)
@@ -199,7 +208,7 @@ data class ClosetContainerSpec(
     fun withAddedDivider(offsetXMm: Float? = null, targetYMm: Float? = null): ClosetContainerSpec {
         val innerW = interiorWidthMm
         val innerH = interiorHeightMm
-        val thickness = panelThicknessMm.coerceAtLeast(18f)
+        val thickness = effectivePanelThicknessMm
         val targetOffset = offsetXMm ?: run {
             val bays = getBays()
             val widest = bays.maxByOrNull { it.widthMm } ?: bays.first()
@@ -214,12 +223,15 @@ data class ClosetContainerSpec(
             0f to innerH
         }
 
+        val clampedStartY = startY.coerceIn(0f, innerH)
+        val clampedEndY = endY.coerceIn(clampedStartY + 10f, innerH)
+
         val newDivider = VerticalDividerSpec(
             id = "div_${System.currentTimeMillis()}_${dividers.size + 1}",
             offsetXMm = clampedOffset,
             thicknessMm = thickness,
-            startYMm = startY,
-            endYMm = if (endY < innerH - 1f) endY else null,
+            startYMm = clampedStartY,
+            endYMm = if (clampedEndY < innerH - 1f) clampedEndY else null,
         )
         return copy(dividers = dividers + newDivider)
     }
@@ -246,11 +258,14 @@ data class ClosetContainerSpec(
             0f to innerH
         }
 
+        val clampedStartY = newStartY.coerceIn(0f, innerH)
+        val clampedEndY = newEndY.coerceIn(clampedStartY + 10f, innerH)
+
         return withUpdatedDivider(id) {
             it.copy(
                 offsetXMm = clampedOffset,
-                startYMm = newStartY,
-                endYMm = if (newEndY < innerH - 1f) newEndY else null,
+                startYMm = clampedStartY,
+                endYMm = if (clampedEndY < innerH - 1f) clampedEndY else null,
             )
         }
     }
@@ -280,7 +295,7 @@ data class ClosetContainerSpec(
 
     fun withAddedShelf(bayIndex: Int? = null, elevationYMm: Float? = null): ClosetContainerSpec {
         val innerH = interiorHeightMm
-        val thickness = panelThicknessMm.coerceAtLeast(18f)
+        val thickness = effectivePanelThicknessMm
         val bays = getBays()
         val targetBay = (bayIndex ?: 0).coerceIn(0, bays.lastIndex)
         val targetElev = (elevationYMm ?: (innerH * 0.5f)).coerceIn(20f, (innerH - thickness - 20f).coerceAtLeast(20f))
@@ -1131,11 +1146,17 @@ data class RoomSpec(
             else -> container.offsetMm.coerceIn(0f, maxOff)
         }
 
-        val innerW = (clampedW - container.panelThicknessMm * 2f).coerceAtLeast(0f)
-        val innerH = (clampedH - container.plinthHeightMm - container.panelThicknessMm * 2f).coerceAtLeast(0f)
+        val innerW = (clampedW - container.effectivePanelThicknessMm * 2f).coerceAtLeast(0f)
+        val innerH = (clampedH - container.effectivePlinthHeightMm - container.effectivePanelThicknessMm * 2f).coerceAtLeast(0f)
         val clampedDividers = container.dividers.map { div ->
             val maxOffset = (innerW - div.thicknessMm).coerceAtLeast(0f)
-            div.copy(offsetXMm = div.offsetXMm.coerceIn(0f, maxOffset))
+            val clampedStart = div.startYMm.coerceIn(0f, (innerH - 10f).coerceAtLeast(0f))
+            val clampedEnd = div.endYMm?.coerceIn(clampedStart + 10f, innerH)
+            div.copy(
+                offsetXMm = div.offsetXMm.coerceIn(0f, maxOffset),
+                startYMm = clampedStart,
+                endYMm = if (clampedEnd != null && clampedEnd < innerH - 1f) clampedEnd else null,
+            )
         }
         val maxBayIdx = clampedDividers.size
         val clampedShelves = container.shelves.map { shelf ->
@@ -1496,8 +1517,8 @@ data class RoomSpec(
             val dirY = rayDirY
             val dirD = rayDirX * nx + rayDirZ * nz
 
-            val t = c.panelThicknessMm.coerceAtLeast(28f)
-            val plinthH = c.plinthHeightMm.coerceAtLeast(90f)
+            val t = c.effectivePanelThicknessMm
+            val plinthH = c.effectivePlinthHeightMm
             val backT = c.backThicknessMm.coerceIn(8f, 18f)
             val wallGap = 4f
             val totalH = c.heightMm
