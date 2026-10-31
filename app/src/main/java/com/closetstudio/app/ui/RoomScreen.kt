@@ -48,12 +48,14 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.CropPortrait
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DoorFront
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RestartAlt
@@ -99,6 +101,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -185,6 +188,28 @@ private fun wallDisplayName(wall: WallIndex, lang: AppLanguage): String {
         WallIndex.EAST -> s.wallCLabel
         WallIndex.SOUTH -> "${s.wallALabel.substringBefore(" ")} E-D"
     }
+}
+
+private fun getWallLengthMm(wall: WallIndex, room: RoomSpec): Float {
+    val nw = room.vertexNW
+    val ne = room.vertexNE
+    val se = room.vertexSE
+    val sw = room.vertexSW
+    val (pStart, pEnd) = when (wall) {
+        WallIndex.NORTH -> nw to ne
+        WallIndex.EAST -> ne to se
+        WallIndex.SOUTH -> se to sw
+        WallIndex.WEST -> sw to nw
+    }
+    val dx = pEnd.x - pStart.x
+    val dz = pEnd.z - pStart.z
+    return kotlin.math.sqrt(dx * dx + dz * dz).coerceAtLeast(100f)
+}
+
+enum class RoomViewMode {
+    PERSPECTIVE_3D, // Standard 3D perspective with free orbit
+    TOP_DOWN,       // Vista de la habitación de arriba para abajo
+    FRONT_2D,       // Vista de la pared actual en 2D (de frente)
 }
 
 /**
@@ -390,6 +415,11 @@ fun RoomScreen() {
     var showOverflowMenu by remember { mutableStateOf(false) }
     var selectedCategoryKey by remember { mutableStateOf("CONTENT") }
 
+    // View Mode (3D Perspective, Top-Down, Front 2D)
+    var currentViewMode by remember { mutableStateOf(RoomViewMode.PERSPECTIVE_3D) }
+    var viewportWidthPx by remember { mutableFloatStateOf(1f) }
+    var viewportHeightPx by remember { mutableFloatStateOf(1f) }
+
     // Wall index counter (0: South/Door, 1: West, 2: North, 3: East)
     val wallStep = remember { mutableIntStateOf(0) }
 
@@ -402,30 +432,104 @@ fun RoomScreen() {
     val pitchAnim = remember { Animatable(0f) }
     val distanceAnim = remember { Animatable(3.40f) }
 
-    fun switchWall(newStep: Int) {
-        wallStep.intValue = newStep
-        val targetPos = getWallTarget(newStep, room)
-        val targetYaw = 180f + newStep * 90f
+    fun switchToTopDownView() {
+        currentViewMode = RoomViewMode.TOP_DOWN
+        showDimensionsSheet = false
+        val centerX = room.clearWidthMm * 0.5f * MM_TO_M
+        val centerZ = room.clearDepthMm * 0.5f * MM_TO_M
+        val maxDim = maxOf(room.clearWidthMm, room.clearDepthMm) * MM_TO_M
+        val topDownDist = (maxDim * 1.55f).coerceIn(4.2f, 9.5f)
         coroutineScope.launch {
-            launch { yawAnim.animateTo(targetYaw, tween(400, easing = FastOutSlowInEasing)) }
-            launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
-            launch { distanceAnim.animateTo(3.40f, tween(300, easing = FastOutSlowInEasing)) }
-            launch { targetXAnim.animateTo(targetPos.x, tween(400, easing = FastOutSlowInEasing)) }
-            launch { targetYAnim.animateTo(targetPos.y, tween(400, easing = FastOutSlowInEasing)) }
-            launch { targetZAnim.animateTo(targetPos.z, tween(400, easing = FastOutSlowInEasing)) }
+            launch { yawAnim.animateTo(180f, tween(400, easing = FastOutSlowInEasing)) }
+            // Looking straight down: -88° avoids gimbal lock and hides ceiling via backface culling
+            launch { pitchAnim.animateTo(-88f, tween(400, easing = FastOutSlowInEasing)) }
+            launch { distanceAnim.animateTo(topDownDist, tween(400, easing = FastOutSlowInEasing)) }
+            launch { targetXAnim.animateTo(centerX, tween(400, easing = FastOutSlowInEasing)) }
+            launch { targetYAnim.animateTo(0.10f, tween(400, easing = FastOutSlowInEasing)) }
+            launch { targetZAnim.animateTo(centerZ, tween(400, easing = FastOutSlowInEasing)) }
         }
     }
 
-    fun recenterCurrentWall() {
-        val targetPos = getWallTarget(wallStep.intValue, room)
-        val targetYaw = 180f + wallStep.intValue * 90f
+    fun switchToFront2DView(step: Int = wallStep.intValue) {
+        currentViewMode = RoomViewMode.FRONT_2D
+        showDimensionsSheet = false
+        wallStep.intValue = step
+        val targetPos = getWallTarget(step, room)
+        val targetYaw = 180f + step * 90f
+        val wallIndex = wallIndexFromStep(step)
+        val wallLenM = getWallLengthMm(wallIndex, room) * MM_TO_M
+        val wallHeightM = room.clearHeightMm * MM_TO_M
+        val tanV = kotlin.math.tan(Math.toRadians(24.0)).toFloat()
+        val distH = (wallHeightM * 0.5f) / tanV
+        val estAspect = if (viewportWidthPx > 10f && viewportHeightPx > 10f) {
+            viewportWidthPx / viewportHeightPx
+        } else {
+            16f / 9f
+        }
+        val distW = (wallLenM * 0.5f) / (estAspect * tanV)
+        val frontDist = (maxOf(distH, distW) * 1.08f).coerceIn(2.4f, 9.0f)
+
         coroutineScope.launch {
             launch { yawAnim.animateTo(targetYaw, tween(350, easing = FastOutSlowInEasing)) }
             launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
+            launch { distanceAnim.animateTo(frontDist, tween(300, easing = FastOutSlowInEasing)) }
+            launch { targetXAnim.animateTo(targetPos.x, tween(350, easing = FastOutSlowInEasing)) }
+            launch { targetYAnim.animateTo(targetPos.y, tween(350, easing = FastOutSlowInEasing)) }
+            launch { targetZAnim.animateTo(targetPos.z, tween(350, easing = FastOutSlowInEasing)) }
+        }
+    }
+
+    fun switchTo3DView() {
+        currentViewMode = RoomViewMode.PERSPECTIVE_3D
+        showDimensionsSheet = false
+        val targetPos = getWallTarget(wallStep.intValue, room)
+        val targetYaw = 180f + wallStep.intValue * 90f + 25f
+        coroutineScope.launch {
+            launch { yawAnim.animateTo(targetYaw, tween(350, easing = FastOutSlowInEasing)) }
+            launch { pitchAnim.animateTo(-16f, tween(300, easing = FastOutSlowInEasing)) }
             launch { distanceAnim.animateTo(3.40f, tween(300, easing = FastOutSlowInEasing)) }
             launch { targetXAnim.animateTo(targetPos.x, tween(350, easing = FastOutSlowInEasing)) }
             launch { targetYAnim.animateTo(targetPos.y, tween(350, easing = FastOutSlowInEasing)) }
             launch { targetZAnim.animateTo(targetPos.z, tween(350, easing = FastOutSlowInEasing)) }
+        }
+    }
+
+    fun switchWall(newStep: Int) {
+        wallStep.intValue = newStep
+        if (currentViewMode == RoomViewMode.FRONT_2D) {
+            switchToFront2DView(newStep)
+        } else if (currentViewMode == RoomViewMode.TOP_DOWN) {
+            // Stay in top-down view centered on the room
+        } else {
+            val targetPos = getWallTarget(newStep, room)
+            val targetYaw = 180f + newStep * 90f
+            coroutineScope.launch {
+                launch { yawAnim.animateTo(targetYaw, tween(400, easing = FastOutSlowInEasing)) }
+                launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
+                launch { distanceAnim.animateTo(3.40f, tween(300, easing = FastOutSlowInEasing)) }
+                launch { targetXAnim.animateTo(targetPos.x, tween(400, easing = FastOutSlowInEasing)) }
+                launch { targetYAnim.animateTo(targetPos.y, tween(400, easing = FastOutSlowInEasing)) }
+                launch { targetZAnim.animateTo(targetPos.z, tween(400, easing = FastOutSlowInEasing)) }
+            }
+        }
+    }
+
+    fun recenterCurrentWall() {
+        if (currentViewMode == RoomViewMode.FRONT_2D) {
+            switchToFront2DView(wallStep.intValue)
+        } else if (currentViewMode == RoomViewMode.TOP_DOWN) {
+            switchToTopDownView()
+        } else {
+            val targetPos = getWallTarget(wallStep.intValue, room)
+            val targetYaw = 180f + wallStep.intValue * 90f
+            coroutineScope.launch {
+                launch { yawAnim.animateTo(targetYaw, tween(350, easing = FastOutSlowInEasing)) }
+                launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
+                launch { distanceAnim.animateTo(3.40f, tween(300, easing = FastOutSlowInEasing)) }
+                launch { targetXAnim.animateTo(targetPos.x, tween(350, easing = FastOutSlowInEasing)) }
+                launch { targetYAnim.animateTo(targetPos.y, tween(350, easing = FastOutSlowInEasing)) }
+                launch { targetZAnim.animateTo(targetPos.z, tween(350, easing = FastOutSlowInEasing)) }
+            }
         }
     }
 
@@ -434,14 +538,15 @@ fun RoomScreen() {
         showUnitsColumn = false
         showDimensionsSheet = true
         selectedCategoryKey = "ROOM"
+        currentViewMode = RoomViewMode.TOP_DOWN
         val centerX = room.clearWidthMm * 0.5f * MM_TO_M
         val centerZ = room.clearDepthMm * 0.5f * MM_TO_M
         val maxDim = maxOf(room.clearWidthMm, room.clearDepthMm) * MM_TO_M
         val topDownDist = (maxDim * 1.55f).coerceIn(4.2f, 9.0f)
         coroutineScope.launch {
             launch { yawAnim.animateTo(180f, tween(450, easing = FastOutSlowInEasing)) }
-            // Zenith pitch at -86°: ceiling disappears automatically via back-face culling
-            launch { pitchAnim.animateTo(-86f, tween(450, easing = FastOutSlowInEasing)) }
+            // Zenith pitch at -88°: ceiling disappears automatically via back-face culling
+            launch { pitchAnim.animateTo(-88f, tween(450, easing = FastOutSlowInEasing)) }
             launch { distanceAnim.animateTo(topDownDist, tween(450, easing = FastOutSlowInEasing)) }
             launch { targetXAnim.animateTo(centerX, tween(450, easing = FastOutSlowInEasing)) }
             launch { targetYAnim.animateTo(0.10f, tween(450, easing = FastOutSlowInEasing)) }
@@ -452,6 +557,7 @@ fun RoomScreen() {
     fun exitDimensionsMode() {
         showDimensionsSheet = false
         selectedCategoryKey = "CONTENT"
+        currentViewMode = RoomViewMode.PERSPECTIVE_3D
         recenterCurrentWall()
     }
 
@@ -746,11 +852,27 @@ fun RoomScreen() {
                                         },
                                     )
                                     DropdownMenuItem(
-                                        text = { Text(s.menuGeneral3dView) },
+                                        text = { Text(s.viewTopDown) },
+                                        leadingIcon = { Icon(Icons.Default.Layers, null) },
+                                        onClick = {
+                                            showCategoryMenu = false
+                                            switchToTopDownView()
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(s.viewFront2D) },
+                                        leadingIcon = { Icon(Icons.Default.CropPortrait, null) },
+                                        onClick = {
+                                            showCategoryMenu = false
+                                            switchToFront2DView()
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(s.viewPerspective3D) },
                                         leadingIcon = { Icon(Icons.Default.ViewInAr, null) },
                                         onClick = {
                                             showCategoryMenu = false
-                                            exitDimensionsMode()
+                                            switchTo3DView()
                                         },
                                     )
                                 }
@@ -774,6 +896,8 @@ fun RoomScreen() {
                                 onClick = {
                                     if (showDimensionsSheet) {
                                         exitDimensionsMode()
+                                    } else if (currentViewMode != RoomViewMode.PERSPECTIVE_3D) {
+                                        switchTo3DView()
                                     } else {
                                         recenterCurrentWall()
                                     }
@@ -782,7 +906,7 @@ fun RoomScreen() {
                                 Icon(
                                     imageVector = Icons.Default.ViewInAr,
                                     contentDescription = s.center3dView,
-                                    tint = Color.White,
+                                    tint = if (currentViewMode == RoomViewMode.PERSPECTIVE_3D) Color.White else Color.White.copy(alpha = 0.65f),
                                 )
                             }
 
@@ -856,7 +980,6 @@ fun RoomScreen() {
                         var isDraggingUnit by remember { mutableStateOf(false) }
                         var dragScreenOffset by remember { mutableStateOf(Offset.Zero) }
                         var viewportOriginInRoot by remember { mutableStateOf(Offset.Zero) }
-                        var viewportWidthPx by remember { mutableFloatStateOf(1f) }
                         var panelOriginInRootX by remember { mutableFloatStateOf(Float.MAX_VALUE) }
 
                         LaunchedEffect(room.containers, selectedContainerId) {
@@ -873,6 +996,7 @@ fun RoomScreen() {
                                 .onGloballyPositioned { coordinates ->
                                     viewportOriginInRoot = coordinates.positionInRoot()
                                     viewportWidthPx = coordinates.size.width.toFloat().coerceAtLeast(1f)
+                                    viewportHeightPx = coordinates.size.height.toFloat().coerceAtLeast(1f)
                                 },
                         ) {
                             RoomViewport(
@@ -885,6 +1009,7 @@ fun RoomScreen() {
                                 distance = distanceAnim.value,
                                 selectedContainerId = activeContainer?.id,
                                 onOrbit = { deltaX, deltaY ->
+                                    currentViewMode = RoomViewMode.PERSPECTIVE_3D
                                     coroutineScope.launch {
                                         yawAnim.snapTo(yawAnim.value - deltaX * 0.22f)
                                         val newPitch = (pitchAnim.value - deltaY * 0.18f).coerceIn(-88f, 25f)
@@ -1147,33 +1272,73 @@ fun RoomScreen() {
                                 )
                             }
 
-                            // Bottom Recenter Button
+                            // Bottom View Modes Toolbar (Arriba / Top-Down, Frente 2D, 3D, Centrar)
                             Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-                                shadowElevation = 3.dp,
+                                shape = RoundedCornerShape(24.dp),
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                                shadowElevation = 6.dp,
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
                                     .navigationBarsPadding()
-                                    .padding(bottom = 20.dp),
+                                    .padding(bottom = 16.dp),
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .clickable { recenterCurrentWall() }
-                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CenterFocusStrong,
-                                        contentDescription = s.overflowCenterWall,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(18.dp),
+                                    // 1. Botón "Arriba" (Vista de la habitación de arriba para abajo)
+                                    ViewModePillButton(
+                                        label = s.viewTopDown,
+                                        icon = Icons.Default.Layers,
+                                        selected = currentViewMode == RoomViewMode.TOP_DOWN,
+                                        onClick = { switchToTopDownView() },
                                     )
-                                    Text(
-                                        text = s.centerButton,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurface,
+
+                                    // 2. Botón "Frente 2D" (Pared actual en 2D, de frente)
+                                    ViewModePillButton(
+                                        label = s.viewFront2D,
+                                        icon = Icons.Default.CropPortrait,
+                                        selected = currentViewMode == RoomViewMode.FRONT_2D,
+                                        onClick = { switchToFront2DView() },
                                     )
+
+                                    // 3. Botón "3D" (Perspectiva 3D con órbita libre)
+                                    ViewModePillButton(
+                                        label = s.viewPerspective3D,
+                                        icon = Icons.Default.ViewInAr,
+                                        selected = currentViewMode == RoomViewMode.PERSPECTIVE_3D,
+                                        onClick = { switchTo3DView() },
+                                    )
+
+                                    Box(
+                                        modifier = Modifier
+                                            .padding(horizontal = 4.dp)
+                                            .width(1.dp)
+                                            .height(20.dp)
+                                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                                    )
+
+                                    // Botón "Centrar"
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .clickable { recenterCurrentWall() }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CenterFocusStrong,
+                                            contentDescription = s.overflowCenterWall,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                        Text(
+                                            text = s.centerButton,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                        )
+                                    }
                                 }
                             }
 
@@ -2317,6 +2482,39 @@ private fun ClosetContainer3DGraphic(modifier: Modifier = Modifier) {
             topLeft = Offset(outerLeft, outerTop),
             size = androidx.compose.ui.geometry.Size(outerRight - outerLeft, outerBottom - outerTop),
             style = Stroke(width = 1.4f),
+        )
+    }
+}
+
+@Composable
+private fun ViewModePillButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = contentColor,
         )
     }
 }
