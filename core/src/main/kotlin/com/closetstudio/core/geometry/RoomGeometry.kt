@@ -302,52 +302,55 @@ object RoomGeometryBuilder {
         val nRight = Vec3(ux, 0f, uz)
         val nLeft = Vec3(-ux, 0f, -uz)
 
-        // Front face (d = d1, facing into room)
+        // All 6 faces wound strictly Counter-Clockwise (CCW) when viewed from outside:
+        // cross(b - a, c - a) points in the exact direction of each outward normal!
+
+        // 1. Front face (d = d1, outward normal +n pointing into room)
         (frontEdgeBuilder ?: builder).addQuad(
-            a = pt(s1, y0, d1),
-            b = pt(s0, y0, d1),
-            c = pt(s0, y1, d1),
-            d = pt(s1, y1, d1),
+            a = pt(s0, y0, d1),
+            b = pt(s1, y0, d1),
+            c = pt(s1, y1, d1),
+            d = pt(s0, y1, d1),
             normal = nFront,
         )
-        // Back face (d = d0, facing wall)
+        // 2. Back face (d = d0, outward normal -n pointing toward wall)
+        builder.addQuad(
+            a = pt(s1, y0, d0),
+            b = pt(s0, y0, d0),
+            c = pt(s0, y1, d0),
+            d = pt(s1, y1, d0),
+            normal = nBack,
+        )
+        // 3. Left face (s = s0, outward normal -u)
+        builder.addQuad(
+            a = pt(s0, y0, d0),
+            b = pt(s0, y0, d1),
+            c = pt(s0, y1, d1),
+            d = pt(s0, y1, d0),
+            normal = nLeft,
+        )
+        // 4. Right face (s = s1, outward normal +u)
+        builder.addQuad(
+            a = pt(s1, y0, d1),
+            b = pt(s1, y0, d0),
+            c = pt(s1, y1, d0),
+            d = pt(s1, y1, d1),
+            normal = nRight,
+        )
+        // 5. Top face (y = y1, outward normal +Y)
+        builder.addQuad(
+            a = pt(s0, y1, d1),
+            b = pt(s1, y1, d1),
+            c = pt(s1, y1, d0),
+            d = pt(s0, y1, d0),
+            normal = Vec3.UNIT_Y,
+        )
+        // 6. Bottom face (y = y0, outward normal -Y)
         builder.addQuad(
             a = pt(s0, y0, d0),
             b = pt(s1, y0, d0),
-            c = pt(s1, y1, d0),
-            d = pt(s0, y1, d0),
-            normal = nBack,
-        )
-        // Left outer face (s = s0, normal -u)
-        builder.addQuad(
-            a = pt(s0, y0, d1),
-            b = pt(s0, y0, d0),
-            c = pt(s0, y1, d0),
-            d = pt(s0, y1, d1),
-            normal = nLeft,
-        )
-        // Right outer face (s = s1, normal +u)
-        builder.addQuad(
-            a = pt(s1, y0, d0),
-            b = pt(s1, y0, d1),
-            c = pt(s1, y1, d1),
-            d = pt(s1, y1, d0),
-            normal = nRight,
-        )
-        // Top face (y = y1, normal +Y)
-        builder.addQuad(
-            a = pt(s0, y1, d0),
-            b = pt(s1, y1, d0),
-            c = pt(s1, y1, d1),
-            d = pt(s0, y1, d1),
-            normal = Vec3.UNIT_Y,
-        )
-        // Bottom face (y = y0, normal -Y)
-        builder.addQuad(
-            a = pt(s0, y0, d1),
-            b = pt(s1, y0, d1),
-            c = pt(s1, y0, d0),
-            d = pt(s0, y0, d0),
+            c = pt(s1, y0, d1),
+            d = pt(s0, y0, d1),
             normal = Vec3(0f, -1f, 0f),
         )
     }

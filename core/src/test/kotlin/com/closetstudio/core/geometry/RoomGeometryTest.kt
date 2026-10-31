@@ -69,10 +69,40 @@ class RoomGeometryTest {
         assertMm(0f, placed.offsetMm)
 
         val parts = RoomGeometryBuilder.build(room, selectedContainerId = "c1")
-        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_BODY })
-        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SIDE_PANEL })
-        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_FRONT_EDGE })
-        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SELECTED_OUTLINE })
-        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_BACK })
+        val body = assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_BODY })
+        val side = assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SIDE_PANEL })
+        val frontEdge = assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_FRONT_EDGE })
+        val outline = assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SELECTED_OUTLINE })
+        val back = assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_BACK })
+
+        // Verify that every single triangle in all container meshes is wound outward (CCW)
+        // so Filament backface culling never hides visible outer faces or thicknesses!
+        listOf(body, side, frontEdge, outline, back).forEach { part ->
+            val m = part.mesh
+            var t = 0
+            while (t < m.indices.size) {
+                val i0 = m.indices[t]
+                val i1 = m.indices[t + 1]
+                val i2 = m.indices[t + 2]
+
+                val ax = m.positions[i1 * 3] - m.positions[i0 * 3]
+                val ay = m.positions[i1 * 3 + 1] - m.positions[i0 * 3 + 1]
+                val az = m.positions[i1 * 3 + 2] - m.positions[i0 * 3 + 2]
+                val bx = m.positions[i2 * 3] - m.positions[i0 * 3]
+                val by = m.positions[i2 * 3 + 1] - m.positions[i0 * 3 + 1]
+                val bz = m.positions[i2 * 3 + 2] - m.positions[i0 * 3 + 2]
+
+                val cx = ay * bz - az * by
+                val cy = az * bx - ax * bz
+                val cz = ax * by - ay * bx
+
+                val dot = cx * m.normals[i0 * 3] +
+                    cy * m.normals[i0 * 3 + 1] +
+                    cz * m.normals[i0 * 3 + 2]
+
+                assertTrue(dot > 0f, "Part ${part.surface} triangle $t has inverted winding (dot=$dot)")
+                t += 3
+            }
+        }
     }
 }
