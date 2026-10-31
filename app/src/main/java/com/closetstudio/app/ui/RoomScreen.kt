@@ -108,11 +108,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -1457,6 +1459,7 @@ fun RoomScreen() {
                                     s = s,
                                     activeContainer = activeContainer,
                                     isEditingContainer = isEditingContainerInPanel && activeContainer != null,
+                                    isDragging = isDraggingUnit,
                                     onToggleEditMode = { isEditingContainerInPanel = it },
                                     onSelectContainer = { container ->
                                         selectedContainerId = container.id
@@ -1480,6 +1483,7 @@ fun RoomScreen() {
                                         }
                                         updateRoom(updatedRoom)
                                         selectedContainerId = newId
+                                        showUnitsColumn = false
                                         coroutineScope.launch {
                                             messageHostState.showSnackbar(
                                                 "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
@@ -1495,32 +1499,29 @@ fun RoomScreen() {
                                     },
                                     onDragUnitEnd = {
                                         if (isDraggingUnit) {
-                                            val dropRootX = dragScreenOffset.x + viewportOriginInRoot.x
-                                            // Drop if dragged outside the right panel into the 3D room view
-                                            if (dropRootX < panelOriginInRootX + 30f) {
-                                                val visible3dWidth = (panelOriginInRootX - viewportOriginInRoot.x).coerceAtLeast(120f)
-                                                val fractionX = (dragScreenOffset.x / visible3dWidth).coerceIn(0f, 1f)
-                                                val targetWall = wallIndexFromStep(wallStep.intValue)
-                                                val newId = "container_${System.currentTimeMillis()}_${room.containers.size + 1}"
-                                                val added = room.withAddedContainer(wall = targetWall, id = newId)
-                                                val wallLen = added.wallLengthMm(targetWall).coerceAtLeast(0f)
-                                                val updatedRoom = added.withUpdatedContainer(newId) { item ->
-                                                    val maxOff = (wallLen - item.widthMm).coerceAtLeast(0f)
-                                                    item.copy(offsetMm = fractionX * maxOff)
-                                                }
-                                                updateRoom(updatedRoom)
-                                                selectedContainerId = newId
-                                                coroutineScope.launch {
-                                                    messageHostState.showSnackbar(
-                                                        "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
-                                                    )
-                                                }
+                                            val fractionX = (dragScreenOffset.x / viewportWidthPx).coerceIn(0.05f, 0.95f)
+                                            val targetWall = wallIndexFromStep(wallStep.intValue)
+                                            val newId = "container_${System.currentTimeMillis()}_${room.containers.size + 1}"
+                                            val added = room.withAddedContainer(wall = targetWall, id = newId)
+                                            val wallLen = added.wallLengthMm(targetWall).coerceAtLeast(0f)
+                                            val updatedRoom = added.withUpdatedContainer(newId) { item ->
+                                                val maxOff = (wallLen - item.widthMm).coerceAtLeast(0f)
+                                                item.copy(offsetMm = fractionX * maxOff)
                                             }
+                                            updateRoom(updatedRoom)
+                                            selectedContainerId = newId
                                             isDraggingUnit = false
+                                            showUnitsColumn = false
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar(
+                                                    "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
+                                                )
+                                            }
                                         }
                                     },
                                     onDragUnitCancel = {
                                         isDraggingUnit = false
+                                        showUnitsColumn = false
                                     },
                                     onUpdateContainer = { id, transform ->
                                         val updatedRoom = room.withUpdatedContainer(id, transform)
@@ -1543,6 +1544,9 @@ fun RoomScreen() {
                                     modifier = Modifier
                                         .width(unitsColumnWidth)
                                         .fillMaxHeight()
+                                        .graphicsLayer {
+                                            alpha = if (isDraggingUnit) 0f else 1f
+                                        }
                                         .onGloballyPositioned { coordinates ->
                                             panelOriginInRootX = coordinates.positionInRoot().x
                                         },
@@ -1551,15 +1555,18 @@ fun RoomScreen() {
 
                             // Floating 3D Unit Preview while dragging from "Add Unit" onto the wall
                             if (isDraggingUnit) {
+                                val previewSizeDp = 140.dp
+                                val previewSizePx = with(LocalDensity.current) { previewSizeDp.toPx() }
+                                val halfPreviewPx = previewSizePx * 0.5f
                                 Box(
                                     modifier = Modifier
                                         .offset {
                                             IntOffset(
-                                                x = (dragScreenOffset.x - 85f).roundToInt(),
-                                                y = (dragScreenOffset.y - 85f).roundToInt(),
+                                                x = (dragScreenOffset.x - halfPreviewPx).roundToInt(),
+                                                y = (dragScreenOffset.y - halfPreviewPx).roundToInt(),
                                             )
                                         }
-                                        .size(170.dp),
+                                        .size(previewSizeDp),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     ClosetContainer3DGraphic(
@@ -2066,6 +2073,7 @@ private fun RightSideUnitsAndInspectorColumn(
     s: UiStrings,
     activeContainer: ClosetContainerSpec?,
     isEditingContainer: Boolean,
+    isDragging: Boolean = false,
     onToggleEditMode: (Boolean) -> Unit,
     onSelectContainer: (ClosetContainerSpec) -> Unit,
     onAddContainerOnCurrentWall: (dropFractionX: Float?) -> Unit,
@@ -2080,10 +2088,12 @@ private fun RightSideUnitsAndInspectorColumn(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier,
+        modifier = modifier.graphicsLayer {
+            alpha = if (isDragging) 0f else 1f
+        },
         color = Color.White,
         tonalElevation = 0.dp,
-        shadowElevation = 14.dp,
+        shadowElevation = if (isDragging) 0.dp else 14.dp,
         shape = RoundedCornerShape(0.dp),
     ) {
         Column(
