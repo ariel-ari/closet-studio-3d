@@ -31,154 +31,174 @@ data class RoomPart(
 object RoomGeometryBuilder {
 
     fun build(room: RoomSpec, uvScaleMm: Float = 600f): List<RoomPart> {
-        val w = room.clearWidthMm
         val h = room.clearHeightMm
-        val d = room.clearDepthMm
-        val slab = 40f // Wall/Floor slab thickness in mm
+        val slab = 40f
+
+        val nw = room.vertexNW
+        val ne = room.vertexNE
+        val se = room.vertexSE
+        val sw = room.vertexSW
 
         val parts = mutableListOf<RoomPart>()
 
-        // 1. Floor
+        // 1. Floor (Polygonal quad matching exact room vertices)
         val floorBuilder = MeshBuilder(uvScaleMm)
-        floorBuilder.addBox(
-            min = Vec3(-slab, -slab, -slab),
-            max = Vec3(w + slab, 0f, d + slab),
+        floorBuilder.addQuad(
+            a = Vec3(nw.x, 0f, nw.z),
+            b = Vec3(sw.x, 0f, sw.z),
+            c = Vec3(se.x, 0f, se.z),
+            d = Vec3(ne.x, 0f, ne.z),
+            normal = Vec3.UNIT_Y,
+        )
+        floorBuilder.addQuad(
+            a = Vec3(nw.x, -slab, nw.z),
+            b = Vec3(ne.x, -slab, ne.z),
+            c = Vec3(se.x, -slab, se.z),
+            d = Vec3(sw.x, -slab, sw.z),
+            normal = Vec3(0f, -1f, 0f),
         )
         parts += RoomPart(RoomSurface.FLOOR, floorBuilder.build())
 
         // 2. Ceiling (inward-facing quad with normal -Y)
-        // Visible when looking up from inside; naturally backface-culled when orbiting from above (Dollhouse)
         val ceilingBuilder = MeshBuilder(uvScaleMm)
         ceilingBuilder.addQuad(
-            a = Vec3(-slab, h, -slab),
-            b = Vec3(w + slab, h, -slab),
-            c = Vec3(w + slab, h, d + slab),
-            d = Vec3(-slab, h, d + slab),
+            a = Vec3(nw.x, h, nw.z),
+            b = Vec3(ne.x, h, ne.z),
+            c = Vec3(se.x, h, se.z),
+            d = Vec3(sw.x, h, sw.z),
             normal = Vec3(0f, -1f, 0f),
         )
         parts += RoomPart(RoomSurface.CEILING, ceilingBuilder.build())
 
-        // 3. Walls (Inward-facing quads)
-        // Fully visible from inside; automatically backface-culled from outside (Dollhouse / Maqueta)
+        // 3. Walls (Inward-facing quads following exact vertices and angles)
         val wallBuilder = MeshBuilder(uvScaleMm)
         val frameBuilder = MeshBuilder(uvScaleMm)
         val leafBuilder = MeshBuilder(uvScaleMm)
         val handleBuilder = MeshBuilder(uvScaleMm)
 
-        // North Wall (Z = 0) - Inward normal +Z (0, 0, 1)
-        wallBuilder.addQuad(
-            a = Vec3(0f, 0f, 0f),
-            b = Vec3(w, 0f, 0f),
-            c = Vec3(w, h, 0f),
-            d = Vec3(0f, h, 0f),
-            normal = Vec3(0f, 0f, 1f),
-        )
+        fun addWallSegment(x1: Float, z1: Float, x2: Float, z2: Float, y0: Float, y1: Float) {
+            val dx = x2 - x1
+            val dz = z2 - z1
+            val len = kotlin.math.sqrt(dx * dx + dz * dz)
+            if (len < 1f) return
+            val normal = Vec3(-dz / len, 0f, dx / len)
+            wallBuilder.addQuad(
+                a = Vec3(x1, y0, z1),
+                b = Vec3(x2, y0, z2),
+                c = Vec3(x2, y1, z2),
+                d = Vec3(x1, y1, z1),
+                normal = normal,
+            )
+        }
 
-        // West Wall (X = 0) - Inward normal +X (1, 0, 0)
-        wallBuilder.addQuad(
-            a = Vec3(0f, 0f, d),
-            b = Vec3(0f, 0f, 0f),
-            c = Vec3(0f, h, 0f),
-            d = Vec3(0f, h, d),
-            normal = Vec3(1f, 0f, 0f),
-        )
+        // North Wall (A: NW -> NE)
+        addWallSegment(nw.x, nw.z, ne.x, ne.z, 0f, h)
 
-        // East Wall (X = W) - Inward normal -X (-1, 0, 0)
-        wallBuilder.addQuad(
-            a = Vec3(w, 0f, 0f),
-            b = Vec3(w, 0f, d),
-            c = Vec3(w, h, d),
-            d = Vec3(w, h, 0f),
-            normal = Vec3(-1f, 0f, 0f),
-        )
+        // East Wall (B: NE -> SE)
+        addWallSegment(ne.x, ne.z, se.x, se.z, 0f, h)
 
-        // South Wall (Z = D) - Inward normal -Z (0, 0, -1) with door opening
+        // West Wall (C: SW -> NW)
+        addWallSegment(sw.x, sw.z, nw.x, nw.z, 0f, h)
+
+        // South Wall (Door Wall: SW -> SE along vector u, inward normal pointing into room)
+        val southDx = se.x - sw.x
+        val southDz = se.z - sw.z
+        val southLen = kotlin.math.sqrt(southDx * southDx + southDz * southDz).coerceAtLeast(100f)
+        val ux = southDx / southLen
+        val uz = southDz / southLen
+        val inNx = uz
+        val inNz = -ux
+        val southNormal = Vec3(inNx, 0f, inNz)
+
+        fun southPt(distFromSW: Float, y: Float, inwardOffset: Float = 0f): Vec3 {
+            return Vec3(
+                x = sw.x + distFromSW * ux + inwardOffset * inNx,
+                y = y,
+                z = sw.z + distFromSW * uz + inwardOffset * inNz,
+            )
+        }
+
         val door = room.door
-        val doorOffset = door.offsetMm.coerceIn(0f, (w - door.widthMm).coerceAtLeast(0f))
-        val doorW = door.widthMm.coerceAtMost(w)
+        val doorOffset = door.offsetMm.coerceIn(0f, (southLen - door.widthMm).coerceAtLeast(0f))
+        val doorW = door.widthMm.coerceAtMost(southLen)
         val doorH = door.heightMm.coerceAtMost(h - 50f)
         val frameT = door.frameThicknessMm
 
-        // Left wall segment (before door: X from 0 to doorOffset)
+        // Segment D (before door: 0 to doorOffset)
         if (doorOffset > 1f) {
             wallBuilder.addQuad(
-                a = Vec3(doorOffset, 0f, d),
-                b = Vec3(0f, 0f, d),
-                c = Vec3(0f, h, d),
-                d = Vec3(doorOffset, h, d),
-                normal = Vec3(0f, 0f, -1f),
+                a = southPt(doorOffset, 0f),
+                b = southPt(0f, 0f),
+                c = southPt(0f, h),
+                d = southPt(doorOffset, h),
+                normal = southNormal,
             )
         }
 
-        // Lintel segment (over door: X from doorOffset to doorOffset + doorW, Y from doorH to h)
+        // Lintel segment (over door: doorOffset to doorOffset + doorW, Y from doorH to h)
         wallBuilder.addQuad(
-            a = Vec3(doorOffset + doorW, doorH, d),
-            b = Vec3(doorOffset, doorH, d),
-            c = Vec3(doorOffset, h, d),
-            d = Vec3(doorOffset + doorW, h, d),
-            normal = Vec3(0f, 0f, -1f),
+            a = southPt(doorOffset + doorW, doorH),
+            b = southPt(doorOffset, doorH),
+            c = southPt(doorOffset, h),
+            d = southPt(doorOffset + doorW, h),
+            normal = southNormal,
         )
 
-        // Right wall segment (after door: X from doorOffset + doorW to w)
-        if (doorOffset + doorW < w - 1f) {
+        // Segment E (after door: doorOffset + doorW to southLen)
+        if (doorOffset + doorW < southLen - 1f) {
             wallBuilder.addQuad(
-                a = Vec3(w, 0f, d),
-                b = Vec3(doorOffset + doorW, 0f, d),
-                c = Vec3(doorOffset + doorW, h, d),
-                d = Vec3(w, h, d),
-                normal = Vec3(0f, 0f, -1f),
+                a = southPt(southLen, 0f),
+                b = southPt(doorOffset + doorW, 0f),
+                c = southPt(doorOffset + doorW, h),
+                d = southPt(southLen, h),
+                normal = southNormal,
             )
         }
 
-        // Door Frame (Facing -Z into the room, slightly proud at Z = d - 2f)
-        val frameZ = d - 2f
-        // Left jamb
+        // Door Frame (slightly proud at 2mm inward)
         frameBuilder.addQuad(
-            a = Vec3(doorOffset + frameT, 0f, frameZ),
-            b = Vec3(doorOffset, 0f, frameZ),
-            c = Vec3(doorOffset, doorH, frameZ),
-            d = Vec3(doorOffset + frameT, doorH, frameZ),
-            normal = Vec3(0f, 0f, -1f),
+            a = southPt(doorOffset + frameT, 0f, 2f),
+            b = southPt(doorOffset, 0f, 2f),
+            c = southPt(doorOffset, doorH, 2f),
+            d = southPt(doorOffset + frameT, doorH, 2f),
+            normal = southNormal,
         )
-        // Right jamb
         frameBuilder.addQuad(
-            a = Vec3(doorOffset + doorW, 0f, frameZ),
-            b = Vec3(doorOffset + doorW - frameT, 0f, frameZ),
-            c = Vec3(doorOffset + doorW - frameT, doorH, frameZ),
-            d = Vec3(doorOffset + doorW, doorH, frameZ),
-            normal = Vec3(0f, 0f, -1f),
+            a = southPt(doorOffset + doorW, 0f, 2f),
+            b = southPt(doorOffset + doorW - frameT, 0f, 2f),
+            c = southPt(doorOffset + doorW - frameT, doorH, 2f),
+            d = southPt(doorOffset + doorW, doorH, 2f),
+            normal = southNormal,
         )
-        // Head / top lintel frame
         frameBuilder.addQuad(
-            a = Vec3(doorOffset + doorW, doorH - frameT, frameZ),
-            b = Vec3(doorOffset, doorH - frameT, frameZ),
-            c = Vec3(doorOffset, doorH, frameZ),
-            d = Vec3(doorOffset + doorW, doorH, frameZ),
-            normal = Vec3(0f, 0f, -1f),
+            a = southPt(doorOffset + doorW, doorH - frameT, 2f),
+            b = southPt(doorOffset, doorH - frameT, 2f),
+            c = southPt(doorOffset, doorH, 2f),
+            d = southPt(doorOffset + doorW, doorH, 2f),
+            normal = southNormal,
         )
 
-        // Door Leaf (fitted inside frame, facing -Z)
-        val leafMinX = doorOffset + frameT + 4f
-        val leafMaxX = doorOffset + doorW - frameT - 4f
+        // Door Leaf & Handle
+        val leafMinS = doorOffset + frameT + 4f
+        val leafMaxS = doorOffset + doorW - frameT - 4f
         val leafMaxY = doorH - frameT - 4f
-        if (leafMaxX > leafMinX && leafMaxY > 0f) {
+        if (leafMaxS > leafMinS && leafMaxY > 0f) {
             leafBuilder.addQuad(
-                a = Vec3(leafMaxX, 0f, d),
-                b = Vec3(leafMinX, 0f, d),
-                c = Vec3(leafMinX, leafMaxY, d),
-                d = Vec3(leafMaxX, leafMaxY, d),
-                normal = Vec3(0f, 0f, -1f),
+                a = southPt(leafMaxS, 0f),
+                b = southPt(leafMinS, 0f),
+                c = southPt(leafMinS, leafMaxY),
+                d = southPt(leafMaxS, leafMaxY),
+                normal = southNormal,
             )
 
-            // Door handle (facing -Z, slightly proud at d - 25f)
             val handleY = 1000f
-            val handleX = leafMaxX - 60f
+            val handleS = leafMaxS - 60f
             handleBuilder.addQuad(
-                a = Vec3(handleX + 15f, handleY - 15f, d - 25f),
-                b = Vec3(handleX - 15f, handleY - 15f, d - 25f),
-                c = Vec3(handleX - 15f, handleY + 15f, d - 25f),
-                d = Vec3(handleX + 15f, handleY + 15f, d - 25f),
-                normal = Vec3(0f, 0f, -1f),
+                a = southPt(handleS + 15f, handleY - 15f, 25f),
+                b = southPt(handleS - 15f, handleY - 15f, 25f),
+                c = southPt(handleS - 15f, handleY + 15f, 25f),
+                d = southPt(handleS + 15f, handleY + 15f, 25f),
+                normal = southNormal,
             )
         }
 

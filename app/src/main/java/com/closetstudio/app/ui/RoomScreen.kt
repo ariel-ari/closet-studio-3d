@@ -93,15 +93,17 @@ import kotlin.math.sqrt
  * - Wall 3: East (X = clearWidthMm, Wall B)
  */
 private fun getWallTarget(wallStep: Int, room: RoomSpec): Float3 {
-    val w = room.clearWidthMm * MM_TO_M
-    val d = room.clearDepthMm * MM_TO_M
-    val midY = 1.40f // Eye height / wall center height
+    val nw = room.vertexNW
+    val ne = room.vertexNE
+    val se = room.vertexSE
+    val sw = room.vertexSW
+    val midY = 1.40f
     val wall = ((wallStep % 4) + 4) % 4
     return when (wall) {
-        0 -> Float3(w * 0.5f, midY, d)
-        1 -> Float3(0f, midY, d * 0.5f)
-        2 -> Float3(w * 0.5f, midY, 0f)
-        else -> Float3(w, midY, d * 0.5f)
+        0 -> Float3((sw.x + se.x) * 0.5f * MM_TO_M, midY, (sw.z + se.z) * 0.5f * MM_TO_M)
+        1 -> Float3((sw.x + nw.x) * 0.5f * MM_TO_M, midY, (sw.z + nw.z) * 0.5f * MM_TO_M)
+        2 -> Float3((nw.x + ne.x) * 0.5f * MM_TO_M, midY, (nw.z + ne.z) * 0.5f * MM_TO_M)
+        else -> Float3((ne.x + se.x) * 0.5f * MM_TO_M, midY, (ne.z + se.z) * 0.5f * MM_TO_M)
     }
 }
 
@@ -651,63 +653,17 @@ fun RoomScreen() {
                         }
                     }
                 } else {
-                    // Dimensioning Mode: Responsive Split-Screen!
+                    // Dimensioning Mode: Responsive Split-Screen with 2D CAD Floorplan!
                     if (isLandscape) {
-                        // Tablet / Landscape: Side by Side (Left: 3D floorplan, Right: Panel)
-                        val panelWidth = (screenWidth * 0.42f).coerceIn(380.dp, 460.dp)
+                        // Tablet / Landscape: Side by Side (Left: 2D CAD floorplan, Right: Panel)
+                        val panelWidth = (screenWidth * 0.44f).coerceIn(380.dp, 470.dp)
                         Row(modifier = Modifier.fillMaxSize()) {
-                            Box(
+                            RoomFloorplan2D(
+                                room = room,
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight(),
-                            ) {
-                                RoomViewport(
-                                    room = room,
-                                    targetX = targetXAnim.value,
-                                    targetY = targetYAnim.value,
-                                    targetZ = targetZAnim.value,
-                                    yaw = yawAnim.value,
-                                    pitch = pitchAnim.value,
-                                    distance = distanceAnim.value,
-                                    onOrbit = { deltaX, deltaY ->
-                                        coroutineScope.launch {
-                                            yawAnim.snapTo(yawAnim.value - deltaX * 0.22f)
-                                            val newPitch = (pitchAnim.value - deltaY * 0.18f).coerceIn(-88f, 25f)
-                                            pitchAnim.snapTo(newPitch)
-                                        }
-                                    },
-                                    onPan = { panX, panY ->
-                                        val yawRad = Math.toRadians(yawAnim.value.toDouble()).toFloat()
-                                        val pitchRad = Math.toRadians(pitchAnim.value.toDouble()).toFloat()
-                                        val dirX = sin(yawRad) * cos(pitchRad)
-                                        val dirY = sin(pitchRad)
-                                        val dirZ = -cos(yawRad) * cos(pitchRad)
-                                        val rightLen = sqrt(dirZ * dirZ + dirX * dirX).coerceAtLeast(0.001f)
-                                        val rightX = -dirZ / rightLen
-                                        val rightZ = dirX / rightLen
-                                        val upX = -rightZ * dirY
-                                        val upY = rightZ * dirX - rightX * dirZ
-                                        val upZ = rightX * dirY
-                                        val panScale = distanceAnim.value * 0.0016f
-                                        val deltaX = -rightX * (panX * panScale) + upX * (panY * panScale)
-                                        val deltaY = upY * (panY * panScale)
-                                        val deltaZ = -rightZ * (panX * panScale) + upZ * (panY * panScale)
-                                        coroutineScope.launch {
-                                            targetXAnim.snapTo(targetXAnim.value + deltaX)
-                                            targetYAnim.snapTo(targetYAnim.value + deltaY)
-                                            targetZAnim.snapTo(targetZAnim.value + deltaZ)
-                                        }
-                                    },
-                                    onZoom = { zoomFactor ->
-                                        coroutineScope.launch {
-                                            val newDist = (distanceAnim.value / zoomFactor).coerceIn(0.8f, 10.0f)
-                                            distanceAnim.snapTo(newDist)
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                                FloorplanBadgesOverlay(room = room)
-                            }
+                            )
 
                             RoomDimensionsPanel(
                                 room = room,
@@ -720,60 +676,14 @@ fun RoomScreen() {
                             )
                         }
                     } else {
-                        // Mobile / Portrait: Top / Bottom Split (Top: 3D floorplan, Bottom: Panel)
+                        // Mobile / Portrait: Top / Bottom Split (Top: 2D CAD floorplan, Bottom: Panel)
                         Column(modifier = Modifier.fillMaxSize()) {
-                            Box(
+                            RoomFloorplan2D(
+                                room = room,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(0.95f),
-                            ) {
-                                RoomViewport(
-                                    room = room,
-                                    targetX = targetXAnim.value,
-                                    targetY = targetYAnim.value,
-                                    targetZ = targetZAnim.value,
-                                    yaw = yawAnim.value,
-                                    pitch = pitchAnim.value,
-                                    distance = distanceAnim.value,
-                                    onOrbit = { deltaX, deltaY ->
-                                        coroutineScope.launch {
-                                            yawAnim.snapTo(yawAnim.value - deltaX * 0.22f)
-                                            val newPitch = (pitchAnim.value - deltaY * 0.18f).coerceIn(-88f, 25f)
-                                            pitchAnim.snapTo(newPitch)
-                                        }
-                                    },
-                                    onPan = { panX, panY ->
-                                        val yawRad = Math.toRadians(yawAnim.value.toDouble()).toFloat()
-                                        val pitchRad = Math.toRadians(pitchAnim.value.toDouble()).toFloat()
-                                        val dirX = sin(yawRad) * cos(pitchRad)
-                                        val dirY = sin(pitchRad)
-                                        val dirZ = -cos(yawRad) * cos(pitchRad)
-                                        val rightLen = sqrt(dirZ * dirZ + dirX * dirX).coerceAtLeast(0.001f)
-                                        val rightX = -dirZ / rightLen
-                                        val rightZ = dirX / rightLen
-                                        val upX = -rightZ * dirY
-                                        val upY = rightZ * dirX - rightX * dirZ
-                                        val upZ = rightX * dirY
-                                        val panScale = distanceAnim.value * 0.0016f
-                                        val deltaX = -rightX * (panX * panScale) + upX * (panY * panScale)
-                                        val deltaY = upY * (panY * panScale)
-                                        val deltaZ = -rightZ * (panX * panScale) + upZ * (panY * panScale)
-                                        coroutineScope.launch {
-                                            targetXAnim.snapTo(targetXAnim.value + deltaX)
-                                            targetYAnim.snapTo(targetYAnim.value + deltaY)
-                                            targetZAnim.snapTo(targetZAnim.value + deltaZ)
-                                        }
-                                    },
-                                    onZoom = { zoomFactor ->
-                                        coroutineScope.launch {
-                                            val newDist = (distanceAnim.value / zoomFactor).coerceIn(0.8f, 10.0f)
-                                            distanceAnim.snapTo(newDist)
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                                FloorplanBadgesOverlay(room = room)
-                            }
+                                    .weight(0.92f),
+                            )
 
                             RoomDimensionsPanel(
                                 room = room,
@@ -781,7 +691,7 @@ fun RoomScreen() {
                                 onDismiss = { exitDimensionsMode() },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(1.05f)
+                                    .weight(1.08f)
                                     .navigationBarsPadding(),
                             )
                         }
@@ -797,13 +707,12 @@ fun RoomScreen() {
                     title = { Text("Datos del Ambiente") },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("• Pared A (Norte): ${room.clearWidthMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearWidthMm / 1000f)} m)")
-                            Text("• Pared B y C (Prof.): ${room.clearDepthMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearDepthMm / 1000f)} m)")
-                            Text("• Tramo D: ${room.segmentDMm.toInt()} mm")
-                            Text("• Puerta: ${room.door.widthMm.toInt()} mm")
-                            Text("• Tramo E: ${room.segmentEMm.toInt()} mm")
+                            Text("• Pared A (Norte): ${room.wallAMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallAMm / 1000f)} m)")
+                            Text("• Pared B (Este): ${room.wallBMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallBMm / 1000f)} m)")
+                            Text("• Pared C (Oeste): ${room.wallCMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallCMm / 1000f)} m)")
+                            Text("• Pared Sur (Total): ${room.wallSouthMm.toInt()} mm (D:${room.segmentDMm.toInt()} + 🚪${room.door.widthMm.toInt()} + E:${room.segmentEMm.toInt()})")
+                            Text("• Ángulos: AC=${String.format(Locale.US, "%.1f°", room.angleACDeg)}, AB=${String.format(Locale.US, "%.1f°", room.angleABDeg)}, CD=${String.format(Locale.US, "%.1f°", room.angleCDDeg)}, BE=${String.format(Locale.US, "%.1f°", room.angleBEDeg)}")
                             Text("• Altura (Y): ${room.clearHeightMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearHeightMm / 1000f)} m)")
-                            Text("• Superficie Piso: ${String.format(Locale.US, "%.2f", (room.clearWidthMm * room.clearDepthMm) / 1_000_000f)} m²")
                             Text("• Vista actual: ${getWallName(wallStep.intValue)}")
                         }
                     },
