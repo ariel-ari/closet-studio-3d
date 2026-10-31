@@ -1,7 +1,9 @@
 package com.closetstudio.app.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,13 +26,14 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,20 +52,20 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Embedded / Inline Dimensions Panel with Parametric Constraint Solver controls:
- * - Independent wall lengths for A, B, C, and South (D + Door + E)
- * - Lock / Unlock toggles (🔒 / 🔓) per wall and per corner angle
- * - Independent corner angle adjustment (65°..115°) with automatic polygon closure
+ * Contextual Property Inspector for the 2D CAD Floorplan:
+ * Displays ONLY the controls for the wall or corner selected on the 2D plan,
+ * avoiding a cluttered list of all sliders at once.
  */
 @Composable
 fun RoomDimensionsPanel(
     room: RoomSpec,
+    selectedElement: FloorplanElement,
+    onSelectElement: (FloorplanElement) -> Unit,
     onRoomChange: (RoomSpec) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var symmetricOppositeWalls by remember { mutableStateOf(false) }
-    var doorCentered by remember { mutableStateOf(room.isDoorCentered) }
+    var doorCentered by remember(room.isDoorCentered) { mutableStateOf(room.isDoorCentered) }
 
     Surface(
         modifier = modifier,
@@ -73,11 +76,11 @@ fun RoomDimensionsPanel(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // Header
+            // 1. Compact Header + Quick Reset to Orthogonal 90°
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -86,404 +89,206 @@ fun RoomDimensionsPanel(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Straighten,
                         contentDescription = null,
                         tint = Color(0xFF2C55B5),
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(22.dp),
                     )
                     Column {
                         Text(
-                            text = "Plano 2D y Restricciones",
-                            style = MaterialTheme.typography.titleMedium,
+                            text = "Inspector del Plano 2D",
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "Paredes independientes (A, B, C, D-E) y ángulos",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = "Tocá una pared o esquina en el dibujo para editarla",
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Cerrar",
-                    )
+
+                TextButton(
+                    onClick = { onRoomChange(room.withOrthogonalReset(doorCentered)) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Text(" Escuadra 90°", style = MaterialTheme.typography.labelSmall)
+                }
+
+                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Cerrar", modifier = Modifier.size(20.dp))
                 }
             }
 
-            // 1. Switch for Symmetrical Opposite Walls vs Independent Walls
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                ),
-                shape = RoundedCornerShape(12.dp),
+            // 2. Quick Selector Strip (synced with 2D floorplan tap)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Paredes opuestas iguales (Rectángulo)",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = if (symmetricOppositeWalls) {
-                                "B = C y A = Sur • Esquinas a 90°"
-                            } else {
-                                "Modo libre: cada pared y esquina se edita por separado"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(
-                        checked = symmetricOppositeWalls,
-                        onCheckedChange = { checked ->
-                            symmetricOppositeWalls = checked
+                ElementChip("Pared A", selectedElement == FloorplanElement.WallA) {
+                    onSelectElement(FloorplanElement.WallA)
+                }
+                ElementChip("Pared B", selectedElement == FloorplanElement.WallB) {
+                    onSelectElement(FloorplanElement.WallB)
+                }
+                ElementChip("Pared C", selectedElement == FloorplanElement.WallC) {
+                    onSelectElement(FloorplanElement.WallC)
+                }
+                ElementChip("Puerta D-E", selectedElement == FloorplanElement.WallSouthDoor) {
+                    onSelectElement(FloorplanElement.WallSouthDoor)
+                }
+                ElementChip("∠ A-C", selectedElement == FloorplanElement.CornerAC, isCorner = true) {
+                    onSelectElement(FloorplanElement.CornerAC)
+                }
+                ElementChip("∠ A-B", selectedElement == FloorplanElement.CornerAB, isCorner = true) {
+                    onSelectElement(FloorplanElement.CornerAB)
+                }
+                ElementChip("∠ C-D", selectedElement == FloorplanElement.CornerCD, isCorner = true) {
+                    onSelectElement(FloorplanElement.CornerCD)
+                }
+                ElementChip("∠ B-E", selectedElement == FloorplanElement.CornerBE, isCorner = true) {
+                    onSelectElement(FloorplanElement.CornerBE)
+                }
+                ElementChip("Altura Y", selectedElement == FloorplanElement.CeilingHeight) {
+                    onSelectElement(FloorplanElement.CeilingHeight)
+                }
+            }
+
+            HorizontalDivider()
+
+            // 3. Focused Contextual Inspector Card for the selected element
+            when (selectedElement) {
+                FloorplanElement.WallA -> {
+                    WallInspectorCard(
+                        letter = "A",
+                        title = "Pared Norte (Frente)",
+                        subtitle = "Muro frontal de referencia",
+                        valueMm = room.wallAMm,
+                        isLocked = room.lockWallA,
+                        onLockToggle = { onRoomChange(room.copy(lockWallA = !room.lockWallA)) },
+                        onValueChange = { onRoomChange(room.withWallA(it, doorCentered)) },
+                        oppositeButtonLabel = "Igualar A con Pared Sur (${room.wallSouthMm.roundToInt()} mm)",
+                        onMatchOpposite = { onRoomChange(room.withWallA(room.wallSouthMm, doorCentered)) },
+                    )
+                }
+
+                FloorplanElement.WallB -> {
+                    WallInspectorCard(
+                        letter = "B",
+                        title = "Pared Este (Derecha)",
+                        subtitle = "Se redimensiona sola sin obligar a Pared C",
+                        valueMm = room.wallBMm,
+                        isLocked = room.lockWallB,
+                        onLockToggle = { onRoomChange(room.copy(lockWallB = !room.lockWallB)) },
+                        onValueChange = { onRoomChange(room.withWallB(it, doorCentered)) },
+                        oppositeButtonLabel = "Igualar B con Pared C (${room.wallCMm.roundToInt()} mm)",
+                        onMatchOpposite = { onRoomChange(room.withWallB(room.wallCMm, doorCentered)) },
+                    )
+                }
+
+                FloorplanElement.WallC -> {
+                    WallInspectorCard(
+                        letter = "C",
+                        title = "Pared Oeste (Izquierda)",
+                        subtitle = "Se redimensiona sola sin obligar a Pared B",
+                        valueMm = room.wallCMm,
+                        isLocked = room.lockWallC,
+                        onLockToggle = { onRoomChange(room.copy(lockWallC = !room.lockWallC)) },
+                        onValueChange = { onRoomChange(room.withWallC(it, doorCentered)) },
+                        oppositeButtonLabel = "Igualar C con Pared B (${room.wallBMm.roundToInt()} mm)",
+                        onMatchOpposite = { onRoomChange(room.withWallC(room.wallBMm, doorCentered)) },
+                    )
+                }
+
+                FloorplanElement.WallSouthDoor -> {
+                    DoorWallInspectorCard(
+                        room = room,
+                        doorCentered = doorCentered,
+                        onDoorCenteredChange = { checked ->
+                            doorCentered = checked
                             if (checked) {
-                                onRoomChange(room.withOrthogonalReset(doorCentered))
+                                onRoomChange(room.withCenteredDoor())
                             }
                         },
+                        onRoomChange = onRoomChange,
                     )
                 }
-            }
 
-            HorizontalDivider()
-
-            // 2. Pared A (Frente / Norte)
-            WallHeaderWithLock(
-                letter = "A",
-                name = "Pared Norte (Frente)",
-                isLocked = room.lockWallA,
-                onLockToggle = { onRoomChange(room.copy(lockWallA = !room.lockWallA)) },
-            )
-            DimensionSlider(
-                label = "Largo Pared A",
-                valueMm = room.wallAMm,
-                rangeMm = 1500f..6000f,
-                stepMm = 50f,
-                onValueChange = { newA ->
-                    onRoomChange(room.withWallA(newA, doorCentered))
-                },
-            )
-
-            // 3. Pared B (Lateral Este / Derecha) - Independent!
-            WallHeaderWithLock(
-                letter = "B",
-                name = "Pared Este (Derecha)",
-                isLocked = room.lockWallB,
-                onLockToggle = { onRoomChange(room.copy(lockWallB = !room.lockWallB)) },
-            )
-            DimensionSlider(
-                label = if (symmetricOppositeWalls) "Largo Pared B (sincronizada con C)" else "Largo Pared B (independiente)",
-                valueMm = room.wallBMm,
-                rangeMm = 1500f..6000f,
-                stepMm = 50f,
-                onValueChange = { newB ->
-                    if (symmetricOppositeWalls) {
-                        onRoomChange(
-                            room.copy(clearDepthMm = newB, wallBMm = newB)
-                                .let { if (doorCentered) it.withCenteredDoor() else it },
-                        )
-                    } else {
-                        onRoomChange(room.withWallB(newB, doorCentered))
-                    }
-                },
-            )
-
-            // 4. Pared C (Lateral Oeste / Izquierda) - Independent!
-            WallHeaderWithLock(
-                letter = "C",
-                name = "Pared Oeste (Izquierda)",
-                isLocked = room.lockWallC,
-                onLockToggle = { onRoomChange(room.copy(lockWallC = !room.lockWallC)) },
-            )
-            DimensionSlider(
-                label = if (symmetricOppositeWalls) "Largo Pared C (sincronizada con B)" else "Largo Pared C (independiente)",
-                valueMm = room.wallCMm,
-                rangeMm = 1500f..6000f,
-                stepMm = 50f,
-                onValueChange = { newC ->
-                    if (symmetricOppositeWalls) {
-                        onRoomChange(
-                            room.copy(clearDepthMm = newC, wallBMm = newC)
-                                .let { if (doorCentered) it.withCenteredDoor() else it },
-                        )
-                    } else {
-                        onRoomChange(room.withWallC(newC, doorCentered))
-                    }
-                },
-            )
-
-            HorizontalDivider()
-
-            // 5. Corner Angles Card (Independent checkbox per corner to unlock/edit angle)
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
-                ),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Ángulos de Esquinas (marcar check para editar)",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            val sumAngles = room.angleACDeg + room.angleABDeg + room.angleBEDeg + room.angleCDDeg
-                            Text(
-                                text = String.format(
-                                    Locale.US,
-                                    "AC: %.1f° • AB: %.1f° • CD: %.1f° • BE: %.1f° (Σ=%.0f°)",
-                                    room.angleACDeg,
-                                    room.angleABDeg,
-                                    room.angleCDDeg,
-                                    room.angleBEDeg,
-                                    sumAngles,
-                                ),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        TextButton(
-                            onClick = {
-                                onRoomChange(
-                                    room.copy(angleACDeg = 90f, angleABDeg = 90f)
-                                        .let { if (doorCentered) it.withCenteredDoor() else it },
-                                )
-                            },
-                        ) {
-                            Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Text(" 90°", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-
-                    // Corner A-C (North-West)
-                    AngleSliderRow(
-                        cornerLabel = "Esquina A-C (Arriba Izq.)",
+                FloorplanElement.CornerAC -> {
+                    CornerInspectorCard(
+                        cornerCode = "A-C",
+                        title = "Esquina Arriba Izquierda (Noroeste)",
+                        subtitle = "Ángulo interior entre Pared A y Pared C",
                         angleDeg = room.angleACDeg,
                         isLocked = room.lockAngleAC,
+                        room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleAC = !room.lockAngleAC)) },
-                        onAngleChange = { newDeg ->
-                            symmetricOppositeWalls = false
-                            onRoomChange(room.withAngleAC(newDeg, doorCentered))
-                        },
+                        onAngleChange = { onRoomChange(room.withAngleAC(it, doorCentered)) },
                     )
+                }
 
-                    // Corner A-B (North-East)
-                    AngleSliderRow(
-                        cornerLabel = "Esquina A-B (Arriba Der.)",
+                FloorplanElement.CornerAB -> {
+                    CornerInspectorCard(
+                        cornerCode = "A-B",
+                        title = "Esquina Arriba Derecha (Noreste)",
+                        subtitle = "Ángulo interior entre Pared A y Pared B",
                         angleDeg = room.angleABDeg,
                         isLocked = room.lockAngleAB,
+                        room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleAB = !room.lockAngleAB)) },
-                        onAngleChange = { newDeg ->
-                            symmetricOppositeWalls = false
-                            onRoomChange(room.withAngleAB(newDeg, doorCentered))
-                        },
+                        onAngleChange = { onRoomChange(room.withAngleAB(it, doorCentered)) },
                     )
+                }
 
-                    // Corner C-D (South-West)
-                    AngleSliderRow(
-                        cornerLabel = "Esquina C-D (Abajo Izq. • adapta B/Sur)",
+                FloorplanElement.CornerCD -> {
+                    CornerInspectorCard(
+                        cornerCode = "C-D",
+                        title = "Esquina Abajo Izquierda (Suroeste)",
+                        subtitle = "Ángulo entre Pared C y Tramo D (adapta Pared B / Sur)",
                         angleDeg = room.angleCDDeg,
                         isLocked = room.lockAngleCD,
+                        room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleCD = !room.lockAngleCD)) },
-                        onAngleChange = { newDeg ->
-                            symmetricOppositeWalls = false
-                            onRoomChange(room.withAngleCD(newDeg, doorCentered))
-                        },
+                        onAngleChange = { onRoomChange(room.withAngleCD(it, doorCentered)) },
                     )
+                }
 
-                    // Corner B-E (South-East)
-                    AngleSliderRow(
-                        cornerLabel = "Esquina B-E (Abajo Der. • adapta C/Sur)",
+                FloorplanElement.CornerBE -> {
+                    CornerInspectorCard(
+                        cornerCode = "B-E",
+                        title = "Esquina Abajo Derecha (Sureste)",
+                        subtitle = "Ángulo entre Pared B y Tramo E (adapta Pared C / Sur)",
                         angleDeg = room.angleBEDeg,
                         isLocked = room.lockAngleBE,
+                        room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleBE = !room.lockAngleBE)) },
-                        onAngleChange = { newDeg ->
-                            symmetricOppositeWalls = false
-                            onRoomChange(room.withAngleBE(newDeg, doorCentered))
-                        },
+                        onAngleChange = { onRoomChange(room.withAngleBE(it, doorCentered)) },
+                    )
+                }
+
+                FloorplanElement.CeilingHeight -> {
+                    WallInspectorCard(
+                        letter = "Y",
+                        title = "Altura del Techo",
+                        subtitle = "Distancia libre piso a techo",
+                        valueMm = room.clearHeightMm,
+                        rangeMm = 2000f..3500f,
+                        isLocked = true,
+                        onLockToggle = {},
+                        onValueChange = { onRoomChange(room.copy(clearHeightMm = it)) },
+                        oppositeButtonLabel = null,
+                        onMatchOpposite = {},
                     )
                 }
             }
 
-            HorizontalDivider()
-
-            // 6. Pared con Puerta: Tramos D y E (South Wall)
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                ),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            WallBadge(letter = "D")
-                            Icon(
-                                Icons.Default.DoorFront,
-                                contentDescription = null,
-                                tint = Color(0xFF8B5A2B),
-                                modifier = Modifier.size(18.dp),
-                            )
-                            WallBadge(letter = "E")
-                            Text(
-                                text = "Pared Puerta (Sur)",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            FilterChip(
-                                selected = room.lockWallSouth,
-                                onClick = { onRoomChange(room.copy(lockWallSouth = !room.lockWallSouth)) },
-                                label = {
-                                    Text(
-                                        text = if (room.lockWallSouth) "Fija 🔒" else "Cierre 🔓",
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = if (room.lockWallSouth) Icons.Default.Lock else Icons.Default.LockOpen,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                    )
-                                },
-                            )
-                            Checkbox(
-                                checked = doorCentered,
-                                onCheckedChange = { checked ->
-                                    doorCentered = checked
-                                    if (checked) {
-                                        onRoomChange(room.withCenteredDoor())
-                                    }
-                                },
-                            )
-                            Text(
-                                text = "Centrada",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                    }
-
-                    // Visual breakdown pill: [ D ] + [ Puerta ] + [ E ] = Total
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                text = "D: ${room.segmentDMm.roundToInt()} mm",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2C55B5),
-                            )
-                            Text(
-                                text = "+ 🚪 ${room.door.widthMm.roundToInt()} mm +",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF8B5A2B),
-                            )
-                            Text(
-                                text = "E: ${room.segmentEMm.roundToInt()} mm",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2C55B5),
-                            )
-                            Text(
-                                text = "= ${room.doorWallLengthMm.roundToInt()} mm",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                        }
-                    }
-
-                    // Immutable Door Width slider
-                    DimensionSlider(
-                        label = "Ancho de Puerta (Inmutable al mover lados)",
-                        valueMm = room.door.widthMm,
-                        rangeMm = 600f..1400f,
-                        stepMm = 50f,
-                        onValueChange = { newDoorW ->
-                            onRoomChange(room.withDoorWidth(newDoorW, keepCentered = doorCentered))
-                        },
-                    )
-
-                    if (!doorCentered) {
-                        val maxSide = room.maxDoorOffset().coerceAtLeast(100f)
-                        DimensionSlider(
-                            label = "Tramo D (Izquierda • E se adapta solo)",
-                            valueMm = room.segmentDMm,
-                            rangeMm = 0f..maxSide,
-                            stepMm = 25f,
-                            onValueChange = { newD ->
-                                onRoomChange(room.withSegmentD(newD))
-                            },
-                        )
-
-                        DimensionSlider(
-                            label = "Tramo E (Derecha • D se adapta solo)",
-                            valueMm = room.segmentEMm,
-                            rangeMm = 0f..maxSide,
-                            stepMm = 25f,
-                            onValueChange = { newE ->
-                                onRoomChange(room.withSegmentE(newE))
-                            },
-                        )
-                    }
-                }
-            }
-
-            // 7. Ceiling Height (Y)
-            DimensionSlider(
-                label = "Altura del Techo (Eje Y)",
-                valueMm = room.clearHeightMm,
-                rangeMm = 2000f..3500f,
-                stepMm = 50f,
-                onValueChange = { onRoomChange(room.copy(clearHeightMm = it)) },
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
 
             Button(
                 onClick = onDismiss,
@@ -497,116 +302,449 @@ fun RoomDimensionsPanel(
 }
 
 @Composable
-private fun WallHeaderWithLock(
-    letter: String,
-    name: String,
-    isLocked: Boolean,
-    onLockToggle: () -> Unit,
+private fun ElementChip(
+    label: String,
+    selected: Boolean,
+    isCorner: Boolean = false,
+    onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            WallBadge(letter = letter)
+    val activeColor = if (isCorner) Color(0xFFD97706) else Color(0xFF2C55B5)
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = {
             Text(
-                text = name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             )
-        }
-        FilterChip(
-            selected = isLocked,
-            onClick = onLockToggle,
-            label = {
-                Text(
-                    text = if (isLocked) "Bloqueado 🔒" else "Adaptable 🔓",
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                )
-            },
-        )
-    }
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = activeColor,
+            selectedLabelColor = Color.White,
+        ),
+    )
 }
 
 @Composable
-private fun AngleSliderRow(
-    cornerLabel: String,
-    angleDeg: Float,
+private fun WallInspectorCard(
+    letter: String,
+    title: String,
+    subtitle: String,
+    valueMm: Float,
+    rangeMm: ClosedFloatingPointRange<Float> = 1500f..6000f,
     isLocked: Boolean,
     onLockToggle: () -> Unit,
-    onAngleChange: (Float) -> Unit,
+    onValueChange: (Float) -> Unit,
+    oppositeButtonLabel: String?,
+    onMatchOpposite: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        ),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
             ) {
-                Checkbox(
-                    checked = !isLocked,
-                    onCheckedChange = { onLockToggle() },
-                )
-                Text(
-                    text = cornerLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Text(
-                    text = String.format(Locale.US, "%.1f°", angleDeg),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (abs(angleDeg - 90f) < 0.3f) Color(0xFF2C55B5) else Color(0xFFD97706),
-                )
-                IconButton(
-                    onClick = onLockToggle,
-                    modifier = Modifier.size(26.dp),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Icon(
-                        imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                        contentDescription = "Bloquear esquina",
-                        tint = if (isLocked) Color(0xFF2C55B5) else Color(0xFFD97706),
-                        modifier = Modifier.size(16.dp),
+                    WallBadge(letter = letter)
+                    Column {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                if (oppositeButtonLabel != null) {
+                    FilterChip(
+                        selected = isLocked,
+                        onClick = onLockToggle,
+                        label = {
+                            Text(
+                                text = if (isLocked) "Bloqueado 🔒" else "Adaptable 🔓",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        },
                     )
                 }
             }
+
+            // Dimension value + Fine-tuning step buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${valueMm.roundToInt()} mm (${String.format(Locale.US, "%.2f", valueMm / 1000f)} m)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF2C55B5),
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StepButton("-100") { onValueChange((valueMm - 100f).coerceIn(rangeMm)) }
+                    StepButton("-25") { onValueChange((valueMm - 25f).coerceIn(rangeMm)) }
+                    StepButton("+25") { onValueChange((valueMm + 25f).coerceIn(rangeMm)) }
+                    StepButton("+100") { onValueChange((valueMm + 100f).coerceIn(rangeMm)) }
+                }
+            }
+
+            DimensionSlider(
+                label = "Deslizar medida ($letter)",
+                valueMm = valueMm,
+                rangeMm = rangeMm,
+                stepMm = 25f,
+                onValueChange = onValueChange,
+            )
+
+            if (oppositeButtonLabel != null) {
+                OutlinedButton(
+                    onClick = onMatchOpposite,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(vertical = 6.dp),
+                ) {
+                    Text(oppositeButtonLabel, style = MaterialTheme.typography.labelMedium)
+                }
+            }
         }
-        Slider(
-            value = angleDeg.coerceIn(65f, 115f),
-            enabled = !isLocked,
-            onValueChange = { raw ->
-                val snapped = (raw * 2f).roundToInt() / 2f
-                onAngleChange(snapped)
-            },
-            valueRange = 65f..115f,
+    }
+}
+
+@Composable
+private fun CornerInspectorCard(
+    cornerCode: String,
+    title: String,
+    subtitle: String,
+    angleDeg: Float,
+    isLocked: Boolean,
+    room: RoomSpec,
+    onLockToggle: () -> Unit,
+    onAngleChange: (Float) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        ),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    WallBadge(letter = "∠ $cornerCode", bgColor = Color(0xFFD97706))
+                    Column {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            // Checkbox to enable/unlock editing this corner's angle
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = !isLocked,
+                            onCheckedChange = { onLockToggle() },
+                        )
+                        Text(
+                            text = if (!isLocked) "Edición de ángulo habilitada 🔓" else "Esquina bloqueada 🔒 (marcar para editar)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+
+            // Angle readout + fine step buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = String.format(Locale.US, "%.1f°", angleDeg),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (abs(angleDeg - 90f) < 0.3f) Color(0xFF2C55B5) else Color(0xFFD97706),
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    StepButton("-2°") {
+                        if (isLocked) onLockToggle()
+                        onAngleChange((angleDeg - 2f).coerceIn(65f, 115f))
+                    }
+                    StepButton("-0.5°") {
+                        if (isLocked) onLockToggle()
+                        onAngleChange((angleDeg - 0.5f).coerceIn(65f, 115f))
+                    }
+                    StepButton("90°") {
+                        onAngleChange(90f)
+                    }
+                    StepButton("+0.5°") {
+                        if (isLocked) onLockToggle()
+                        onAngleChange((angleDeg + 0.5f).coerceIn(65f, 115f))
+                    }
+                    StepButton("+2°") {
+                        if (isLocked) onLockToggle()
+                        onAngleChange((angleDeg + 2f).coerceIn(65f, 115f))
+                    }
+                }
+            }
+
+            Slider(
+                value = angleDeg.coerceIn(65f, 115f),
+                enabled = !isLocked,
+                onValueChange = { raw ->
+                    val snapped = (raw * 2f).roundToInt() / 2f
+                    onAngleChange(snapped)
+                },
+                valueRange = 65f..115f,
+            )
+
+            val sumAngles = room.angleACDeg + room.angleABDeg + room.angleBEDeg + room.angleCDDeg
+            Text(
+                text = String.format(
+                    Locale.US,
+                    "Cierre automático activo (Σ = %.0f°) • Sur: %d mm %s",
+                    sumAngles,
+                    room.wallSouthMm.roundToInt(),
+                    if (room.lockWallSouth) "🔒" else "🔓",
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DoorWallInspectorCard(
+    room: RoomSpec,
+    doorCentered: Boolean,
+    onDoorCenteredChange: (Boolean) -> Unit,
+    onRoomChange: (RoomSpec) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        ),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    WallBadge(letter = "D")
+                    Icon(
+                        Icons.Default.DoorFront,
+                        contentDescription = null,
+                        tint = Color(0xFF8B5A2B),
+                        modifier = Modifier.size(18.dp),
+                    )
+                    WallBadge(letter = "E")
+                    Text(
+                        text = "Pared Puerta (Sur)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilterChip(
+                        selected = room.lockWallSouth,
+                        onClick = { onRoomChange(room.copy(lockWallSouth = !room.lockWallSouth)) },
+                        label = {
+                            Text(
+                                text = if (room.lockWallSouth) "Fija 🔒" else "Cierre 🔓",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (room.lockWallSouth) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                            )
+                        },
+                    )
+                    Checkbox(
+                        checked = doorCentered,
+                        onCheckedChange = onDoorCenteredChange,
+                    )
+                    Text(
+                        text = "Centrada",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+            }
+
+            // Equation pill: [ D ] + [ Puerta ] + [ E ] = Total
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "D: ${room.segmentDMm.roundToInt()} mm",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2C55B5),
+                    )
+                    Text(
+                        text = "+ 🚪 ${room.door.widthMm.roundToInt()} mm +",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF8B5A2B),
+                    )
+                    Text(
+                        text = "E: ${room.segmentEMm.roundToInt()} mm",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2C55B5),
+                    )
+                    Text(
+                        text = "= ${room.doorWallLengthMm.roundToInt()} mm",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+
+            DimensionSlider(
+                label = "Ancho de Puerta (Inmutable al mover lados)",
+                valueMm = room.door.widthMm,
+                rangeMm = 600f..1400f,
+                stepMm = 50f,
+                onValueChange = { newDoorW ->
+                    onRoomChange(room.withDoorWidth(newDoorW, keepCentered = doorCentered))
+                },
+            )
+
+            val maxSide = room.maxDoorOffset().coerceAtLeast(100f)
+            DimensionSlider(
+                label = "Tramo D (Izquierda • E se adapta solo)",
+                valueMm = room.segmentDMm,
+                rangeMm = 0f..maxSide,
+                stepMm = 25f,
+                onValueChange = { newD ->
+                    if (doorCentered) onDoorCenteredChange(false)
+                    onRoomChange(room.withSegmentD(newD))
+                },
+            )
+
+            DimensionSlider(
+                label = "Tramo E (Derecha • D se adapta solo)",
+                valueMm = room.segmentEMm,
+                rangeMm = 0f..maxSide,
+                stepMm = 25f,
+                onValueChange = { newE ->
+                    if (doorCentered) onDoorCenteredChange(false)
+                    onRoomChange(room.withSegmentE(newE))
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun StepButton(label: String, onClick: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 1.dp,
+        onClick = onClick,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF2C55B5),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
         )
     }
 }
 
 @Composable
-private fun WallBadge(letter: String) {
+private fun WallBadge(letter: String, bgColor: Color = Color(0xFF2C55B5)) {
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = Color(0xFF2C55B5),
+        color = bgColor,
     ) {
         Text(
             text = " $letter ",

@@ -198,6 +198,7 @@ fun RoomScreen() {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
     var showDimensionsSheet by remember { mutableStateOf(false) }
+    var selectedFloorplanElement by remember { mutableStateOf<FloorplanElement>(FloorplanElement.WallA) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
@@ -653,13 +654,15 @@ fun RoomScreen() {
                         }
                     }
                 } else {
-                    // Dimensioning Mode: Responsive Split-Screen with 2D CAD Floorplan!
+                    // Dimensioning Mode: Responsive Split-Screen with Interactive 2D CAD Floorplan!
                     if (isLandscape) {
-                        // Tablet / Landscape: Side by Side (Left: 2D CAD floorplan, Right: Panel)
-                        val panelWidth = (screenWidth * 0.44f).coerceIn(380.dp, 470.dp)
+                        // Tablet / Landscape: Side by Side (Left: 2D CAD floorplan, Right: Contextual Inspector)
+                        val panelWidth = (screenWidth * 0.42f).coerceIn(370.dp, 450.dp)
                         Row(modifier = Modifier.fillMaxSize()) {
                             RoomFloorplan2D(
                                 room = room,
+                                selectedElement = selectedFloorplanElement,
+                                onSelectElement = { selectedFloorplanElement = it },
                                 modifier = Modifier
                                     .weight(1f)
                                     .fillMaxHeight(),
@@ -667,6 +670,8 @@ fun RoomScreen() {
 
                             RoomDimensionsPanel(
                                 room = room,
+                                selectedElement = selectedFloorplanElement,
+                                onSelectElement = { selectedFloorplanElement = it },
                                 onRoomChange = { updateRoom(it) },
                                 onDismiss = { exitDimensionsMode() },
                                 modifier = Modifier
@@ -676,22 +681,26 @@ fun RoomScreen() {
                             )
                         }
                     } else {
-                        // Mobile / Portrait: Top / Bottom Split (Top: 2D CAD floorplan, Bottom: Panel)
+                        // Mobile / Portrait: Top / Bottom Split (Top: 2D CAD floorplan, Bottom: Contextual Inspector)
                         Column(modifier = Modifier.fillMaxSize()) {
                             RoomFloorplan2D(
                                 room = room,
+                                selectedElement = selectedFloorplanElement,
+                                onSelectElement = { selectedFloorplanElement = it },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(0.92f),
+                                    .weight(1.10f),
                             )
 
                             RoomDimensionsPanel(
                                 room = room,
+                                selectedElement = selectedFloorplanElement,
+                                onSelectElement = { selectedFloorplanElement = it },
                                 onRoomChange = { updateRoom(it) },
                                 onDismiss = { exitDimensionsMode() },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .weight(1.08f)
+                                    .weight(0.90f)
                                     .navigationBarsPadding(),
                             )
                         }
