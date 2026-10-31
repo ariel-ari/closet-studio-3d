@@ -6,6 +6,8 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -32,10 +34,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DoorFront
@@ -55,6 +59,7 @@ import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -240,6 +245,7 @@ fun RoomScreen() {
     var showCreateNewDialog by remember { mutableStateOf(false) }
     var showMyProjectsDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+    var showUnitsColumn by remember { mutableStateOf(false) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var selectedCategoryKey by remember { mutableStateOf("CONTENT") }
@@ -285,6 +291,7 @@ fun RoomScreen() {
 
     // Top-down / Floorplan Camera Transition for Dimensioning
     fun enterDimensionsMode() {
+        showUnitsColumn = false
         showDimensionsSheet = true
         selectedCategoryKey = "ROOM"
         val centerX = room.clearWidthMm * 0.5f * MM_TO_M
@@ -593,6 +600,8 @@ fun RoomScreen() {
                                         leadingIcon = { Icon(Icons.Default.DoorFront, null) },
                                         onClick = {
                                             selectedCategoryKey = "MODULES"
+                                            showDimensionsSheet = false
+                                            showUnitsColumn = true
                                             showCategoryMenu = false
                                         },
                                     )
@@ -818,6 +827,121 @@ fun RoomScreen() {
                                         style = MaterialTheme.typography.labelMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
                                     )
+                                }
+                            }
+
+                            // Bottom-Right "+" Floating Action Button to deploy the Right-Side Units Column
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = !showUnitsColumn,
+                                enter = fadeIn(tween(200)),
+                                exit = fadeOut(tween(150)),
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .navigationBarsPadding()
+                                    .padding(end = 20.dp, bottom = 20.dp),
+                            ) {
+                                FloatingActionButton(
+                                    onClick = { showUnitsColumn = true },
+                                    shape = CircleShape,
+                                    containerColor = Color(0xFF2C55B5),
+                                    contentColor = Color.White,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = s.addUnitsFabDesc,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                }
+                            }
+
+                            // Right-Side Units / Components Column (partial width in both Tablet and Phone modes)
+                            val unitsColumnWidth = if (isLandscape) {
+                                (screenWidth * 0.34f).coerceIn(280.dp, 360.dp)
+                            } else {
+                                (screenWidth * 0.72f).coerceIn(240.dp, 310.dp)
+                            }
+
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = showUnitsColumn,
+                                enter = slideInHorizontally(
+                                    initialOffsetX = { fullWidth -> fullWidth },
+                                    animationSpec = tween(280, easing = FastOutSlowInEasing),
+                                ) + fadeIn(tween(220)),
+                                exit = slideOutHorizontally(
+                                    targetOffsetX = { fullWidth -> fullWidth },
+                                    animationSpec = tween(240, easing = FastOutSlowInEasing),
+                                ) + fadeOut(tween(180)),
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .fillMaxHeight(),
+                            ) {
+                                Surface(
+                                    modifier = Modifier
+                                        .width(unitsColumnWidth)
+                                        .fillMaxHeight(),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                                    tonalElevation = 6.dp,
+                                    shadowElevation = 12.dp,
+                                    shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .navigationBarsPadding()
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = s.unitsPanelTitle,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF2C55B5),
+                                                )
+                                                Text(
+                                                    text = s.unitsPanelSubtitle,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+                                            IconButton(
+                                                onClick = { showUnitsColumn = false },
+                                                modifier = Modifier.size(34.dp),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = s.closeButton,
+                                                )
+                                            }
+                                        }
+
+                                        HorizontalDivider()
+
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Surface(
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Text(
+                                                    text = s.unitsPanelEmptyHint,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.padding(16.dp),
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

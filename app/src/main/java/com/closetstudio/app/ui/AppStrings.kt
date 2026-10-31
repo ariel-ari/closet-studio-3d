@@ -83,6 +83,11 @@ data class UiStrings(
     val anglesLabel: String,
     val heightYLabel: String,
     val currentViewLabel: String,
+    // Right-side Units / Components Drawer Column (+)
+    val addUnitsFabDesc: String,
+    val unitsPanelTitle: String,
+    val unitsPanelSubtitle: String,
+    val unitsPanelEmptyHint: String,
 )
 
 private val SpanishStrings = UiStrings(
@@ -141,6 +146,10 @@ private val SpanishStrings = UiStrings(
     anglesLabel = "Ángulos",
     heightYLabel = "Altura (Y)",
     currentViewLabel = "Vista actual",
+    addUnitsFabDesc = "Abrir catálogo de módulos y unidades",
+    unitsPanelTitle = "Unidades y Componentes",
+    unitsPanelSubtitle = "Módulos, cajoneras y accesorios",
+    unitsPanelEmptyHint = "Panel listo para cargar unidades (cajones, estantes, colgadores y módulos).",
 )
 
 private val EnglishStrings = UiStrings(
@@ -199,6 +208,10 @@ private val EnglishStrings = UiStrings(
     anglesLabel = "Angles",
     heightYLabel = "Height (Y)",
     currentViewLabel = "Current view",
+    addUnitsFabDesc = "Open units and components panel",
+    unitsPanelTitle = "Units & Components",
+    unitsPanelSubtitle = "Modules, drawers & accessories",
+    unitsPanelEmptyHint = "Panel ready to display units (drawers, shelves, rods, and closet modules).",
 )
 
 fun stringsFor(lang: AppLanguage): UiStrings = when (lang) {
