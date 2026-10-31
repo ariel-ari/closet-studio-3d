@@ -81,4 +81,19 @@ This rule replicates physical cabinetry assembly where melamina boards must neve
 3. **Single Source of Truth:**
    The carcass panel thickness $t$ (`effectivePanelThicknessMm`) and plinth height (`effectivePlinthHeightMm`) must remain mathematically identical across all subsystems: Core Model (`Project.kt`), 3D Geometry Generation (`RoomGeometry.kt`), Raycasting/Tap Picking, and Gesture Handlers (`RoomScreen.kt`). Clamping is strictly enforced at both the domain model and 3D mesh generator levels.
 
+---
+
+## 6. Catalog Drag-and-Drop Insertion Protocol (Live 3D Placement & Non-Intrusive Drop)
+When inserting new components from the "Add Unit" catalog into a closet container:
+
+1. **Live 3D Insertion During Drag:**
+   - As soon as the user drags a component (vertical divider, horizontal shelf, drawer, accessory) from the catalog over the container, the piece is immediately inserted into the 3D scene inside the carcass.
+   - The piece moves live in 3D under the user's finger, adapting dynamically to the hovered compartment (sub-bay or shelf interval) before release. The user sees exactly where and how it sits prior to dropping.
+
+2. **Clean Drop & Auto-Close (No Automatic Inspector):**
+   - **Upon Release (Drop):** The component finalizes at the dropped position and remains selected (displaying the 3 floating action buttons: ✏️ Edit, ❐ Duplicate, 🗑️ Delete).
+   - **Auto-Close Catalog:** The "Add Unit" catalog popup closes automatically.
+   - **No Inspector Modal:** The lateral dimension inspector panel ("Module") **must NEVER** open automatically upon drop. It opens exclusively when the user explicitly taps the ✏️ Edit floating button.
+
+
 

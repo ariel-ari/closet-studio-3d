@@ -1667,6 +1667,7 @@ fun RoomScreen() {
                     if (!showDimensionsSheet) {
                         val activeContainer = room.containers.firstOrNull { it.id == selectedContainerId }
                         var isDraggingUnit by remember { mutableStateOf(false) }
+                        var activeDragPartitionId by remember { mutableStateOf<String?>(null) }
                         var draggedUnitType by remember { mutableStateOf(DraggedUnitType.CARCASS) }
                         var dragScreenOffset by remember { mutableStateOf(Offset.Zero) }
                         var viewportOriginInRoot by remember { mutableStateOf(Offset.Zero) }
@@ -2583,16 +2584,88 @@ fun RoomScreen() {
                                         draggedUnitType = type
                                         isDraggingUnit = true
                                         dragScreenOffset = startRootPos - viewportOriginInRoot
+                                        activeDragPartitionId = null
                                     },
                                     onDragUnitMove = { delta ->
                                         dragScreenOffset += delta
+
+                                        val currentWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
+                                        val target = activeContainer
+                                            ?: room.containers.firstOrNull { it.wall == currentWall }
+                                            ?: room.containers.firstOrNull()
+
+                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF)) {
+                                            val interiorPt = projectScreenToContainerInterior(
+                                                room = room,
+                                                container = target,
+                                                screenPos = dragScreenOffset,
+                                                viewportWidthPx = viewportWidthPx,
+                                                viewportHeightPx = viewportHeightPx,
+                                                targetX = targetXAnim.value,
+                                                targetY = targetYAnim.value,
+                                                targetZ = targetZAnim.value,
+                                                yawDeg = yawAnim.value,
+                                                pitchDeg = pitchAnim.value,
+                                                distanceM = distanceAnim.value,
+                                                isOrtho = isOrthoMode,
+                                                orthoSize = orthoSizeAnim.value,
+                                            )
+                                            if (interiorPt != null) {
+                                                val (rawX, rawY) = interiorPt
+                                                val clampedX = rawX.coerceIn(10f, (target.interiorWidthMm - 28f).coerceAtLeast(10f))
+                                                val clampedY = rawY.coerceIn(10f, (target.interiorHeightMm - 28f).coerceAtLeast(10f))
+
+                                                if (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        val updated = target.withAddedDivider(offsetXMm = clampedX, targetYMm = clampedY)
+                                                        val newDiv = updated.dividers.lastOrNull()
+                                                        if (newDiv != null) {
+                                                            activeDragPartitionId = newDiv.id
+                                                            selectedContainerId = target.id
+                                                            selectedPartitionId = newDiv.id
+                                                            selectedPartitionIsVertical = true
+                                                            updateRoom(room.withUpdatedContainer(target.id) { updated })
+                                                        }
+                                                    } else {
+                                                        val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                            currentC.withMovedDivider(partId, newOffsetXMm = clampedX, targetYMm = clampedY)
+                                                        }
+                                                        updateRoom(updatedRoom)
+                                                    }
+                                                } else if (draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        val bay = target.findBayAtX(clampedX)
+                                                        val updated = target.withAddedShelf(bayIndex = bay.index, elevationYMm = clampedY)
+                                                        val newShelf = updated.shelves.lastOrNull()
+                                                        if (newShelf != null) {
+                                                            activeDragPartitionId = newShelf.id
+                                                            selectedContainerId = target.id
+                                                            selectedPartitionId = newShelf.id
+                                                            selectedPartitionIsVertical = false
+                                                            updateRoom(room.withUpdatedContainer(target.id) { updated })
+                                                        }
+                                                    } else {
+                                                        val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                            currentC.withMovedShelf(partId, newElevationYMm = clampedY, targetXMm = clampedX)
+                                                        }
+                                                        updateRoom(updatedRoom)
+                                                    }
+                                                }
+                                            }
+                                        }
                                     },
                                     onDragUnitEnd = {
                                         if (isDraggingUnit) {
-                                            val fractionX = (dragScreenOffset.x / viewportWidthPx).coerceIn(0.05f, 0.95f)
-                                            val fractionY = (1f - (dragScreenOffset.y / viewportHeightPx)).coerceIn(0.1f, 0.9f)
+                                            val currentWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
+                                            val target = activeContainer
+                                                ?: room.containers.firstOrNull { it.wall == currentWall }
+                                                ?: room.containers.firstOrNull()
+
                                             when (draggedUnitType) {
                                                 DraggedUnitType.CARCASS -> {
+                                                    val fractionX = (dragScreenOffset.x / viewportWidthPx).coerceIn(0.05f, 0.95f)
                                                     val targetWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
                                                     val isD = splitDoorWall && targetWall == WallIndex.SOUTH && (((wallStep.intValue % 5) + 5) % 5 == 4)
                                                     val newId = "container_${System.currentTimeMillis()}_${room.containers.size + 1}"
@@ -2621,55 +2694,74 @@ fun RoomScreen() {
                                                     selectedContainerId = newId
                                                     selectedPartitionId = null
                                                     showUnitsColumn = false
+                                                    isEditingContainerInPanel = false
                                                     coroutineScope.launch {
                                                         messageHostState.showSnackbar(
                                                             "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage, splitDoorWall, isD)}",
                                                         )
                                                     }
                                                 }
-                                                DraggedUnitType.VERTICAL_DIVIDER -> {
-                                                    val target = activeContainer ?: room.containers.firstOrNull()
-                                                    if (target != null) {
-                                                        val dropOffsetMm = fractionX * target.interiorWidthMm
-                                                        val updated = target.withAddedDivider(dropOffsetMm)
-                                                        val newDiv = updated.dividers.lastOrNull()
-                                                        val updatedRoom = room.withUpdatedContainer(target.id) { updated }
-                                                        updateRoom(updatedRoom)
+                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF -> {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId != null && target != null) {
                                                         selectedContainerId = target.id
-                                                        selectedPartitionId = newDiv?.id
-                                                        selectedPartitionIsVertical = true
-                                                        showUnitsColumn = true
-                                                        coroutineScope.launch {
-                                                            messageHostState.showSnackbar(s.partitionAddedToast)
+                                                        selectedPartitionId = partId
+                                                        selectedPartitionIsVertical = (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER)
+                                                    } else if (target != null) {
+                                                        val fractionX = (dragScreenOffset.x / viewportWidthPx).coerceIn(0.05f, 0.95f)
+                                                        val fractionY = (1f - (dragScreenOffset.y / viewportHeightPx)).coerceIn(0.1f, 0.9f)
+                                                        if (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER) {
+                                                            val dropOffsetMm = fractionX * target.interiorWidthMm
+                                                            val updated = target.withAddedDivider(dropOffsetMm)
+                                                            val newDiv = updated.dividers.lastOrNull()
+                                                            val updatedRoom = room.withUpdatedContainer(target.id) { updated }
+                                                            updateRoom(updatedRoom)
+                                                            selectedContainerId = target.id
+                                                            selectedPartitionId = newDiv?.id
+                                                            selectedPartitionIsVertical = true
+                                                        } else {
+                                                            val dropXMm = fractionX * target.interiorWidthMm
+                                                            val bay = target.findBayAtX(dropXMm)
+                                                            val dropElevMm = fractionY * target.interiorHeightMm
+                                                            val updated = target.withAddedShelf(bayIndex = bay.index, elevationYMm = dropElevMm)
+                                                            val newShelf = updated.shelves.lastOrNull()
+                                                            val updatedRoom = room.withUpdatedContainer(target.id) { updated }
+                                                            updateRoom(updatedRoom)
+                                                            selectedContainerId = target.id
+                                                            selectedPartitionId = newShelf?.id
+                                                            selectedPartitionIsVertical = false
                                                         }
                                                     }
-                                                }
-                                                DraggedUnitType.HORIZONTAL_SHELF -> {
-                                                    val target = activeContainer ?: room.containers.firstOrNull()
-                                                    if (target != null) {
-                                                        val dropXMm = fractionX * target.interiorWidthMm
-                                                        val bay = target.findBayAtX(dropXMm)
-                                                        val dropElevMm = fractionY * target.interiorHeightMm
-                                                        val updated = target.withAddedShelf(bayIndex = bay.index, elevationYMm = dropElevMm)
-                                                        val newShelf = updated.shelves.lastOrNull()
-                                                        val updatedRoom = room.withUpdatedContainer(target.id) { updated }
-                                                        updateRoom(updatedRoom)
-                                                        selectedContainerId = target.id
-                                                        selectedPartitionId = newShelf?.id
-                                                        selectedPartitionIsVertical = false
-                                                        showUnitsColumn = true
-                                                        coroutineScope.launch {
-                                                            messageHostState.showSnackbar(s.partitionAddedToast)
-                                                        }
+                                                    showUnitsColumn = false
+                                                    isEditingContainerInPanel = false
+                                                    coroutineScope.launch {
+                                                        messageHostState.showSnackbar(s.partitionAddedToast)
                                                     }
                                                 }
                                             }
+                                            activeDragPartitionId = null
                                             isDraggingUnit = false
                                         }
                                     },
                                     onDragUnitCancel = {
+                                        val partId = activeDragPartitionId
+                                        if (partId != null) {
+                                            val currentWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
+                                            val target = activeContainer
+                                                ?: room.containers.firstOrNull { it.wall == currentWall }
+                                                ?: room.containers.firstOrNull()
+                                            if (target != null) {
+                                                val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                    currentC.withRemovedPartition(partId)
+                                                }
+                                                updateRoom(updatedRoom)
+                                            }
+                                        }
+                                        activeDragPartitionId = null
+                                        selectedPartitionId = null
                                         isDraggingUnit = false
                                         showUnitsColumn = false
+                                        isEditingContainerInPanel = false
                                     },
                                     onUpdateContainer = { id, transform ->
                                         val updatedRoom = room.withUpdatedContainer(id, transform)
@@ -2736,7 +2828,7 @@ fun RoomScreen() {
                             }
 
                             // Floating 3D Unit Preview while dragging from "Add Unit" onto the wall
-                            if (isDraggingUnit) {
+                            if (isDraggingUnit && activeDragPartitionId == null) {
                                 val previewSizeDp = 140.dp
                                 val previewSizePx = with(LocalDensity.current) { previewSizeDp.toPx() }
                                 val halfPreviewPx = previewSizePx * 0.5f
