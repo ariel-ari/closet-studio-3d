@@ -119,6 +119,10 @@ data class UiStrings(
     val toggleWallLabels: String,
     val wallLabelsShownToast: String,
     val wallLabelsHiddenToast: String,
+    val splitDoorWallButton: String,
+    val unifyDoorWallButton: String,
+    val doorWallSplitToast: String,
+    val doorWallUnifiedToast: String,
 )
 
 private val SpanishStrings = UiStrings(
@@ -212,6 +216,10 @@ private val SpanishStrings = UiStrings(
     toggleWallLabels = "Nombres de paredes",
     wallLabelsShownToast = "Nombres de paredes visibles",
     wallLabelsHiddenToast = "Nombres de paredes ocultos",
+    splitDoorWallButton = "Separar E / D",
+    unifyDoorWallButton = "Unir E-D",
+    doorWallSplitToast = "Pared de puerta dividida en tramos E y D",
+    doorWallUnifiedToast = "Pared de puerta unificada (E-D)",
 )
 
 private val EnglishStrings = UiStrings(
@@ -305,6 +313,10 @@ private val EnglishStrings = UiStrings(
     toggleWallLabels = "Wall labels",
     wallLabelsShownToast = "Wall labels visible",
     wallLabelsHiddenToast = "Wall labels hidden",
+    splitDoorWallButton = "Split E / D",
+    unifyDoorWallButton = "Unify E-D",
+    doorWallSplitToast = "Door wall split into segments E and D",
+    doorWallUnifiedToast = "Door wall unified (E-D)",
 )
 
 fun stringsFor(lang: AppLanguage): UiStrings = when (lang) {

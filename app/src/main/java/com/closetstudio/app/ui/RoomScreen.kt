@@ -148,55 +148,127 @@ import kotlin.math.sqrt
  * - Wall 2: North (Z = 0, Wall A)
  * - Wall 3: East (X = clearWidthMm, Wall B)
  */
-private fun getWallTarget(wallStep: Int, room: RoomSpec): Float3 {
+private fun getWallTarget(wallStep: Int, room: RoomSpec, split: Boolean = false): Float3 {
     val nw = room.vertexNW
     val ne = room.vertexNE
     val se = room.vertexSE
     val sw = room.vertexSW
     val midY = room.clearHeightMm * 0.5f * MM_TO_M
-    return when (((wallStep % 4) + 4) % 4) {
-        0 -> Float3((sw.x + se.x) * 0.5f * MM_TO_M, midY, (sw.z + se.z) * 0.5f * MM_TO_M)
-        1 -> Float3((sw.x + nw.x) * 0.5f * MM_TO_M, midY, (sw.z + nw.z) * 0.5f * MM_TO_M)
-        2 -> Float3((nw.x + ne.x) * 0.5f * MM_TO_M, midY, (nw.z + ne.z) * 0.5f * MM_TO_M)
-        else -> Float3((ne.x + se.x) * 0.5f * MM_TO_M, midY, (ne.z + se.z) * 0.5f * MM_TO_M)
+
+    if (!split) {
+        return when (((wallStep % 4) + 4) % 4) {
+            0 -> Float3((sw.x + se.x) * 0.5f * MM_TO_M, midY, (sw.z + se.z) * 0.5f * MM_TO_M)
+            1 -> Float3((sw.x + nw.x) * 0.5f * MM_TO_M, midY, (sw.z + nw.z) * 0.5f * MM_TO_M)
+            2 -> Float3((nw.x + ne.x) * 0.5f * MM_TO_M, midY, (nw.z + ne.z) * 0.5f * MM_TO_M)
+            else -> Float3((ne.x + se.x) * 0.5f * MM_TO_M, midY, (ne.z + se.z) * 0.5f * MM_TO_M)
+        }
+    } else {
+        val southDx = se.x - sw.x
+        val southDz = se.z - sw.z
+        val southLen = kotlin.math.sqrt(southDx * southDx + southDz * southDz).coerceAtLeast(100f)
+        val dirX = southDx / southLen
+        val dirZ = southDz / southLen
+
+        return when (((wallStep % 5) + 5) % 5) {
+            0 -> {
+                // Segment E (Bottom-Left: 0 to segmentDMm)
+                val offsetE = room.segmentDMm * 0.5f
+                Float3((sw.x + dirX * offsetE) * MM_TO_M, midY, (sw.z + dirZ * offsetE) * MM_TO_M)
+            }
+            1 -> Float3((sw.x + nw.x) * 0.5f * MM_TO_M, midY, (sw.z + nw.z) * 0.5f * MM_TO_M)
+            2 -> Float3((nw.x + ne.x) * 0.5f * MM_TO_M, midY, (nw.z + ne.z) * 0.5f * MM_TO_M)
+            3 -> Float3((ne.x + se.x) * 0.5f * MM_TO_M, midY, (ne.z + se.z) * 0.5f * MM_TO_M)
+            else -> {
+                // Segment D (Bottom-Right: startD to southLen)
+                val startD = (room.segmentDMm + room.door.widthMm).coerceAtMost(southLen)
+                val offsetD = startD + room.segmentEMm * 0.5f
+                Float3((sw.x + dirX * offsetD) * MM_TO_M, midY, (sw.z + dirZ * offsetD) * MM_TO_M)
+            }
+        }
     }
 }
 
-private fun getWallName(wallStep: Int, lang: AppLanguage): String {
-    val s = stringsFor(lang)
-    val wall = ((wallStep % 4) + 4) % 4
-    return when (wall) {
-        0 -> "E - ${s.doorWord} - D"
-        1 -> s.wallALabel
-        2 -> s.wallBLabel
-        else -> s.wallCLabel
+private fun shortestAngleTarget(currentDeg: Float, targetDeg: Float): Float {
+    var diff = (targetDeg - currentDeg) % 360f
+    if (diff > 180f) diff -= 360f
+    if (diff < -180f) diff += 360f
+    return currentDeg + diff
+}
+
+private fun getWallYaw(wallStep: Int, split: Boolean = false): Float {
+    return if (!split) {
+        val s = ((wallStep % 4) + 4) % 4
+        180f + s * 90f
+    } else {
+        when (((wallStep % 5) + 5) % 5) {
+            0 -> 180f // E (South wall looking North)
+            1 -> 270f // A (West wall looking East)
+            2 -> 360f // B (North wall looking South)
+            3 -> 90f  // C (East wall looking West)
+            else -> 180f // D (South wall looking North)
+        }
     }
 }
 
-private fun wallIndexFromStep(wallStep: Int): WallIndex {
-    val wall = ((wallStep % 4) + 4) % 4
-    return when (wall) {
-        0 -> WallIndex.SOUTH
-        1 -> WallIndex.WEST
-        2 -> WallIndex.NORTH
-        else -> WallIndex.EAST
+private fun wallIndexFromStep(wallStep: Int, split: Boolean = false): WallIndex {
+    return if (!split) {
+        when (((wallStep % 4) + 4) % 4) {
+            0 -> WallIndex.SOUTH
+            1 -> WallIndex.WEST
+            2 -> WallIndex.NORTH
+            else -> WallIndex.EAST
+        }
+    } else {
+        when (((wallStep % 5) + 5) % 5) {
+            0 -> WallIndex.SOUTH // Segment E
+            1 -> WallIndex.WEST  // Wall A
+            2 -> WallIndex.NORTH // Wall B
+            3 -> WallIndex.EAST  // Wall C
+            else -> WallIndex.SOUTH // Segment D
+        }
     }
 }
 
-private fun stepFromWallIndex(wall: WallIndex): Int = when (wall) {
-    WallIndex.SOUTH -> 0
+private fun stepFromWallIndex(wall: WallIndex, split: Boolean = false, isSegmentD: Boolean = false): Int = when (wall) {
+    WallIndex.SOUTH -> if (split && isSegmentD) 4 else 0
     WallIndex.WEST -> 1
     WallIndex.NORTH -> 2
     WallIndex.EAST -> 3
 }
 
-private fun wallDisplayName(wall: WallIndex, lang: AppLanguage): String {
+private fun wallDisplayName(wall: WallIndex, lang: AppLanguage, split: Boolean = false, isSegmentD: Boolean = false): String {
     val s = stringsFor(lang)
+    val prefix = s.wallALabel.substringBefore(" ")
     return when (wall) {
         WallIndex.WEST -> s.wallALabel
         WallIndex.NORTH -> s.wallBLabel
         WallIndex.EAST -> s.wallCLabel
-        WallIndex.SOUTH -> "${s.wallALabel.substringBefore(" ")} E-D"
+        WallIndex.SOUTH -> {
+            if (!split) "$prefix E-D"
+            else if (isSegmentD) "$prefix D"
+            else "$prefix E"
+        }
+    }
+}
+
+private fun getWallName(wallStep: Int, lang: AppLanguage, split: Boolean = false): String {
+    val s = stringsFor(lang)
+    val prefix = s.wallALabel.substringBefore(" ")
+    return if (!split) {
+        when (((wallStep % 4) + 4) % 4) {
+            0 -> "$prefix E-D"
+            1 -> s.wallALabel
+            2 -> s.wallBLabel
+            else -> s.wallCLabel
+        }
+    } else {
+        when (((wallStep % 5) + 5) % 5) {
+            0 -> "$prefix E"
+            1 -> s.wallALabel
+            2 -> s.wallBLabel
+            3 -> s.wallCLabel
+            else -> "$prefix D"
+        }
     }
 }
 
@@ -216,6 +288,21 @@ private fun getWallLengthMm(wall: WallIndex, room: RoomSpec): Float {
     return kotlin.math.sqrt(dx * dx + dz * dz).coerceAtLeast(100f)
 }
 
+private fun getWallLengthMmForStep(wallStep: Int, room: RoomSpec, split: Boolean = false): Float {
+    return if (!split) {
+        val wallIdx = wallIndexFromStep(wallStep, false)
+        getWallLengthMm(wallIdx, room)
+    } else {
+        when (((wallStep % 5) + 5) % 5) {
+            0 -> room.segmentDMm.coerceAtLeast(100f) // Segment E (Bottom-Left)
+            1 -> getWallLengthMm(WallIndex.WEST, room)
+            2 -> getWallLengthMm(WallIndex.NORTH, room)
+            3 -> getWallLengthMm(WallIndex.EAST, room)
+            else -> room.segmentEMm.coerceAtLeast(100f) // Segment D (Bottom-Right)
+        }
+    }
+}
+
 private fun wallLetterCode(wall: WallIndex): String = when (wall) {
     WallIndex.WEST -> "A"
     WallIndex.NORTH -> "B"
@@ -223,18 +310,49 @@ private fun wallLetterCode(wall: WallIndex): String = when (wall) {
     WallIndex.SOUTH -> "E-D"
 }
 
-private fun wallLetterCodeFromStep(wallStep: Int): String =
-    wallLetterCode(wallIndexFromStep(wallStep))
+private fun wallLetterCodeFromStep(wallStep: Int, split: Boolean = false): String {
+    return if (!split) {
+        when (((wallStep % 4) + 4) % 4) {
+            0 -> "E-D"
+            1 -> "A"
+            2 -> "B"
+            else -> "C"
+        }
+    } else {
+        when (((wallStep % 5) + 5) % 5) {
+            0 -> "E"
+            1 -> "A"
+            2 -> "B"
+            3 -> "C"
+            else -> "D"
+        }
+    }
+}
+
+private fun containerWallLetter(container: ClosetContainerSpec, room: RoomSpec, split: Boolean = false): String {
+    return when (container.wall) {
+        WallIndex.WEST -> "A"
+        WallIndex.NORTH -> "B"
+        WallIndex.EAST -> "C"
+        WallIndex.SOUTH -> {
+            if (!split) "E-D"
+            else {
+                if (container.offsetMm < room.segmentEMm) "D" else "E"
+            }
+        }
+    }
+}
 
 private data class WallAnchor(
     val wall: WallIndex,
     val letter: String,
+    val targetStep: Int,
     val lengthMm: Float,
     val topCenter3D: Float3,
     val normal: Float3,
 )
 
-private fun getWallAnchors(room: RoomSpec): List<WallAnchor> {
+private fun getWallAnchors(room: RoomSpec, split: Boolean = false): List<WallAnchor> {
     val nw = room.vertexNW
     val ne = room.vertexNE
     val se = room.vertexSE
@@ -244,6 +362,7 @@ private fun getWallAnchors(room: RoomSpec): List<WallAnchor> {
     val wallA = WallAnchor(
         wall = WallIndex.WEST,
         letter = "A",
+        targetStep = 1,
         lengthMm = getWallLengthMm(WallIndex.WEST, room),
         topCenter3D = Float3((sw.x + nw.x) * 0.5f * MM_TO_M, topY, (sw.z + nw.z) * 0.5f * MM_TO_M),
         normal = Float3(1f, 0f, 0f),
@@ -251,6 +370,7 @@ private fun getWallAnchors(room: RoomSpec): List<WallAnchor> {
     val wallB = WallAnchor(
         wall = WallIndex.NORTH,
         letter = "B",
+        targetStep = 2,
         lengthMm = getWallLengthMm(WallIndex.NORTH, room),
         topCenter3D = Float3((nw.x + ne.x) * 0.5f * MM_TO_M, topY, (nw.z + ne.z) * 0.5f * MM_TO_M),
         normal = Float3(0f, 0f, 1f),
@@ -258,18 +378,52 @@ private fun getWallAnchors(room: RoomSpec): List<WallAnchor> {
     val wallC = WallAnchor(
         wall = WallIndex.EAST,
         letter = "C",
+        targetStep = 3,
         lengthMm = getWallLengthMm(WallIndex.EAST, room),
         topCenter3D = Float3((ne.x + se.x) * 0.5f * MM_TO_M, topY, (ne.z + se.z) * 0.5f * MM_TO_M),
         normal = Float3(-1f, 0f, 0f),
     )
-    val wallSouth = WallAnchor(
-        wall = WallIndex.SOUTH,
-        letter = "E-D",
-        lengthMm = getWallLengthMm(WallIndex.SOUTH, room),
-        topCenter3D = Float3((se.x + sw.x) * 0.5f * MM_TO_M, topY, (se.z + sw.z) * 0.5f * MM_TO_M),
-        normal = Float3(0f, 0f, -1f),
-    )
-    return listOf(wallA, wallB, wallC, wallSouth)
+
+    if (!split) {
+        val wallSouth = WallAnchor(
+            wall = WallIndex.SOUTH,
+            letter = "E-D",
+            targetStep = 0,
+            lengthMm = getWallLengthMm(WallIndex.SOUTH, room),
+            topCenter3D = Float3((se.x + sw.x) * 0.5f * MM_TO_M, topY, (se.z + sw.z) * 0.5f * MM_TO_M),
+            normal = Float3(0f, 0f, -1f),
+        )
+        return listOf(wallA, wallB, wallC, wallSouth)
+    } else {
+        val southDx = se.x - sw.x
+        val southDz = se.z - sw.z
+        val southLen = kotlin.math.sqrt(southDx * southDx + southDz * southDz).coerceAtLeast(100f)
+        val dirX = southDx / southLen
+        val dirZ = southDz / southLen
+
+        val offsetE = room.segmentDMm * 0.5f
+        val wallE = WallAnchor(
+            wall = WallIndex.SOUTH,
+            letter = "E",
+            targetStep = 0,
+            lengthMm = room.segmentDMm,
+            topCenter3D = Float3((sw.x + dirX * offsetE) * MM_TO_M, topY, (sw.z + dirZ * offsetE) * MM_TO_M),
+            normal = Float3(0f, 0f, -1f),
+        )
+
+        val startD = (room.segmentDMm + room.door.widthMm).coerceAtMost(southLen)
+        val offsetD = startD + room.segmentEMm * 0.5f
+        val wallD = WallAnchor(
+            wall = WallIndex.SOUTH,
+            letter = "D",
+            targetStep = 4,
+            lengthMm = room.segmentEMm,
+            topCenter3D = Float3((sw.x + dirX * offsetD) * MM_TO_M, topY, (sw.z + dirZ * offsetD) * MM_TO_M),
+            normal = Float3(0f, 0f, -1f),
+        )
+
+        return listOf(wallA, wallB, wallC, wallD, wallE)
+    }
 }
 
 private fun project3DToScreen(
@@ -585,13 +739,14 @@ fun RoomScreen() {
     // View Mode (3D Perspective, Top-Down, Front 2D)
     var currentViewMode by remember { mutableStateOf(RoomViewMode.PERSPECTIVE_3D) }
     var showWallLabels by remember { mutableStateOf(true) }
+    var splitDoorWall by remember { mutableStateOf(false) }
     var viewportWidthPx by remember { mutableFloatStateOf(1f) }
     var viewportHeightPx by remember { mutableFloatStateOf(1f) }
 
     // Wall index counter (0: South/Door, 1: West, 2: North, 3: East)
     val wallStep = remember { mutableIntStateOf(0) }
 
-    val initialTarget = remember(room) { getWallTarget(0, room) }
+    val initialTarget = remember(room) { getWallTarget(0, room, false) }
     val targetXAnim = remember { Animatable(initialTarget.x) }
     val targetYAnim = remember { Animatable(initialTarget.y) }
     val targetZAnim = remember { Animatable(initialTarget.z) }
@@ -632,11 +787,13 @@ fun RoomScreen() {
     fun switchToFront2DView(step: Int = wallStep.intValue) {
         currentViewMode = RoomViewMode.FRONT_2D
         showDimensionsSheet = false
-        wallStep.intValue = step
-        val targetPos = getWallTarget(step, room)
-        val targetYaw = 180f + step * 90f
-        val wallIndex = wallIndexFromStep(step)
-        val wallLenM = getWallLengthMm(wallIndex, room) * MM_TO_M
+        val numWalls = if (splitDoorWall) 5 else 4
+        val normalizedStep = ((step % numWalls) + numWalls) % numWalls
+        wallStep.intValue = normalizedStep
+        val targetPos = getWallTarget(normalizedStep, room, splitDoorWall)
+        val desiredYaw = getWallYaw(normalizedStep, splitDoorWall)
+        val targetYaw = shortestAngleTarget(yawAnim.value, desiredYaw)
+        val wallLenM = getWallLengthMmForStep(normalizedStep, room, splitDoorWall) * MM_TO_M
         val wallHeightM = room.clearHeightMm * MM_TO_M
         val tanV = kotlin.math.tan(Math.toRadians(24.0)).toFloat()
         val distH = (wallHeightM * 0.5f) / tanV
@@ -663,8 +820,11 @@ fun RoomScreen() {
     fun switchTo3DView() {
         currentViewMode = RoomViewMode.PERSPECTIVE_3D
         showDimensionsSheet = false
-        val targetPos = getWallTarget(wallStep.intValue, room)
-        val targetYaw = 180f + wallStep.intValue * 90f + 25f
+        val numWalls = if (splitDoorWall) 5 else 4
+        val normalizedStep = ((wallStep.intValue % numWalls) + numWalls) % numWalls
+        val targetPos = getWallTarget(normalizedStep, room, splitDoorWall)
+        val desiredYaw = getWallYaw(normalizedStep, splitDoorWall) + 25f
+        val targetYaw = shortestAngleTarget(yawAnim.value, desiredYaw)
         coroutineScope.launch {
             launch { yawAnim.animateTo(targetYaw, tween(350, easing = FastOutSlowInEasing)) }
             launch { pitchAnim.animateTo(-16f, tween(300, easing = FastOutSlowInEasing)) }
@@ -676,14 +836,17 @@ fun RoomScreen() {
     }
 
     fun switchWall(newStep: Int) {
-        wallStep.intValue = newStep
+        val numWalls = if (splitDoorWall) 5 else 4
+        val normalizedStep = ((newStep % numWalls) + numWalls) % numWalls
+        wallStep.intValue = normalizedStep
         if (currentViewMode == RoomViewMode.FRONT_2D) {
-            switchToFront2DView(newStep)
+            switchToFront2DView(normalizedStep)
         } else if (currentViewMode == RoomViewMode.TOP_DOWN) {
             // Stay in top-down view centered on the room
         } else {
-            val targetPos = getWallTarget(newStep, room)
-            val targetYaw = 180f + newStep * 90f
+            val targetPos = getWallTarget(normalizedStep, room, splitDoorWall)
+            val desiredYaw = getWallYaw(normalizedStep, splitDoorWall)
+            val targetYaw = shortestAngleTarget(yawAnim.value, desiredYaw)
             coroutineScope.launch {
                 launch { yawAnim.animateTo(targetYaw, tween(400, easing = FastOutSlowInEasing)) }
                 launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
@@ -696,13 +859,16 @@ fun RoomScreen() {
     }
 
     fun recenterCurrentWall() {
+        val numWalls = if (splitDoorWall) 5 else 4
+        val normalizedStep = ((wallStep.intValue % numWalls) + numWalls) % numWalls
         if (currentViewMode == RoomViewMode.FRONT_2D) {
-            switchToFront2DView(wallStep.intValue)
+            switchToFront2DView(normalizedStep)
         } else if (currentViewMode == RoomViewMode.TOP_DOWN) {
             switchToTopDownView()
         } else {
-            val targetPos = getWallTarget(wallStep.intValue, room)
-            val targetYaw = 180f + wallStep.intValue * 90f
+            val targetPos = getWallTarget(normalizedStep, room, splitDoorWall)
+            val desiredYaw = getWallYaw(normalizedStep, splitDoorWall)
+            val targetYaw = shortestAngleTarget(yawAnim.value, desiredYaw)
             coroutineScope.launch {
                 launch { yawAnim.animateTo(targetYaw, tween(350, easing = FastOutSlowInEasing)) }
                 launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
@@ -1217,6 +1383,58 @@ fun RoomScreen() {
                                             showWallLabels = !showWallLabels
                                         },
                                     )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Text(if (splitDoorWall) s.unifyDoorWallButton else s.splitDoorWallButton)
+                                                if (splitDoorWall) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = if (splitDoorWall) Icons.AutoMirrored.Filled.MergeType else Icons.AutoMirrored.Filled.CallSplit,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            val newSplit = !splitDoorWall
+                                            splitDoorWall = newSplit
+                                            wallStep.intValue = if (newSplit) {
+                                                when (((wallStep.intValue % 4) + 4) % 4) {
+                                                    0 -> 0
+                                                    1 -> 1
+                                                    2 -> 2
+                                                    else -> 3
+                                                }
+                                            } else {
+                                                when (((wallStep.intValue % 5) + 5) % 5) {
+                                                    0 -> 0
+                                                    1 -> 1
+                                                    2 -> 2
+                                                    3 -> 3
+                                                    else -> 0
+                                                }
+                                            }
+                                            switchWall(wallStep.intValue)
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar(
+                                                    if (newSplit) s.doorWallSplitToast else s.doorWallUnifiedToast
+                                                )
+                                            }
+                                        },
+                                    )
                                 }
                             }
                         }
@@ -1327,8 +1545,8 @@ fun RoomScreen() {
                             // Floating Wall Labels (A, B, C, D)
                             if (showWallLabels && !showDimensionsSheet) {
                                 if (currentViewMode == RoomViewMode.FRONT_2D) {
-                                    val currentWall = wallIndexFromStep(wallStep.intValue)
-                                    val wallLenMm = getWallLengthMm(currentWall, room).roundToInt()
+                                    val currentWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
+                                    val wallLenMm = getWallLengthMmForStep(wallStep.intValue, room, splitDoorWall).roundToInt()
                                     Surface(
                                         shape = RoundedCornerShape(20.dp),
                                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
@@ -1350,7 +1568,7 @@ fun RoomScreen() {
                                                 modifier = Modifier.size(18.dp),
                                             )
                                             Text(
-                                                text = wallLetterCodeFromStep(wallStep.intValue),
+                                                text = wallLetterCodeFromStep(wallStep.intValue, splitDoorWall),
                                                 style = MaterialTheme.typography.titleMedium,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface,
@@ -1370,8 +1588,8 @@ fun RoomScreen() {
                                         }
                                     }
                                 } else {
-                                    val anchors = remember(room) { getWallAnchors(room) }
-                                    val currentFocusedWall = wallIndexFromStep(wallStep.intValue)
+                                    val anchors = remember(room, splitDoorWall) { getWallAnchors(room, splitDoorWall) }
+                                    val currentFocusedWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
                                     val isTopDown = currentViewMode == RoomViewMode.TOP_DOWN
 
                                     val yawRad = Math.toRadians(yawAnim.value.toDouble()).toFloat()
@@ -1408,8 +1626,21 @@ fun RoomScreen() {
                                             )
 
                                             if (screenPos != null) {
-                                                val isWallActive = anchor.wall == currentFocusedWall
-                                                val isContainerOnThisWall = activeContainer?.wall == anchor.wall
+                                                val isWallActive = if (splitDoorWall && anchor.wall == WallIndex.SOUTH) {
+                                                    anchor.targetStep == ((wallStep.intValue % 5) + 5) % 5
+                                                } else {
+                                                    anchor.wall == currentFocusedWall
+                                                }
+                                                val isContainerOnThisWall = if (activeContainer != null) {
+                                                    if (splitDoorWall && activeContainer.wall == WallIndex.SOUTH) {
+                                                        val contLetter = containerWallLetter(activeContainer, room, true)
+                                                        contLetter == anchor.letter
+                                                    } else {
+                                                        activeContainer.wall == anchor.wall
+                                                    }
+                                                } else {
+                                                    false
+                                                }
 
                                                 Box(
                                                     modifier = Modifier.layout { measurable, constraints ->
@@ -1427,7 +1658,7 @@ fun RoomScreen() {
                                                 ) {
                                                     Surface(
                                                         onClick = {
-                                                            switchWall(stepFromWallIndex(anchor.wall))
+                                                            switchWall(anchor.targetStep)
                                                         },
                                                         shape = RoundedCornerShape(14.dp),
                                                         color = when {
@@ -1506,7 +1737,7 @@ fun RoomScreen() {
                                         shadowElevation = 4.dp,
                                     ) {
                                         Text(
-                                            text = wallLetterCode(activeContainer.wall),
+                                            text = containerWallLetter(activeContainer, room, splitDoorWall),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White,
@@ -1761,6 +1992,59 @@ fun RoomScreen() {
                                         }
                                     }
 
+                                    // Floating Door Wall Split/Unify Toggle Button
+                                    Surface(
+                                        onClick = {
+                                            val newSplit = !splitDoorWall
+                                            splitDoorWall = newSplit
+                                            wallStep.intValue = if (newSplit) {
+                                                when (((wallStep.intValue % 4) + 4) % 4) {
+                                                    0 -> 0
+                                                    1 -> 1
+                                                    2 -> 2
+                                                    else -> 3
+                                                }
+                                            } else {
+                                                when (((wallStep.intValue % 5) + 5) % 5) {
+                                                    0 -> 0
+                                                    1 -> 1
+                                                    2 -> 2
+                                                    3 -> 3
+                                                    else -> 0
+                                                }
+                                            }
+                                            switchWall(wallStep.intValue)
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar(
+                                                    if (newSplit) s.doorWallSplitToast else s.doorWallUnifiedToast
+                                                )
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = if (splitDoorWall) Color(0xFF1E6B47) else Color(0xFF2C55B5),
+                                        border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.85f)),
+                                        shadowElevation = 6.dp,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = if (splitDoorWall) Icons.AutoMirrored.Filled.MergeType else Icons.AutoMirrored.Filled.CallSplit,
+                                                contentDescription = if (splitDoorWall) s.unifyDoorWallButton else s.splitDoorWallButton,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                            Text(
+                                                text = if (splitDoorWall) "E-D" else "E / D",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                            )
+                                        }
+                                    }
+
                                     FloatingActionButton(
                                         onClick = {
                                             isEditingContainerInPanel = false
@@ -1809,16 +2093,32 @@ fun RoomScreen() {
                                     onToggleEditMode = { isEditingContainerInPanel = it },
                                     onSelectContainer = { container ->
                                         selectedContainerId = container.id
-                                        val targetStep = stepFromWallIndex(container.wall)
+                                        val isD = container.wall == WallIndex.SOUTH && container.offsetMm < room.segmentEMm
+                                        val targetStep = stepFromWallIndex(container.wall, splitDoorWall, isSegmentD = isD)
                                         if (targetStep != wallStep.intValue) {
                                             switchWall(targetStep)
                                         }
                                     },
                                     onAddContainerOnCurrentWall = { dropFractionX ->
-                                        val targetWall = wallIndexFromStep(wallStep.intValue)
+                                        val targetWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
+                                        val isD = splitDoorWall && targetWall == WallIndex.SOUTH && (((wallStep.intValue % 5) + 5) % 5 == 4)
                                         val newId = "container_${System.currentTimeMillis()}_${room.containers.size + 1}"
                                         val added = room.withAddedContainer(wall = targetWall, id = newId)
-                                        val updatedRoom = if (dropFractionX != null) {
+                                        val updatedRoom = if (splitDoorWall && targetWall == WallIndex.SOUTH) {
+                                            val frac = dropFractionX ?: 0.5f
+                                            if (isD) {
+                                                added.withUpdatedContainer(newId) { item ->
+                                                    val maxOff = (room.segmentEMm - item.widthMm).coerceAtLeast(0f)
+                                                    item.copy(offsetMm = frac.coerceIn(0f, 1f) * maxOff)
+                                                }
+                                            } else {
+                                                val baseOff = room.segmentEMm + room.door.widthMm
+                                                added.withUpdatedContainer(newId) { item ->
+                                                    val maxOff = (room.segmentDMm - item.widthMm).coerceAtLeast(0f)
+                                                    item.copy(offsetMm = baseOff + frac.coerceIn(0f, 1f) * maxOff)
+                                                }
+                                            }
+                                        } else if (dropFractionX != null) {
                                             val wallLen = added.wallLengthMm(targetWall).coerceAtLeast(0f)
                                             added.withUpdatedContainer(newId) { item ->
                                                 val maxOff = (wallLen - item.widthMm).coerceAtLeast(0f)
@@ -1832,7 +2132,7 @@ fun RoomScreen() {
                                         showUnitsColumn = false
                                         coroutineScope.launch {
                                             messageHostState.showSnackbar(
-                                                "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
+                                                "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage, splitDoorWall, isD)}",
                                             )
                                         }
                                     },
@@ -1846,13 +2146,29 @@ fun RoomScreen() {
                                     onDragUnitEnd = {
                                         if (isDraggingUnit) {
                                             val fractionX = (dragScreenOffset.x / viewportWidthPx).coerceIn(0.05f, 0.95f)
-                                            val targetWall = wallIndexFromStep(wallStep.intValue)
+                                            val targetWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
+                                            val isD = splitDoorWall && targetWall == WallIndex.SOUTH && (((wallStep.intValue % 5) + 5) % 5 == 4)
                                             val newId = "container_${System.currentTimeMillis()}_${room.containers.size + 1}"
                                             val added = room.withAddedContainer(wall = targetWall, id = newId)
-                                            val wallLen = added.wallLengthMm(targetWall).coerceAtLeast(0f)
-                                            val updatedRoom = added.withUpdatedContainer(newId) { item ->
-                                                val maxOff = (wallLen - item.widthMm).coerceAtLeast(0f)
-                                                item.copy(offsetMm = fractionX * maxOff)
+                                            val updatedRoom = if (splitDoorWall && targetWall == WallIndex.SOUTH) {
+                                                if (isD) {
+                                                    added.withUpdatedContainer(newId) { item ->
+                                                        val maxOff = (room.segmentEMm - item.widthMm).coerceAtLeast(0f)
+                                                        item.copy(offsetMm = fractionX * maxOff)
+                                                    }
+                                                } else {
+                                                    val baseOff = room.segmentEMm + room.door.widthMm
+                                                    added.withUpdatedContainer(newId) { item ->
+                                                        val maxOff = (room.segmentDMm - item.widthMm).coerceAtLeast(0f)
+                                                        item.copy(offsetMm = baseOff + fractionX * maxOff)
+                                                    }
+                                                }
+                                            } else {
+                                                val wallLen = added.wallLengthMm(targetWall).coerceAtLeast(0f)
+                                                added.withUpdatedContainer(newId) { item ->
+                                                    val maxOff = (wallLen - item.widthMm).coerceAtLeast(0f)
+                                                    item.copy(offsetMm = fractionX * maxOff)
+                                                }
                                             }
                                             updateRoom(updatedRoom)
                                             selectedContainerId = newId
@@ -1860,7 +2176,7 @@ fun RoomScreen() {
                                             showUnitsColumn = false
                                             coroutineScope.launch {
                                                 messageHostState.showSnackbar(
-                                                    "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
+                                                    "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage, splitDoorWall, isD)}",
                                                 )
                                             }
                                         }
@@ -1991,7 +2307,7 @@ fun RoomScreen() {
                                 Text("• ${s.wallEDTotalLabel}: ${room.wallSouthMm.toInt()} mm (E:${room.segmentDMm.toInt()} + ${s.doorWord}:${room.door.widthMm.toInt()} + D:${room.segmentEMm.toInt()})")
                                 Text("• ${s.anglesLabel}: A-B=${String.format(Locale.US, "%.1f°", room.angleACDeg)}, B-C=${String.format(Locale.US, "%.1f°", room.angleABDeg)}, C-D=${String.format(Locale.US, "%.1f°", room.angleBEDeg)}, A-E=${String.format(Locale.US, "%.1f°", room.angleCDDeg)}")
                                 Text("• ${s.heightYLabel}: ${room.clearHeightMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearHeightMm / 1000f)} m)")
-                                Text("• ${s.currentViewLabel}: ${getWallName(wallStep.intValue, appLanguage)}")
+                                Text("• ${s.currentViewLabel}: ${getWallName(wallStep.intValue, appLanguage, splitDoorWall)}")
                             }
                         },
                         confirmButton = {
