@@ -175,8 +175,16 @@ data class RoomSpec(
     val isDoorCentered: Boolean
         get() = abs(segmentDMm - segmentEMm) < 1f
 
+    /**
+     * Returns true if the South (Door) wall total length is locked, either explicitly (`lockWallSouth`)
+     * or implicitly because all 3 of its segments (`Tramo E`, `Puerta`, and `Tramo D`) are locked.
+     */
+    val isSouthWallTotalLocked: Boolean
+        get() = lockWallSouth || (lockSegmentD && door.lockWidth && lockSegmentE)
+
     /** Centers the door between segment D and E. */
     fun withCenteredDoor(): RoomSpec {
+        if (lockSegmentD || lockSegmentE || lockWallSouth) return this
         val centered = ((doorWallLengthMm - door.widthMm) / 2f).coerceAtLeast(0f)
         return copy(door = door.copy(offsetMm = centered))
     }
@@ -236,16 +244,20 @@ data class RoomSpec(
                 val targetCD = 360f - next.angleACDeg - next.angleABDeg - oldBE
                 next.solveWallForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
             }
-            lockWallSouth && !lockWallB -> {
-                val targetSouth = wallSouthMm
-                val sw = next.vertexSW
-                val radAB = Math.toRadians(next.angleABDeg.toDouble()).toFloat()
-                val dx = clampedA - sw.x
-                val dzSq = (targetSouth * targetSouth - dx * dx).coerceAtLeast(0f)
-                val targetZ = sw.z + sqrt(dzSq)
-                val sinAB = sin(radAB).coerceAtLeast(0.2f)
-                val newB = (targetZ / sinAB).coerceIn(1500f, 6000f)
-                next.copy(wallBMm = newB)
+            lockWallSouth || isSouthWallTotalLocked -> {
+                if (!lockWallB) {
+                    val targetSouth = wallSouthMm
+                    val sw = next.vertexSW
+                    val radAB = Math.toRadians(next.angleABDeg.toDouble()).toFloat()
+                    val dx = clampedA - sw.x
+                    val dzSq = (targetSouth * targetSouth - dx * dx).coerceAtLeast(0f)
+                    val targetZ = sw.z + sqrt(dzSq)
+                    val sinAB = sin(radAB).coerceAtLeast(0.2f)
+                    val newB = (targetZ / sinAB).coerceIn(1500f, 6000f)
+                    next.copy(wallBMm = newB)
+                } else {
+                    next
+                }
             }
             else -> next
         }
@@ -267,7 +279,7 @@ data class RoomSpec(
                 val targetBE = 360f - next.angleACDeg - next.angleABDeg - oldCD
                 next.solveCForTargetBE(targetBE, keepDoorCentered, prevDoorWallLen)
             }
-            lockWallSouth && !lockWallA -> {
+            isSouthWallTotalLocked && !lockWallA -> {
                 val sw = next.vertexSW
                 val radAB = Math.toRadians(next.angleABDeg.toDouble()).toFloat()
                 val z2 = clampedB * sin(radAB)
@@ -276,7 +288,7 @@ data class RoomSpec(
                 val newA = (sw.x + dx + clampedB * cos(radAB)).coerceIn(1500f, 6000f)
                 next.copy(clearWidthMm = newA)
             }
-            lockWallSouth && lockWallA && !lockWallC -> {
+            isSouthWallTotalLocked && lockWallA && !lockWallC -> {
                 val se = next.vertexSE
                 val radAC = Math.toRadians(next.angleACDeg.toDouble()).toFloat()
                 val sinAC = sin(radAC).coerceAtLeast(0.2f)
@@ -305,7 +317,7 @@ data class RoomSpec(
                 val targetCD = 360f - next.angleACDeg - next.angleABDeg - oldBE
                 next.solveBForTargetCD(targetCD, keepDoorCentered, prevDoorWallLen)
             }
-            lockWallSouth && !lockWallA -> {
+            isSouthWallTotalLocked && !lockWallA -> {
                 val sw = next.vertexSW
                 val se = next.vertexSE
                 val radAB = Math.toRadians(next.angleABDeg.toDouble()).toFloat()
@@ -314,7 +326,7 @@ data class RoomSpec(
                 val newA = (sw.x + dx + wallBMm * cos(radAB)).coerceIn(1500f, 6000f)
                 next.copy(clearWidthMm = newA)
             }
-            lockWallSouth && lockWallA && !lockWallB -> {
+            isSouthWallTotalLocked && lockWallA && !lockWallB -> {
                 val sw = next.vertexSW
                 val se = next.vertexSE
                 val radAB = Math.toRadians(next.angleABDeg.toDouble()).toFloat()
@@ -331,7 +343,7 @@ data class RoomSpec(
 
     /** Directly updates the total length of the South Wall (Door wall), adapting unlocked Wall A or Wall B. */
     fun withWallSouth(targetSouthMm: Float, keepDoorCentered: Boolean = isDoorCentered): RoomSpec {
-        if (lockWallSouth) return this
+        if (isSouthWallTotalLocked) return this
         val prevDoorWallLen = doorWallLengthMm
         val clampedS = targetSouthMm.coerceIn(1500f, 6000f)
         val sw = vertexSW
@@ -483,7 +495,7 @@ data class RoomSpec(
             else -> {
                 val targetSouth = wallSouthMm
                 var next = copy(angleACDeg = clamped)
-                if (lockWallSouth && !lockWallA) {
+                if (isSouthWallTotalLocked && !lockWallA) {
                     val sw = next.vertexSW
                     val se = next.vertexSE
                     val radAB = Math.toRadians(next.angleABDeg.toDouble()).toFloat()
@@ -532,7 +544,7 @@ data class RoomSpec(
             else -> {
                 val targetSouth = wallSouthMm
                 var next = copy(angleABDeg = clamped)
-                if (lockWallSouth && !lockWallA) {
+                if (isSouthWallTotalLocked && !lockWallA) {
                     val sw = next.vertexSW
                     val se = next.vertexSE
                     val radAB = Math.toRadians(clamped.toDouble()).toFloat()

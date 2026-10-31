@@ -202,4 +202,19 @@ class RoomSpecTest {
         assertEquals(900f, grown.door.widthMm, 0.01f)
         assertEquals(3900f, grown.doorWallLengthMm, 1f)
     }
+
+    @Test
+    fun `when all three door wall elements (E, Door, D) are locked, total door wall length is locked and cannot grow`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            lockSegmentD = true,
+            lockSegmentE = true,
+            door = DoorSpec(widthMm = 900f, offsetMm = 1350f, lockWidth = true),
+        )
+        assertTrue(room.isSouthWallTotalLocked)
+        // Attempting to change total door wall length directly must be ignored
+        val attempted = room.withWallSouth(4800f)
+        assertEquals(3600f, attempted.doorWallLengthMm, 0.01f)
+    }
 }

@@ -623,6 +623,9 @@ private fun DoorWallInspectorCard(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            val totalLocked = room.isSouthWallTotalLocked
+            val allThreeSegmentsLocked = room.lockSegmentD && room.door.lockWidth && room.lockSegmentE
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -634,20 +637,33 @@ private fun DoorWallInspectorCard(
                 ) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (room.lockWallSouth) {
+                        color = if (totalLocked) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {
                             MaterialTheme.colorScheme.surface
                         },
                         shadowElevation = 1.dp,
-                        onClick = { onRoomChange(room.copy(lockWallSouth = !room.lockWallSouth)) },
+                        onClick = {
+                            if (allThreeSegmentsLocked && !room.lockWallSouth) {
+                                // Unlocking when all 3 segments were locked: unlock E & D so the total can be adjusted
+                                onRoomChange(
+                                    room.copy(
+                                        lockWallSouth = false,
+                                        lockSegmentD = false,
+                                        lockSegmentE = false,
+                                    ),
+                                )
+                            } else {
+                                onRoomChange(room.copy(lockWallSouth = !room.lockWallSouth))
+                            }
+                        },
                         modifier = Modifier.size(36.dp),
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
-                                imageVector = if (room.lockWallSouth) Icons.Default.Lock else Icons.Default.LockOpen,
-                                contentDescription = if (room.lockWallSouth) "Pared E-D fija" else "Pared E-D adaptable",
-                                tint = if (room.lockWallSouth) {
+                                imageVector = if (totalLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = if (totalLocked) "Pared E-D fija" else "Pared E-D adaptable",
+                                tint = if (totalLocked) {
                                     Color(0xFF2C55B5)
                                 } else {
                                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -675,6 +691,7 @@ private fun DoorWallInspectorCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(
                         checked = doorCentered,
+                        enabled = !totalLocked && !room.lockSegmentD && !room.lockSegmentE,
                         onCheckedChange = onDoorCenteredChange,
                     )
                     Text(
@@ -745,36 +762,40 @@ private fun DoorWallInspectorCard(
                 label = "Total Pared E-D (mm)",
                 currentValueText = room.doorWallLengthMm.roundToInt().toString(),
                 unitSuffix = "mm",
-                enabled = !room.lockWallSouth,
+                enabled = !totalLocked,
                 onCommitValue = { parsed ->
-                    if (!room.lockWallSouth) {
+                    if (!totalLocked) {
                         onRoomChange(room.withWallSouth(parsed.coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
                     }
                 },
                 trailingButtons = {
-                    StepButton("-100", enabled = !room.lockWallSouth) {
+                    StepButton("-100", enabled = !totalLocked) {
                         onRoomChange(room.withWallSouth((room.doorWallLengthMm - 100f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
                     }
-                    StepButton("-25", enabled = !room.lockWallSouth) {
+                    StepButton("-25", enabled = !totalLocked) {
                         onRoomChange(room.withWallSouth((room.doorWallLengthMm - 25f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
                     }
-                    StepButton("+25", enabled = !room.lockWallSouth) {
+                    StepButton("+25", enabled = !totalLocked) {
                         onRoomChange(room.withWallSouth((room.doorWallLengthMm + 25f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
                     }
-                    StepButton("+100", enabled = !room.lockWallSouth) {
+                    StepButton("+100", enabled = !totalLocked) {
                         onRoomChange(room.withWallSouth((room.doorWallLengthMm + 100f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
                     }
                 },
             )
 
             DimensionSlider(
-                label = "Deslizar Total Pared E-D",
+                label = if (allThreeSegmentsLocked) {
+                    "Total bloqueado (E, Puerta y D bloqueados)"
+                } else {
+                    "Deslizar Total Pared E-D"
+                },
                 valueMm = room.doorWallLengthMm,
                 rangeMm = 1500f..6000f,
                 stepMm = 25f,
-                enabled = !room.lockWallSouth,
+                enabled = !totalLocked,
                 onValueChange = { newTotal ->
-                    if (!room.lockWallSouth) {
+                    if (!totalLocked) {
                         onRoomChange(room.withWallSouth(newTotal, keepDoorCentered = doorCentered))
                     }
                 },
