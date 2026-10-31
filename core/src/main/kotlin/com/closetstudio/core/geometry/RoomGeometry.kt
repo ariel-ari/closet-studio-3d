@@ -22,6 +22,7 @@ enum class RoomSurface {
     CONTAINER_FRONT_EDGE,
     CONTAINER_BACK,
     CONTAINER_SELECTED_OUTLINE,
+    PARTITION_SELECTED_OUTLINE,
 }
 
 data class RoomPart(
@@ -45,6 +46,7 @@ object RoomGeometryBuilder {
         room: RoomSpec,
         uvScaleMm: Float = 600f,
         selectedContainerId: String? = null,
+        selectedPartitionId: String? = null,
     ): List<RoomPart> {
         val h = room.clearHeightMm
         val slab = 40f
@@ -228,6 +230,7 @@ object RoomGeometryBuilder {
             val frontEdgesBuilder = MeshBuilder(uvScaleMm)
             val containerBackBuilder = MeshBuilder(uvScaleMm)
             val selectedOutlineBuilder = MeshBuilder(uvScaleMm)
+            val partitionOutlineBuilder = MeshBuilder(uvScaleMm)
 
             for (rawContainer in room.containers) {
                 val container = room.clampContainer(rawContainer)
@@ -240,6 +243,8 @@ object RoomGeometryBuilder {
                     frontEdgesBuilder = frontEdgesBuilder,
                     backBuilder = containerBackBuilder,
                     selectedOutlineBuilder = if (container.id == selectedContainerId) selectedOutlineBuilder else null,
+                    selectedPartitionId = selectedPartitionId,
+                    partitionOutlineBuilder = partitionOutlineBuilder,
                 )
             }
 
@@ -262,6 +267,10 @@ object RoomGeometryBuilder {
             val outlineMesh = selectedOutlineBuilder.build()
             if (outlineMesh.vertexCount > 0) {
                 parts += RoomPart(RoomSurface.CONTAINER_SELECTED_OUTLINE, outlineMesh)
+            }
+            val partOutlineMesh = partitionOutlineBuilder.build()
+            if (partOutlineMesh.vertexCount > 0) {
+                parts += RoomPart(RoomSurface.PARTITION_SELECTED_OUTLINE, partOutlineMesh)
             }
         }
 
@@ -468,6 +477,8 @@ object RoomGeometryBuilder {
         frontEdgesBuilder: MeshBuilder,
         backBuilder: MeshBuilder,
         selectedOutlineBuilder: MeshBuilder?,
+        selectedPartitionId: String? = null,
+        partitionOutlineBuilder: MeshBuilder? = null,
     ) {
         val nw = room.vertexNW
         val ne = room.vertexNE
@@ -651,7 +662,132 @@ object RoomGeometryBuilder {
             )
         }
 
-        // 7. Selection Highlight Outline around the front rim when selected
+        // 7. Interior Partitions: Vertical Dividers & Horizontal Shelves
+        val s0Inner = s0 + t
+        val bays = container.getBays()
+
+        // 7a. Vertical Dividers
+        for (div in container.dividers) {
+            val divS0 = s0Inner + div.offsetXMm
+            val divS1 = divS0 + div.thicknessMm
+            val divY0 = plinthH + t
+            val divY1 = totalH - t
+            val divD0 = wallGap + backT
+            val divD1 = wallGap + totalD
+
+            if (divS1 > divS0 && divY1 > divY0) {
+                addWallAlignedBox(
+                    builder = vertPanelsBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = divS0, s1 = divS1,
+                    y0 = divY0, y1 = divY1,
+                    d0 = divD0, d1 = divD1,
+                    frontEdgeBuilder = frontEdgesBuilder,
+                )
+
+                // Selection Highlight Outline (Crisp Purple Rim matching user screenshot)
+                if (div.id == selectedPartitionId && partitionOutlineBuilder != null) {
+                    val pRim = 5f
+                    val dOut0 = divD1 - 2f
+                    val dOut1 = divD1 + 6f
+                    // Front outline
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = divS0 - pRim, s1 = divS1 + pRim,
+                        y0 = divY0 - pRim, y1 = divY1 + pRim,
+                        d0 = dOut0, d1 = dOut1,
+                    )
+                    // Depth top edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = divS0 - pRim, s1 = divS1 + pRim,
+                        y0 = divY1 - pRim, y1 = divY1 + pRim,
+                        d0 = divD0, d1 = divD1,
+                    )
+                    // Depth bottom edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = divS0 - pRim, s1 = divS1 + pRim,
+                        y0 = divY0 - pRim, y1 = divY0 + pRim,
+                        d0 = divD0, d1 = divD1,
+                    )
+                    // Back vertical edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = divS0 - pRim, s1 = divS1 + pRim,
+                        y0 = divY0, y1 = divY1,
+                        d0 = divD0 - pRim, d1 = divD0 + pRim,
+                    )
+                }
+            }
+        }
+
+        // 7b. Horizontal Shelves (Automatically adapted from left to right of its containing bay)
+        for (shelf in container.shelves) {
+            val bay = bays.getOrElse(shelf.bayIndex) { bays.last() }
+            val shelfS0 = s0Inner + bay.startXMm
+            val shelfS1 = s0Inner + bay.endXMm
+            val shelfY0 = plinthH + t + shelf.elevationYMm
+            val shelfY1 = shelfY0 + shelf.thicknessMm
+            val shelfD0 = wallGap + backT
+            val shelfD1 = wallGap + totalD
+
+            if (shelfS1 > shelfS0 && shelfY1 > shelfY0 && shelfY1 <= totalH - t) {
+                addWallAlignedBox(
+                    builder = horizPanelsBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = shelfS0, s1 = shelfS1,
+                    y0 = shelfY0, y1 = shelfY1,
+                    d0 = shelfD0, d1 = shelfD1,
+                    frontEdgeBuilder = frontEdgesBuilder,
+                )
+
+                // Selection Highlight Outline (Crisp Purple Rim matching user screenshot)
+                if (shelf.id == selectedPartitionId && partitionOutlineBuilder != null) {
+                    val pRim = 5f
+                    val dOut0 = shelfD1 - 2f
+                    val dOut1 = shelfD1 + 6f
+                    // Front edge outline
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = shelfS0 - pRim, s1 = shelfS1 + pRim,
+                        y0 = shelfY0 - pRim, y1 = shelfY1 + pRim,
+                        d0 = dOut0, d1 = dOut1,
+                    )
+                    // Left depth edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = shelfS0 - pRim, s1 = shelfS0 + pRim,
+                        y0 = shelfY0 - pRim, y1 = shelfY1 + pRim,
+                        d0 = shelfD0, d1 = shelfD1,
+                    )
+                    // Right depth edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = shelfS1 - pRim, s1 = shelfS1 + pRim,
+                        y0 = shelfY0 - pRim, y1 = shelfY1 + pRim,
+                        d0 = shelfD0, d1 = shelfD1,
+                    )
+                    // Back depth edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = shelfS0, s1 = shelfS1,
+                        y0 = shelfY0 - pRim, y1 = shelfY1 + pRim,
+                        d0 = shelfD0 - pRim, d1 = shelfD0 + pRim,
+                    )
+                }
+            }
+        }
+
+        // 8. Container Selection Highlight Outline around the front rim when selected
         if (selectedOutlineBuilder != null) {
             val rim = 6f
             val dOut0 = wallGap + totalD - 2f

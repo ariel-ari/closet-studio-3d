@@ -1,0 +1,177 @@
+package com.closetstudio.core.model
+
+import com.closetstudio.core.assertMm
+import com.closetstudio.core.geometry.RoomGeometryBuilder
+import com.closetstudio.core.geometry.RoomSurface
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class ClosetPartitionTest {
+
+    @Test
+    fun `adding vertical divider splits container carcass into two bays and calculates interior dimensions`() {
+        val container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+            plinthHeightMm = 80f,
+        )
+
+        // Interior width: 2000 - 2 * 20 = 1960 mm
+        // Interior height: 2400 - 80 - 20 - 20 = 2280 mm
+        // Interior depth: 600 - 6 = 594 mm
+        assertMm(1960f, container.interiorWidthMm)
+        assertMm(2280f, container.interiorHeightMm)
+        assertMm(594f, container.interiorDepthMm)
+
+        // Initial bays with no dividers: 1 single bay spanning full interior
+        val baysInitial = container.getBays()
+        assertEquals(1, baysInitial.size)
+        assertMm(0f, baysInitial[0].startXMm)
+        assertMm(1960f, baysInitial[0].endXMm)
+        assertMm(1960f, baysInitial[0].widthMm)
+
+        // Add vertical divider at default midpoint
+        val withDiv = container.withAddedDivider()
+        assertEquals(1, withDiv.dividers.size)
+        val div = withDiv.dividers.single()
+
+        val bays = withDiv.getBays()
+        assertEquals(2, bays.size)
+        // Two symmetric bays split by 18mm divider
+        assertMm(0f, bays[0].startXMm)
+        assertMm(bays[0].endXMm, div.offsetXMm)
+        assertMm(div.offsetXMm + div.thicknessMm, bays[1].startXMm)
+        assertMm(1960f, bays[1].endXMm)
+        assertEquals(bays[0].widthMm, bays[1].widthMm)
+    }
+
+    @Test
+    fun `horizontal shelf automatically adapts when vertical divider moves`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+        ).withAddedDivider()
+
+        val divId = container.dividers.single().id
+
+        // Add shelf to bay 0
+        container = container.withAddedShelf(bayIndex = 0, elevationYMm = 1000f)
+        assertEquals(1, container.shelves.size)
+        val shelf = container.shelves.single()
+        assertEquals(0, shelf.bayIndex)
+
+        val bay0Initial = container.getBays()[0]
+        assertMm(970f, bay0Initial.widthMm)
+
+        // Now move the divider to the right by 200 mm (offset = 1170 mm)
+        container = container.withUpdatedDivider(divId) {
+            it.copy(offsetXMm = 1170f)
+        }
+
+        // Bay 0 expands to 1170 mm
+        val baysAfter = container.getBays()
+        assertMm(1170f, baysAfter[0].widthMm)
+        // Shelf is still in bay 0 and dynamically spans 1170 mm!
+        assertMm(1170f, baysAfter[shelf.bayIndex].widthMm)
+    }
+
+    @Test
+    fun `raycast picks vertical divider and horizontal shelf with touch tolerance`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearHeightMm = 2600f,
+            clearDepthMm = 3600f,
+        ).withAddedContainer(
+            wall = WallIndex.NORTH,
+            id = "c1",
+            defaultWidthMm = 2000f,
+            defaultHeightMm = 2400f,
+            defaultDepthMm = 600f,
+        ).withUpdatedContainer("c1") {
+            it.withAddedDivider().withAddedShelf(bayIndex = 0, elevationYMm = 1000f)
+        }
+
+        val container = room.containers.single()
+        val div = container.dividers.single()
+        val shelf = container.shelves.single()
+
+        // 3D ray towards vertical divider center
+        // North wall container: X center = offsetMm + panelThicknessMm + div.offsetXMm + 9 mm
+        val divWorldX = container.offsetMm + container.panelThicknessMm + div.offsetXMm + 9f
+        val divWorldY = container.plinthHeightMm + container.panelThicknessMm + container.interiorHeightMm / 2f
+        val divWorldZ = 300f
+
+        val hitDiv = room.pickPartitionByRayMm(
+            rayOriginX = divWorldX,
+            rayOriginY = divWorldY,
+            rayOriginZ = 2000f,
+            rayDirX = 0f,
+            rayDirY = 0f,
+            rayDirZ = -1f,
+        )
+
+        assertNotNull(hitDiv)
+        assertEquals("c1", hitDiv.containerId)
+        assertEquals(div.id, hitDiv.partitionId)
+        assertTrue(hitDiv.isVertical)
+
+        // 3D ray towards horizontal shelf center
+        val bay0 = container.getBays()[0]
+        val shelfWorldX = container.offsetMm + container.panelThicknessMm + (bay0.startXMm + bay0.endXMm) / 2f
+        val shelfWorldY = container.plinthHeightMm + container.panelThicknessMm + shelf.elevationYMm + 9f
+        val shelfWorldZ = 300f
+
+        val hitShelf = room.pickPartitionByRayMm(
+            rayOriginX = shelfWorldX,
+            rayOriginY = shelfWorldY,
+            rayOriginZ = 2000f,
+            rayDirX = 0f,
+            rayDirY = 0f,
+            rayDirZ = -1f,
+        )
+
+        assertNotNull(hitShelf)
+        assertEquals("c1", hitShelf.containerId)
+        assertEquals(shelf.id, hitShelf.partitionId)
+        assertTrue(!hitShelf.isVertical)
+    }
+
+    @Test
+    fun `geometry builder produces purple selected outline for active partition`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearHeightMm = 2600f,
+            clearDepthMm = 3600f,
+        ).withAddedContainer(
+            wall = WallIndex.NORTH,
+            id = "c1",
+            defaultWidthMm = 2000f,
+            defaultHeightMm = 2400f,
+            defaultDepthMm = 600f,
+        ).withUpdatedContainer("c1") {
+            it.withAddedDivider()
+        }
+
+        val div = room.containers.single().dividers.single()
+
+        val parts = RoomGeometryBuilder.build(
+            room = room,
+            selectedContainerId = "c1",
+            selectedPartitionId = div.id,
+        )
+
+        val outline = parts.find { it.surface == RoomSurface.PARTITION_SELECTED_OUTLINE }
+        assertNotNull(outline)
+        assertTrue(outline.mesh.positions.isNotEmpty())
+    }
+}

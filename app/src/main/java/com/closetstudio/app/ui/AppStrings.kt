@@ -127,6 +127,20 @@ data class UiStrings(
     val selectUnitsTitle: String,
     val selectUnitsSubtitle: String,
     val unitsChangedToast: String,
+    val moduleTitle: String,
+    val verticalDividerTitle: String,
+    val horizontalShelfTitle: String,
+    val closetCarcassTitle: String,
+    val partitionWidthLabel: String,
+    val partitionHeightLabel: String,
+    val partitionDepthLabel: String,
+    val partitionPositionTitle: String,
+    val partitionLeftLabel: String,
+    val partitionRightLabel: String,
+    val partitionBottomLabel: String,
+    val partitionTopLabel: String,
+    val partitionAddedToast: String,
+    val partitionDeletedToast: String,
 )
 
 private val SpanishStrings = UiStrings(
@@ -228,6 +242,20 @@ private val SpanishStrings = UiStrings(
     selectUnitsTitle = "Seleccionar Unidades de Medida",
     selectUnitsSubtitle = "Elegí el sistema de medición para visualizar y editar dimensiones",
     unitsChangedToast = "Unidad de medida cambiada a",
+    moduleTitle = "Módulo",
+    verticalDividerTitle = "División Vertical",
+    horizontalShelfTitle = "División Horizontal",
+    closetCarcassTitle = "Armario Base",
+    partitionWidthLabel = "Ancho",
+    partitionHeightLabel = "Alto",
+    partitionDepthLabel = "Profundidad",
+    partitionPositionTitle = "Posición",
+    partitionLeftLabel = "Izquierda",
+    partitionRightLabel = "Derecha",
+    partitionBottomLabel = "Abajo",
+    partitionTopLabel = "Arriba",
+    partitionAddedToast = "División colocada en el armario",
+    partitionDeletedToast = "División eliminada",
 )
 
 private val EnglishStrings = UiStrings(
@@ -329,6 +357,20 @@ private val EnglishStrings = UiStrings(
     selectUnitsTitle = "Select Measurement Units",
     selectUnitsSubtitle = "Choose the measurement system for displaying and editing dimensions",
     unitsChangedToast = "Measurement unit changed to",
+    moduleTitle = "Module",
+    verticalDividerTitle = "Vertical Partition",
+    horizontalShelfTitle = "Horizontal Shelf",
+    closetCarcassTitle = "Closet Carcass",
+    partitionWidthLabel = "Width",
+    partitionHeightLabel = "Height",
+    partitionDepthLabel = "Depth",
+    partitionPositionTitle = "Position",
+    partitionLeftLabel = "Left",
+    partitionRightLabel = "Right",
+    partitionBottomLabel = "Bottom",
+    partitionTopLabel = "Top",
+    partitionAddedToast = "Partition placed inside closet",
+    partitionDeletedToast = "Partition deleted",
 )
 
 fun stringsFor(lang: AppLanguage): UiStrings = when (lang) {

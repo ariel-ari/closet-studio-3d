@@ -52,6 +52,41 @@ data class CornerIntersectionCandidate(
 )
 
 @Serializable
+data class ContainerBay(
+    val index: Int,
+    val startXMm: Float,
+    val endXMm: Float,
+) {
+    val widthMm: Float get() = (endXMm - startXMm).coerceAtLeast(0f)
+}
+
+@Serializable
+data class VerticalDividerSpec(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val offsetXMm: Float = 0f,
+    val thicknessMm: Float = 18f,
+) {
+    init {
+        require(offsetXMm >= 0f) { "divider offset must be non-negative" }
+        require(thicknessMm > 0f) { "divider thickness must be positive" }
+    }
+}
+
+@Serializable
+data class HorizontalShelfSpec(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val bayIndex: Int = 0,
+    val elevationYMm: Float = 600f,
+    val thicknessMm: Float = 18f,
+) {
+    init {
+        require(bayIndex >= 0) { "shelf bayIndex must be non-negative" }
+        require(elevationYMm >= 0f) { "shelf elevation must be non-negative" }
+        require(thicknessMm > 0f) { "shelf thickness must be positive" }
+    }
+}
+
+@Serializable
 data class ClosetContainerSpec(
     val id: String,
     val wall: WallIndex = WallIndex.NORTH,
@@ -64,11 +99,102 @@ data class ClosetContainerSpec(
     val backThicknessMm: Float = 6f,
     val fuseStartCorner: Boolean = false,
     val fuseEndCorner: Boolean = false,
+    val dividers: List<VerticalDividerSpec> = emptyList(),
+    val shelves: List<HorizontalShelfSpec> = emptyList(),
 ) {
     init {
         require(widthMm >= 0f) { "container width must be non-negative" }
         require(heightMm >= 0f) { "container height must be non-negative" }
         require(depthMm >= 0f) { "container depth must be non-negative" }
+    }
+
+    val interiorWidthMm: Float
+        get() = (widthMm - panelThicknessMm * 2f).coerceAtLeast(0f)
+
+    val interiorHeightMm: Float
+        get() = (heightMm - plinthHeightMm - panelThicknessMm * 2f).coerceAtLeast(0f)
+
+    val interiorDepthMm: Float
+        get() = (depthMm - backThicknessMm).coerceAtLeast(0f)
+
+    /**
+     * Computes the vertical bays (cajas / columnas) partitioned by the sorted vertical dividers.
+     * With N dividers there are N + 1 bays.
+     */
+    fun getBays(): List<ContainerBay> {
+        val innerW = interiorWidthMm
+        if (innerW <= 10f) return listOf(ContainerBay(0, 0f, 0f))
+        val sortedDividers = dividers.sortedBy { it.offsetXMm }
+        if (sortedDividers.isEmpty()) {
+            return listOf(ContainerBay(0, 0f, innerW))
+        }
+
+        val bays = mutableListOf<ContainerBay>()
+        var currentX = 0f
+        var bayIdx = 0
+
+        for (div in sortedDividers) {
+            val clampedDivOffset = div.offsetXMm.coerceIn(currentX, (innerW - div.thicknessMm).coerceAtLeast(currentX))
+            bays.add(ContainerBay(index = bayIdx++, startXMm = currentX, endXMm = clampedDivOffset))
+            currentX = (clampedDivOffset + div.thicknessMm).coerceAtMost(innerW)
+        }
+        bays.add(ContainerBay(index = bayIdx, startXMm = currentX, endXMm = innerW))
+        return bays
+    }
+
+    fun findBayAtX(xMm: Float): ContainerBay {
+        val bays = getBays()
+        return bays.firstOrNull { xMm >= it.startXMm && xMm <= it.endXMm } ?: bays.lastOrNull() ?: ContainerBay(0, 0f, interiorWidthMm)
+    }
+
+    fun withAddedDivider(offsetXMm: Float? = null): ClosetContainerSpec {
+        val innerW = interiorWidthMm
+        val thickness = panelThicknessMm.coerceAtLeast(18f)
+        val targetOffset = offsetXMm ?: run {
+            val bays = getBays()
+            val widest = bays.maxByOrNull { it.widthMm } ?: bays.first()
+            widest.startXMm + (widest.widthMm - thickness) * 0.5f
+        }
+        val clampedOffset = targetOffset.coerceIn(20f, (innerW - thickness - 20f).coerceAtLeast(20f))
+        val newDivider = VerticalDividerSpec(
+            id = "div_${System.currentTimeMillis()}_${dividers.size + 1}",
+            offsetXMm = clampedOffset,
+            thicknessMm = thickness,
+        )
+        return copy(dividers = dividers + newDivider)
+    }
+
+    fun withAddedShelf(bayIndex: Int? = null, elevationYMm: Float? = null): ClosetContainerSpec {
+        val innerH = interiorHeightMm
+        val thickness = panelThicknessMm.coerceAtLeast(18f)
+        val bays = getBays()
+        val targetBay = (bayIndex ?: 0).coerceIn(0, bays.lastIndex)
+        val targetElev = (elevationYMm ?: (innerH * 0.5f)).coerceIn(20f, (innerH - thickness - 20f).coerceAtLeast(20f))
+        val newShelf = HorizontalShelfSpec(
+            id = "shelf_${System.currentTimeMillis()}_${shelves.size + 1}",
+            bayIndex = targetBay,
+            elevationYMm = targetElev,
+            thicknessMm = thickness,
+        )
+        return copy(shelves = shelves + newShelf)
+    }
+
+    fun withUpdatedDivider(id: String, transform: (VerticalDividerSpec) -> VerticalDividerSpec): ClosetContainerSpec {
+        return copy(dividers = dividers.map { if (it.id == id) transform(it) else it })
+    }
+
+    fun withUpdatedShelf(id: String, transform: (HorizontalShelfSpec) -> HorizontalShelfSpec): ClosetContainerSpec {
+        return copy(shelves = shelves.map { if (it.id == id) transform(it) else it })
+    }
+
+    fun withRemovedPartition(id: String): ClosetContainerSpec {
+        val remainingDividers = dividers.filterNot { it.id == id }
+        val remainingShelves = shelves.filterNot { it.id == id }
+        val maxBayIdx = remainingDividers.size
+        val reclampedShelves = remainingShelves.map {
+            if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
+        }
+        return copy(dividers = remainingDividers, shelves = reclampedShelves)
     }
 }
 
@@ -891,11 +1017,28 @@ data class RoomSpec(
             else -> container.offsetMm.coerceIn(0f, maxOff)
         }
 
+        val innerW = (clampedW - container.panelThicknessMm * 2f).coerceAtLeast(0f)
+        val innerH = (clampedH - container.plinthHeightMm - container.panelThicknessMm * 2f).coerceAtLeast(0f)
+        val clampedDividers = container.dividers.map { div ->
+            val maxOffset = (innerW - div.thicknessMm).coerceAtLeast(0f)
+            div.copy(offsetXMm = div.offsetXMm.coerceIn(0f, maxOffset))
+        }
+        val maxBayIdx = clampedDividers.size
+        val clampedShelves = container.shelves.map { shelf ->
+            val maxElev = (innerH - shelf.thicknessMm).coerceAtLeast(0f)
+            shelf.copy(
+                bayIndex = shelf.bayIndex.coerceIn(0, maxBayIdx),
+                elevationYMm = shelf.elevationYMm.coerceIn(0f, maxElev),
+            )
+        }
+
         return container.copy(
             widthMm = clampedW,
             heightMm = clampedH,
             depthMm = clampedD,
             offsetMm = clampedOff,
+            dividers = clampedDividers,
+            shelves = clampedShelves,
         )
     }
 
@@ -1186,4 +1329,141 @@ data class RoomSpec(
 
         return bestId
     }
+
+    /**
+     * Performs a 3D ray-box intersection test (in millimetres) against all interior partitions
+     * (vertical dividers and horizontal shelves) of all placed containers.
+     * Returns [PartitionHit] if hit, or null if no partition intersects the ray.
+     */
+    fun pickPartitionByRayMm(
+        rayOriginX: Float,
+        rayOriginY: Float,
+        rayOriginZ: Float,
+        rayDirX: Float,
+        rayDirY: Float,
+        rayDirZ: Float,
+    ): PartitionHit? {
+        if (containers.isEmpty()) return null
+        val nw = vertexNW
+        val ne = vertexNE
+        val se = vertexSE
+        val sw = vertexSW
+
+        var bestHit: PartitionHit? = null
+        var bestT = Float.MAX_VALUE
+
+        for (raw in containers) {
+            val c = clampContainer(raw)
+            if (c.dividers.isEmpty() && c.shelves.isEmpty()) continue
+
+            val (pStart, pEnd) = when (c.wall) {
+                WallIndex.NORTH -> nw to ne
+                WallIndex.EAST -> ne to se
+                WallIndex.SOUTH -> se to sw
+                WallIndex.WEST -> sw to nw
+            }
+            val dx = pEnd.x - pStart.x
+            val dz = pEnd.z - pStart.z
+            val wallLen = sqrt(dx * dx + dz * dz)
+            if (wallLen < 10f) continue
+
+            val ux = dx / wallLen
+            val uz = dz / wallLen
+            val nx = -uz
+            val nz = ux
+
+            val relX = rayOriginX - pStart.x
+            val relZ = rayOriginZ - pStart.z
+            val origS = relX * ux + relZ * uz
+            val origY = rayOriginY
+            val origD = relX * nx + relZ * nz
+
+            val dirS = rayDirX * ux + rayDirZ * uz
+            val dirY = rayDirY
+            val dirD = rayDirX * nx + rayDirZ * nz
+
+            val t = c.panelThicknessMm.coerceAtLeast(28f)
+            val plinthH = c.plinthHeightMm.coerceAtLeast(90f)
+            val backT = c.backThicknessMm.coerceIn(8f, 18f)
+            val wallGap = 4f
+            val totalH = c.heightMm
+            val totalD = c.depthMm.coerceAtLeast(350f)
+            val s0Inner = c.offsetMm + t
+
+            fun intersectAABB(minS: Float, maxS: Float, minY: Float, maxY: Float, minD: Float, maxD: Float): Float? {
+                var tMin = 0f
+                var tMax = Float.MAX_VALUE
+
+                fun clipSlab(orig: Float, dir: Float, bMin: Float, bMax: Float): Boolean {
+                    if (abs(dir) < 1e-6f) {
+                        return orig in bMin..bMax
+                    }
+                    val inv = 1f / dir
+                    var t1 = (bMin - orig) * inv
+                    var t2 = (bMax - orig) * inv
+                    if (t1 > t2) {
+                        val tmp = t1
+                        t1 = t2
+                        t2 = tmp
+                    }
+                    if (t1 > tMin) tMin = t1
+                    if (t2 < tMax) tMax = t2
+                    return tMin <= tMax
+                }
+
+                if (clipSlab(origS, dirS, minS, maxS) &&
+                    clipSlab(origY, dirY, minY, maxY) &&
+                    clipSlab(origD, dirD, minD, maxD)
+                ) {
+                    val hitT = if (tMin >= 0f) tMin else tMax
+                    if (hitT >= 0f) return hitT
+                }
+                return null
+            }
+
+            // Test vertical dividers (expanded by 45mm in S for comfortable tap selection on touchscreen)
+            for (div in c.dividers) {
+                val divS0 = s0Inner + div.offsetXMm - 45f
+                val divS1 = s0Inner + div.offsetXMm + div.thicknessMm + 45f
+                val divY0 = plinthH + t - 20f
+                val divY1 = totalH - t + 20f
+                val divD0 = 0f
+                val divD1 = wallGap + totalD + 25f
+
+                val hitT = intersectAABB(divS0, divS1, divY0, divY1, divD0, divD1)
+                if (hitT != null && hitT < bestT) {
+                    bestT = hitT
+                    bestHit = PartitionHit(c.id, div.id, isVertical = true, hitDistance = hitT)
+                }
+            }
+
+            // Test horizontal shelves (expanded by 45mm in Y for comfortable tap selection on touchscreen)
+            val bays = c.getBays()
+            for (shelf in c.shelves) {
+                val bay = bays.getOrElse(shelf.bayIndex) { bays.last() }
+                val shelfS0 = s0Inner + bay.startXMm - 20f
+                val shelfS1 = s0Inner + bay.endXMm + 20f
+                val shelfY0 = plinthH + t + shelf.elevationYMm - 45f
+                val shelfY1 = plinthH + t + shelf.elevationYMm + shelf.thicknessMm + 45f
+                val shelfD0 = 0f
+                val shelfD1 = wallGap + totalD + 25f
+
+                val hitT = intersectAABB(shelfS0, shelfS1, shelfY0, shelfY1, shelfD0, shelfD1)
+                if (hitT != null && hitT < bestT) {
+                    bestT = hitT
+                    bestHit = PartitionHit(c.id, shelf.id, isVertical = false, hitDistance = hitT)
+                }
+            }
+        }
+
+        return bestHit
+    }
 }
+
+@Serializable
+data class PartitionHit(
+    val containerId: String,
+    val partitionId: String,
+    val isVertical: Boolean,
+    val hitDistance: Float,
+)

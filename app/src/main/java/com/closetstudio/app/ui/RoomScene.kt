@@ -58,9 +58,14 @@ fun RoomScene(
     isOrtho: Boolean = false,
     orthoSize: Float = 3.0f,
     selectedContainerId: String? = null,
+    selectedPartitionId: String? = null,
 ) {
-    val parts = remember(room, selectedContainerId) {
-        RoomGeometryBuilder.build(room, selectedContainerId = selectedContainerId)
+    val parts = remember(room, selectedContainerId, selectedPartitionId) {
+        RoomGeometryBuilder.build(
+            room,
+            selectedContainerId = selectedContainerId,
+            selectedPartitionId = selectedPartitionId,
+        )
     }
 
     val engine = rememberEngine()
@@ -221,6 +226,12 @@ fun RoomScene(
                                 metallic = 0.15f,
                                 roughness = 0.25f,
                                 reflectance = 0.80f,
+                            )
+                            RoomSurface.PARTITION_SELECTED_OUTLINE -> materialLoader.createColorInstance(
+                                color = Color(0xFF8B5CF6), // Bright purple selection rim for active vertical divider or shelf
+                                metallic = 0.15f,
+                                roughness = 0.25f,
+                                reflectance = 0.85f,
                             )
                             RoomSurface.CONTAINER_BACK -> materialLoader.createColorInstance(
                                 color = Color(0xFFF3EAD8), // Warm cream interior backing board recessed 600mm deep
