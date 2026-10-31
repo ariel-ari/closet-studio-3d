@@ -64,4 +64,76 @@ class RoomSpecTest {
         assertEquals(85f, updated.angleBEDeg, 0.2f)
         assertTrue(updated.wallBMm > 3600f)
     }
+
+    @Test
+    fun `locking corner C-D keeps angleCDDeg strictly invariant when editing angleACDeg`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            lockAngleAC = false,
+            lockAngleAB = true,
+            lockAngleCD = true,
+            lockAngleBE = false,
+        )
+        val updated = room.withAngleAC(100f)
+
+        assertEquals(100f, updated.angleACDeg, 0.05f)
+        assertEquals(90f, updated.angleABDeg, 0.05f)
+        assertEquals(90f, updated.angleCDDeg, 0.05f) // Locked C-D MUST remain 90°!
+        assertEquals(80f, updated.angleBEDeg, 0.05f) // Unlocked B-E absorbs the -10°
+    }
+
+    @Test
+    fun `locking corner B-E keeps angleBEDeg strictly invariant when editing angleACDeg`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            lockAngleAC = false,
+            lockAngleAB = true,
+            lockAngleCD = false,
+            lockAngleBE = true,
+        )
+        val updated = room.withAngleAC(98f)
+
+        assertEquals(98f, updated.angleACDeg, 0.05f)
+        assertEquals(90f, updated.angleABDeg, 0.05f)
+        assertEquals(82f, updated.angleCDDeg, 0.05f) // Unlocked C-D absorbs -8°
+        assertEquals(90f, updated.angleBEDeg, 0.05f) // Locked B-E MUST remain 90°!
+    }
+
+    @Test
+    fun `locking both bottom corners C-D and B-E routes compensation to unlocked top corner A-B`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            lockAngleAC = false,
+            lockAngleAB = false,
+            lockAngleCD = true,
+            lockAngleBE = true,
+        )
+        val updated = room.withAngleAC(96f)
+
+        assertEquals(96f, updated.angleACDeg, 0.05f)
+        assertEquals(84f, updated.angleABDeg, 0.05f) // Unlocked A-B absorbs -6°
+        assertEquals(90f, updated.angleCDDeg, 0.05f) // Locked C-D stays 90°
+        assertEquals(90f, updated.angleBEDeg, 0.05f) // Locked B-E stays 90°
+    }
+
+    @Test
+    fun `editing corner C-D when B-E is locked preserves B-E and routes compensation to unlocked A-C`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            lockAngleAC = false,
+            lockAngleAB = true,
+            lockAngleCD = false,
+            lockAngleBE = true,
+        )
+        val updated = room.withAngleCD(97f)
+
+        assertEquals(83f, updated.angleACDeg, 0.05f) // Unlocked A-C absorbs -7°
+        assertEquals(90f, updated.angleABDeg, 0.05f) // Locked A-B stays 90°
+        assertEquals(97f, updated.angleCDDeg, 0.05f)
+        assertEquals(90f, updated.angleBEDeg, 0.05f) // Locked B-E stays 90°!
+    }
 }

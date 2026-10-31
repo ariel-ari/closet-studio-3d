@@ -221,12 +221,14 @@ fun RoomDimensionsPanel(
                 }
 
                 FloorplanElement.CornerAC -> {
+                    val otherLockedCount = listOf(room.lockAngleAB, room.lockAngleCD, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "A-C",
                         title = "Esquina Arriba Izquierda (Noroeste)",
                         subtitle = "Ángulo interior entre Pared A y Pared C",
                         angleDeg = room.angleACDeg,
                         isLocked = room.lockAngleAC,
+                        allOthersLocked = otherLockedCount == 3,
                         room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleAC = !room.lockAngleAC)) },
                         onAngleChange = { onRoomChange(room.withAngleAC(it, doorCentered)) },
@@ -234,12 +236,14 @@ fun RoomDimensionsPanel(
                 }
 
                 FloorplanElement.CornerAB -> {
+                    val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleCD, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "A-B",
                         title = "Esquina Arriba Derecha (Noreste)",
                         subtitle = "Ángulo interior entre Pared A y Pared B",
                         angleDeg = room.angleABDeg,
                         isLocked = room.lockAngleAB,
+                        allOthersLocked = otherLockedCount == 3,
                         room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleAB = !room.lockAngleAB)) },
                         onAngleChange = { onRoomChange(room.withAngleAB(it, doorCentered)) },
@@ -247,12 +251,14 @@ fun RoomDimensionsPanel(
                 }
 
                 FloorplanElement.CornerCD -> {
+                    val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleAB, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "C-D",
                         title = "Esquina Abajo Izquierda (Suroeste)",
                         subtitle = "Ángulo entre Pared C y Tramo D (adapta Pared B / Sur)",
                         angleDeg = room.angleCDDeg,
                         isLocked = room.lockAngleCD,
+                        allOthersLocked = otherLockedCount == 3,
                         room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleCD = !room.lockAngleCD)) },
                         onAngleChange = { onRoomChange(room.withAngleCD(it, doorCentered)) },
@@ -260,12 +266,14 @@ fun RoomDimensionsPanel(
                 }
 
                 FloorplanElement.CornerBE -> {
+                    val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleAB, room.lockAngleCD).count { it }
                     CornerInspectorCard(
                         cornerCode = "B-E",
                         title = "Esquina Abajo Derecha (Sureste)",
                         subtitle = "Ángulo entre Pared B y Tramo E (adapta Pared C / Sur)",
                         angleDeg = room.angleBEDeg,
                         isLocked = room.lockAngleBE,
+                        allOthersLocked = otherLockedCount == 3,
                         room = room,
                         onLockToggle = { onRoomChange(room.copy(lockAngleBE = !room.lockAngleBE)) },
                         onAngleChange = { onRoomChange(room.withAngleBE(it, doorCentered)) },
@@ -446,10 +454,12 @@ private fun CornerInspectorCard(
     subtitle: String,
     angleDeg: Float,
     isLocked: Boolean,
+    allOthersLocked: Boolean,
     room: RoomSpec,
     onLockToggle: () -> Unit,
     onAngleChange: (Float) -> Unit,
 ) {
+    val canEdit = !isLocked && !allOthersLocked
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
@@ -506,9 +516,18 @@ private fun CornerInspectorCard(
                             onCheckedChange = { onLockToggle() },
                         )
                         Text(
-                            text = if (!isLocked) "Edición de ángulo habilitada 🔓" else "Esquina bloqueada 🔒 (marcar para editar)",
+                            text = when {
+                                isLocked -> "Esquina bloqueada 🔒 (no cambia al mover otras)"
+                                allOthersLocked -> "Desbloqueá al menos otra esquina para compensar Σ=360°"
+                                else -> "Esquina libre 🔓 (editable y absorbe compensación)"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
+                            color = if (allOthersLocked && !isLocked) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
                         )
                     }
                 }
@@ -529,30 +548,36 @@ private fun CornerInspectorCard(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     StepButton("-2°") {
-                        if (isLocked) onLockToggle()
-                        onAngleChange((angleDeg - 2f).coerceIn(65f, 115f))
+                        if (canEdit) {
+                            onAngleChange((angleDeg - 2f).coerceIn(65f, 115f))
+                        }
                     }
                     StepButton("-0.5°") {
-                        if (isLocked) onLockToggle()
-                        onAngleChange((angleDeg - 0.5f).coerceIn(65f, 115f))
+                        if (canEdit) {
+                            onAngleChange((angleDeg - 0.5f).coerceIn(65f, 115f))
+                        }
                     }
                     StepButton("90°") {
-                        onAngleChange(90f)
+                        if (canEdit) {
+                            onAngleChange(90f)
+                        }
                     }
                     StepButton("+0.5°") {
-                        if (isLocked) onLockToggle()
-                        onAngleChange((angleDeg + 0.5f).coerceIn(65f, 115f))
+                        if (canEdit) {
+                            onAngleChange((angleDeg + 0.5f).coerceIn(65f, 115f))
+                        }
                     }
                     StepButton("+2°") {
-                        if (isLocked) onLockToggle()
-                        onAngleChange((angleDeg + 2f).coerceIn(65f, 115f))
+                        if (canEdit) {
+                            onAngleChange((angleDeg + 2f).coerceIn(65f, 115f))
+                        }
                     }
                 }
             }
 
             Slider(
                 value = angleDeg.coerceIn(65f, 115f),
-                enabled = !isLocked,
+                enabled = canEdit,
                 onValueChange = { raw ->
                     val snapped = (raw * 2f).roundToInt() / 2f
                     onAngleChange(snapped)
