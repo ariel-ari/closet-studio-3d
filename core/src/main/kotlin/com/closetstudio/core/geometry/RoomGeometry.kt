@@ -2,9 +2,13 @@ package com.closetstudio.core.geometry
 
 import com.closetstudio.core.model.ClosetContainerSpec
 import com.closetstudio.core.model.DoorSpec
+import com.closetstudio.core.model.RoomCorner
 import com.closetstudio.core.model.RoomSpec
 import com.closetstudio.core.model.Vec2Mm
 import com.closetstudio.core.model.WallIndex
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 enum class RoomSurface {
     FLOOR,
@@ -355,6 +359,107 @@ object RoomGeometryBuilder {
         )
     }
 
+    /**
+     * Builds a horizontal slab (e.g. top roof or bottom shelf floor) whose back edge (`d = d0`)
+     * spans `s0Back..s1Back` along the wall and whose front edge (`d = d1`) spans `s0Front..s1Front`.
+     * This forms a clean mitered trapezoid at fused corners (`90°`, `<90°`, or `>90°`) with zero Z-fighting!
+     */
+    private fun addMiteredHorizontalSlab(
+        builder: MeshBuilder,
+        frontEdgeBuilder: MeshBuilder,
+        pStart: Vec2Mm,
+        ux: Float,
+        uz: Float,
+        nx: Float,
+        nz: Float,
+        s0Back: Float,
+        s1Back: Float,
+        s0Front: Float,
+        s1Front: Float,
+        y0: Float,
+        y1: Float,
+        d0: Float,
+        d1: Float,
+    ) {
+        if (s1Back <= s0Back && s1Front <= s0Front) return
+        if (y1 <= y0 || d1 <= d0) return
+
+        val sb0 = s0Back.coerceAtMost(s1Back - 1f)
+        val sb1 = s1Back.coerceAtLeast(sb0 + 1f)
+        val sf0 = s0Front.coerceAtMost(s1Front - 1f)
+        val sf1 = s1Front.coerceAtLeast(sf0 + 1f)
+
+        fun pt(s: Float, y: Float, d: Float): Vec3 = Vec3(
+            x = pStart.x + s * ux + d * nx,
+            y = y,
+            z = pStart.z + s * uz + d * nz,
+        )
+
+        val nFront = Vec3(nx, 0f, nz)
+        val nBack = Vec3(-nx, 0f, -nz)
+
+        // 1. Front edge face (d = d1, facing into room)
+        frontEdgeBuilder.addQuad(
+            a = pt(sf0, y0, d1),
+            b = pt(sf1, y0, d1),
+            c = pt(sf1, y1, d1),
+            d = pt(sf0, y1, d1),
+            normal = nFront,
+        )
+        // 2. Back face (d = d0, facing wall)
+        builder.addQuad(
+            a = pt(sb1, y0, d0),
+            b = pt(sb0, y0, d0),
+            c = pt(sb0, y1, d0),
+            d = pt(sb1, y1, d0),
+            normal = nBack,
+        )
+        // 3. Left end face (from (sb0, d0) to (sf0, d1))
+        val l0 = pt(sb0, y0, d0)
+        val l1 = pt(sf0, y0, d1)
+        val ldx = l1.x - l0.x
+        val ldz = l1.z - l0.z
+        val lLen = sqrt(ldx * ldx + ldz * ldz).coerceAtLeast(1e-3f)
+        val nLeft = Vec3(-ldz / lLen, 0f, ldx / lLen)
+        builder.addQuad(
+            a = pt(sb0, y0, d0),
+            b = pt(sf0, y0, d1),
+            c = pt(sf0, y1, d1),
+            d = pt(sb0, y1, d0),
+            normal = nLeft,
+        )
+        // 4. Right end face (from (sf1, d1) to (sb1, d0))
+        val r0 = pt(sf1, y0, d1)
+        val r1 = pt(sb1, y0, d0)
+        val rdx = r1.x - r0.x
+        val rdz = r1.z - r0.z
+        val rLen = sqrt(rdx * rdx + rdz * rdz).coerceAtLeast(1e-3f)
+        val nRight = Vec3(-rdz / rLen, 0f, rdx / rLen)
+        builder.addQuad(
+            a = pt(sf1, y0, d1),
+            b = pt(sb1, y0, d0),
+            c = pt(sb1, y1, d0),
+            d = pt(sf1, y1, d1),
+            normal = nRight,
+        )
+        // 5. Top face (y = y1, outward normal +Y)
+        builder.addQuad(
+            a = pt(sf0, y1, d1),
+            b = pt(sf1, y1, d1),
+            c = pt(sb1, y1, d0),
+            d = pt(sb0, y1, d0),
+            normal = Vec3.UNIT_Y,
+        )
+        // 6. Bottom face (y = y0, outward normal -Y)
+        builder.addQuad(
+            a = pt(sb0, y0, d0),
+            b = pt(sb1, y0, d0),
+            c = pt(sf1, y0, d1),
+            d = pt(sf0, y0, d1),
+            normal = Vec3(0f, -1f, 0f),
+        )
+    }
+
     private fun addContainerToBuilders(
         room: RoomSpec,
         container: ClosetContainerSpec,
@@ -378,7 +483,7 @@ object RoomGeometryBuilder {
 
         val dx = pEnd.x - pStart.x
         val dz = pEnd.z - pStart.z
-        val wallLen = kotlin.math.sqrt(dx * dx + dz * dz)
+        val wallLen = sqrt(dx * dx + dz * dz)
         if (wallLen < 10f) return
 
         val ux = dx / wallLen
@@ -398,69 +503,151 @@ object RoomGeometryBuilder {
 
         val wallGap = 4f // 4mm offset from wall surface to prevent Z-fighting
 
-        // 1. Left Side Panel (full height 0..totalH, full depth d0..d1)
-        addWallAlignedBox(
-            builder = vertPanelsBuilder,
-            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-            s0 = s0, s1 = s0 + t,
-            y0 = 0f, y1 = totalH,
-            d0 = wallGap, d1 = wallGap + totalD,
-            frontEdgeBuilder = frontEdgesBuilder,
-        )
+        // Check if this container's start corner or end corner is fused with a neighbor container:
+        val startCorner = RoomCorner.values().first { it.outgoingWall == container.wall }
+        val endCorner = RoomCorner.values().first { it.incomingWall == container.wall }
 
-        // 2. Right Side Panel (full height 0..totalH, full depth d0..d1)
-        addWallAlignedBox(
-            builder = vertPanelsBuilder,
-            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-            s0 = s1 - t, s1 = s1,
-            y0 = 0f, y1 = totalH,
-            d0 = wallGap, d1 = wallGap + totalD,
-            frontEdgeBuilder = frontEdgesBuilder,
-        )
+        val fusedPrevNeighbor = if (container.fuseStartCorner) {
+            room.containers
+                .filter { it.wall == startCorner.incomingWall && it.fuseEndCorner }
+                .map { room.clampContainer(it) }
+                .firstOrNull()
+        } else {
+            null
+        }
 
-        // 3. Top Roof Panel (between side panels, y = totalH - t .. totalH)
-        if (s1 - t > s0 + t && totalH > t) {
+        val fusedNextNeighbor = if (container.fuseEndCorner) {
+            room.containers
+                .filter { it.wall == endCorner.outgoingWall && it.fuseStartCorner }
+                .map { room.clampContainer(it) }
+                .firstOrNull()
+        } else {
+            null
+        }
+
+        // Exact miter front-edge distance along the wall for start corner (s0Front) and end corner (s1Front):
+        val s0Front = if (fusedPrevNeighbor != null) {
+            val thetaRad = Math.toRadians(room.cornerAngleDeg(startCorner).coerceIn(15f, 165f).toDouble()).toFloat()
+            val sinT = sin(thetaRad).coerceAtLeast(0.15f)
+            val cosT = cos(thetaRad)
+            val dPrev = fusedPrevNeighbor.depthMm.coerceAtLeast(350f) + wallGap
+            val dCurr = totalD + wallGap
+            ((dPrev + dCurr * cosT) / sinT).coerceIn(t, (s1 - t * 2f).coerceAtLeast(t))
+        } else {
+            s0 + t
+        }
+
+        val s1Front = if (fusedNextNeighbor != null) {
+            val thetaRad = Math.toRadians(room.cornerAngleDeg(endCorner).coerceIn(15f, 165f).toDouble()).toFloat()
+            val sinT = sin(thetaRad).coerceAtLeast(0.15f)
+            val cosT = cos(thetaRad)
+            val dNext = fusedNextNeighbor.depthMm.coerceAtLeast(350f) + wallGap
+            val dCurr = totalD + wallGap
+            val cutFromEnd = (dNext + dCurr * cosT) / sinT
+            (wallLen - cutFromEnd).coerceIn((s0Front + t).coerceAtMost(s1 - t), s1 - t)
+        } else {
+            s1 - t
+        }
+
+        val s0Back = if (fusedPrevNeighbor != null) 0f else s0 + t
+        val s1Back = if (fusedNextNeighbor != null) wallLen else s1 - t
+
+        // 1. Left Side Panel:
+        // - If NOT fused at start corner: normal full outer side panel at s0..s0+t
+        // - If FUSED at start corner: clean internal corner divider spine at s0Front - t/2 .. s0Front + t/2
+        //   running between bottom shelf and top roof (matching the user's corner closet reference!)
+        if (fusedPrevNeighbor == null) {
             addWallAlignedBox(
-                builder = horizPanelsBuilder,
+                builder = vertPanelsBuilder,
                 pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s0 + t, s1 = s1 - t,
+                s0 = s0, s1 = s0 + t,
+                y0 = 0f, y1 = totalH,
+                d0 = wallGap, d1 = wallGap + totalD,
+                frontEdgeBuilder = frontEdgesBuilder,
+            )
+        } else if (totalH > plinthH + t * 2f) {
+            val spineS0 = (s0Front - t * 0.5f).coerceAtLeast(0f)
+            val spineS1 = (spineS0 + t).coerceAtMost(s1 - t)
+            addWallAlignedBox(
+                builder = vertPanelsBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = spineS0, s1 = spineS1,
+                y0 = plinthH + t, y1 = totalH - t,
+                d0 = wallGap + backT, d1 = wallGap + totalD,
+                frontEdgeBuilder = frontEdgesBuilder,
+            )
+        }
+
+        // 2. Right Side Panel:
+        // - If NOT fused at end corner: normal full outer side panel at s1-t..s1
+        // - If FUSED at end corner: clean internal corner divider spine at s1Front - t/2 .. s1Front + t/2
+        if (fusedNextNeighbor == null) {
+            addWallAlignedBox(
+                builder = vertPanelsBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s1 - t, s1 = s1,
+                y0 = 0f, y1 = totalH,
+                d0 = wallGap, d1 = wallGap + totalD,
+                frontEdgeBuilder = frontEdgesBuilder,
+            )
+        } else if (totalH > plinthH + t * 2f) {
+            val spineS1 = (s1Front + t * 0.5f).coerceAtMost(wallLen)
+            val spineS0 = (spineS1 - t).coerceAtLeast(s0 + t)
+            addWallAlignedBox(
+                builder = vertPanelsBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = spineS0, s1 = spineS1,
+                y0 = plinthH + t, y1 = totalH - t,
+                d0 = wallGap + backT, d1 = wallGap + totalD,
+                frontEdgeBuilder = frontEdgesBuilder,
+            )
+        }
+
+        // 3. Top Roof Panel (seamless mitered trapezoid when corner-fused, normal rectangle otherwise)
+        if (totalH > t) {
+            addMiteredHorizontalSlab(
+                builder = horizPanelsBuilder,
+                frontEdgeBuilder = frontEdgesBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0Back = s0Back, s1Back = s1Back,
+                s0Front = s0Front, s1Front = s1Front,
                 y0 = totalH - t, y1 = totalH,
                 d0 = wallGap + backT, d1 = wallGap + totalD,
-                frontEdgeBuilder = frontEdgesBuilder,
             )
         }
 
-        // 4. Bottom Floor Panel (elevated above plinth, y = plinthH .. plinthH + t)
-        if (s1 - t > s0 + t && totalH > plinthH + t * 2f) {
-            addWallAlignedBox(
+        // 4. Bottom Floor Panel (elevated above plinth, seamless mitered trapezoid when corner-fused)
+        if (totalH > plinthH + t * 2f) {
+            addMiteredHorizontalSlab(
                 builder = horizPanelsBuilder,
+                frontEdgeBuilder = frontEdgesBuilder,
                 pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s0 + t, s1 = s1 - t,
+                s0Back = s0Back, s1Back = s1Back,
+                s0Front = s0Front, s1Front = s1Front,
                 y0 = plinthH, y1 = plinthH + t,
                 d0 = wallGap + backT, d1 = wallGap + totalD,
-                frontEdgeBuilder = frontEdgesBuilder,
             )
         }
 
-        // 5. Front Plinth / Toe-Kick (zocalo inferior recessed 15mm from front edge, y = 0 .. plinthH)
-        if (s1 - t > s0 + t && plinthH > 2f) {
+        // 5. Front Plinth / Toe-Kick (trimmed to s0Front..s1Front so the L-plinth meets cleanly at the inner corner)
+        if (s1Front > s0Front && plinthH > 2f) {
             val plinthSetback = 16f
             val dFront = (wallGap + totalD - plinthSetback).coerceAtLeast(wallGap + t)
             addWallAlignedBox(
                 builder = vertPanelsBuilder,
                 pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s0 + t, s1 = s1 - t,
+                s0 = s0Front, s1 = s1Front,
                 y0 = 0f, y1 = plinthH,
                 d0 = (dFront - t).coerceAtLeast(wallGap), d1 = dFront,
             )
         }
 
-        // 6. Back Panel (espaldar claro recessed at the back of the 600mm deep cavity)
-        if (s1 - t > s0 + t && totalH > plinthH + t) {
+        // 6. Back Panel (extends into the corner vertex when fused so there is no gap at the corner wall)
+        if (s1Back > s0Back && totalH > plinthH + t) {
             addWallAlignedBox(
                 builder = backBuilder,
                 pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                s0 = s0 + t, s1 = s1 - t,
+                s0 = s0Back, s1 = s1Back,
                 y0 = plinthH, y1 = totalH - t,
                 d0 = wallGap, d1 = wallGap + backT,
             )

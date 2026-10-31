@@ -107,6 +107,10 @@ data class UiStrings(
     val containerDuplicatedToast: String,
     val containerDeletedToast: String,
     val backToCatalogButton: String,
+    val fuseCornerButton: String,
+    val unfuseCornerButton: String,
+    val cornerFusedToast: String,
+    val cornerUnfusedToast: String,
 )
 
 private val SpanishStrings = UiStrings(
@@ -188,6 +192,10 @@ private val SpanishStrings = UiStrings(
     containerDuplicatedToast = "Contenedor duplicado",
     containerDeletedToast = "Contenedor eliminado",
     backToCatalogButton = "Catálogo",
+    fuseCornerButton = "Fusionar Esquina",
+    unfuseCornerButton = "Separar Esquina",
+    cornerFusedToast = "Esquina fusionada en L",
+    cornerUnfusedToast = "Esquina separada",
 )
 
 private val EnglishStrings = UiStrings(
@@ -269,6 +277,10 @@ private val EnglishStrings = UiStrings(
     containerDuplicatedToast = "Container duplicated",
     containerDeletedToast = "Container deleted",
     backToCatalogButton = "Catalog",
+    fuseCornerButton = "Merge Corner",
+    unfuseCornerButton = "Unmerge Corner",
+    cornerFusedToast = "Corner merged into L-joint",
+    cornerUnfusedToast = "Corner unmerged",
 )
 
 fun stringsFor(lang: AppLanguage): UiStrings = when (lang) {

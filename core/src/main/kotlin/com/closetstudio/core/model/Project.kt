@@ -33,6 +33,25 @@ data class Vec2Mm(
 )
 
 @Serializable
+enum class RoomCorner(
+    val incomingWall: WallIndex,
+    val outgoingWall: WallIndex,
+    val codeLabel: String,
+) {
+    NW(WallIndex.WEST, WallIndex.NORTH, "A-B"),
+    NE(WallIndex.NORTH, WallIndex.EAST, "B-C"),
+    SE(WallIndex.EAST, WallIndex.SOUTH, "C-D"),
+    SW(WallIndex.SOUTH, WallIndex.WEST, "E-A"),
+}
+
+data class CornerIntersectionCandidate(
+    val corner: RoomCorner,
+    val incomingContainer: ClosetContainerSpec,
+    val outgoingContainer: ClosetContainerSpec,
+    val isFused: Boolean,
+)
+
+@Serializable
 data class ClosetContainerSpec(
     val id: String,
     val wall: WallIndex = WallIndex.NORTH,
@@ -43,6 +62,8 @@ data class ClosetContainerSpec(
     val panelThicknessMm: Float = 18f,
     val plinthHeightMm: Float = 80f,
     val backThicknessMm: Float = 6f,
+    val fuseStartCorner: Boolean = false,
+    val fuseEndCorner: Boolean = false,
 ) {
     init {
         require(widthMm >= 0f) { "container width must be non-negative" }
@@ -850,23 +871,144 @@ data class RoomSpec(
     /**
      * Clamps [container] so its width, height, depth, and offset never overflow its host wall,
      * the ceiling (`clearHeightMm`), or the adjacent walls (`maxContainerDepthForWall`).
+     * Also keeps corner-fused containers anchored to their fused corner vertex!
      */
     fun clampContainer(container: ClosetContainerSpec): ClosetContainerSpec {
         val maxW = wallLengthMm(container.wall).coerceAtLeast(0f)
         val maxH = clearHeightMm.coerceAtLeast(0f)
         val maxD = maxContainerDepthForWall(container.wall).coerceAtLeast(0f)
 
-        val clampedW = container.widthMm.coerceIn(0f, maxW)
+        val clampedW = when {
+            container.fuseStartCorner && container.fuseEndCorner -> maxW
+            else -> container.widthMm.coerceIn(0f, maxW)
+        }
         val clampedH = container.heightMm.coerceIn(0f, maxH)
         val clampedD = container.depthMm.coerceIn(0f, maxD)
         val maxOff = (maxW - clampedW).coerceAtLeast(0f)
-        val clampedOff = container.offsetMm.coerceIn(0f, maxOff)
+        val clampedOff = when {
+            container.fuseStartCorner -> 0f
+            container.fuseEndCorner -> maxOff
+            else -> container.offsetMm.coerceIn(0f, maxOff)
+        }
 
         return container.copy(
             widthMm = clampedW,
             heightMm = clampedH,
             depthMm = clampedD,
             offsetMm = clampedOff,
+        )
+    }
+
+    /** Interior angle (in degrees) at the given [corner]. */
+    fun cornerAngleDeg(corner: RoomCorner): Float = when (corner) {
+        RoomCorner.NW -> angleACDeg
+        RoomCorner.NE -> angleABDeg
+        RoomCorner.SE -> angleBEDeg
+        RoomCorner.SW -> angleCDDeg
+    }
+
+    /**
+     * Detects all corners where two containers on adjacent walls intersect, overlap, or are
+     * already fused in an L-corner joint.
+     */
+    fun detectCornerIntersections(): List<CornerIntersectionCandidate> {
+        if (containers.size < 2) return emptyList()
+        val results = mutableListOf<CornerIntersectionCandidate>()
+
+        for (corner in RoomCorner.values()) {
+            val incLen = wallLengthMm(corner.incomingWall).coerceAtLeast(0f)
+            val incoming = containers
+                .filter { it.wall == corner.incomingWall }
+                .map { clampContainer(it) }
+                .minByOrNull { (incLen - (it.offsetMm + it.widthMm)).coerceAtLeast(0f) }
+                ?: continue
+
+            val outgoing = containers
+                .filter { it.wall == corner.outgoingWall }
+                .map { clampContainer(it) }
+                .minByOrNull { it.offsetMm.coerceAtLeast(0f) }
+                ?: continue
+
+            val thetaRad = Math.toRadians(cornerAngleDeg(corner).coerceIn(15f, 165f).toDouble()).toFloat()
+            val sinT = sin(thetaRad).coerceAtLeast(0.15f)
+            val cosT = cos(thetaRad)
+            val dInc = incoming.depthMm.coerceAtLeast(350f)
+            val dOut = outgoing.depthMm.coerceAtLeast(350f)
+
+            // Exact geometric reach of each container's depth into the adjacent wall at angle theta:
+            val reachIncFromCorner = ((dOut + dInc * cosT) / sinT).coerceAtLeast(180f)
+            val reachOutFromCorner = ((dInc + dOut * cosT) / sinT).coerceAtLeast(180f)
+
+            val distIncToCorner = (incLen - (incoming.offsetMm + incoming.widthMm)).coerceAtLeast(0f)
+            val distOutToCorner = outgoing.offsetMm.coerceAtLeast(0f)
+
+            val isAlreadyFused = incoming.fuseEndCorner && outgoing.fuseStartCorner
+            // If both containers enter the corner collision zone (plus 120mm snap margin), offer/maintain fusion
+            val isIntersectingOrClose = distIncToCorner <= reachIncFromCorner + 120f &&
+                distOutToCorner <= reachOutFromCorner + 120f
+
+            if (isAlreadyFused || isIntersectingOrClose) {
+                results += CornerIntersectionCandidate(
+                    corner = corner,
+                    incomingContainer = incoming,
+                    outgoingContainer = outgoing,
+                    isFused = isAlreadyFused,
+                )
+            }
+        }
+        return results
+    }
+
+    /**
+     * Fuses (or unfuses) the two containers meeting at [corner].
+     * When fused:
+     * - Snaps the incoming container to the end of its wall (`fuseEndCorner = true`)
+     * - Snaps the outgoing container to the start of its wall (`fuseStartCorner = true`)
+     * - Unifies their height so the top roof and bottom floor meet seamlessly at the corner,
+     *   while strictly preserving each container's independent `widthMm` and `depthMm`!
+     */
+    fun withCornerFusion(corner: RoomCorner, fuse: Boolean = true): RoomSpec {
+        val candidate = detectCornerIntersections().firstOrNull { it.corner == corner } ?: return this
+        val incId = candidate.incomingContainer.id
+        val outId = candidate.outgoingContainer.id
+        val unifiedH = candidate.incomingContainer.heightMm
+        val incWallLen = wallLengthMm(corner.incomingWall).coerceAtLeast(0f)
+
+        return copy(
+            containers = containers.map { item ->
+                when (item.id) {
+                    incId -> if (fuse) {
+                        val minW = (candidate.outgoingContainer.depthMm + 250f).coerceAtMost(incWallLen)
+                        val newW = item.widthMm.coerceAtLeast(minW).coerceAtMost(incWallLen)
+                        clampContainer(
+                            item.copy(
+                                fuseEndCorner = true,
+                                widthMm = newW,
+                                offsetMm = (incWallLen - newW).coerceAtLeast(0f),
+                                heightMm = unifiedH,
+                            ),
+                        )
+                    } else {
+                        clampContainer(item.copy(fuseEndCorner = false))
+                    }
+                    outId -> if (fuse) {
+                        val outWallLen = wallLengthMm(corner.outgoingWall).coerceAtLeast(0f)
+                        val minW = (candidate.incomingContainer.depthMm + 250f).coerceAtMost(outWallLen)
+                        val newW = item.widthMm.coerceAtLeast(minW).coerceAtMost(outWallLen)
+                        clampContainer(
+                            item.copy(
+                                fuseStartCorner = true,
+                                widthMm = newW,
+                                offsetMm = 0f,
+                                heightMm = unifiedH,
+                            ),
+                        )
+                    } else {
+                        clampContainer(item.copy(fuseStartCorner = false))
+                    }
+                    else -> clampContainer(item)
+                }
+            },
         )
     }
 
@@ -903,13 +1045,27 @@ data class RoomSpec(
         return copy(containers = containers + clamped)
     }
 
-    /** Updates an existing container by [id], clamping its bounds to the room. */
+    /** Updates an existing container by [id], clamping its bounds to the room and syncing fused corner height. */
     fun withUpdatedContainer(id: String, transform: (ClosetContainerSpec) -> ClosetContainerSpec): RoomSpec {
-        return copy(
-            containers = containers.map { item ->
-                if (item.id == id) clampContainer(transform(item)) else clampContainer(item)
-            },
-        )
+        val updatedList = containers.map { item ->
+            if (item.id == id) clampContainer(transform(item)) else clampContainer(item)
+        }
+        val edited = updatedList.firstOrNull { it.id == id } ?: return copy(containers = updatedList)
+        // If the edited container is corner-fused with a neighbor, keep their heights synchronized
+        val synced = updatedList.map { other ->
+            if (other.id == edited.id) {
+                other
+            } else {
+                val sharesEndCorner = edited.fuseEndCorner && other.fuseStartCorner && other.wall == edited.wall.next()
+                val sharesStartCorner = edited.fuseStartCorner && other.fuseEndCorner && other.wall == edited.wall.prev()
+                if (sharesEndCorner || sharesStartCorner) {
+                    clampContainer(other.copy(heightMm = edited.heightMm))
+                } else {
+                    other
+                }
+            }
+        }
+        return copy(containers = synced)
     }
 
     /** Duplicates an existing container by [id], shifting it slightly along the wall if space allows. */

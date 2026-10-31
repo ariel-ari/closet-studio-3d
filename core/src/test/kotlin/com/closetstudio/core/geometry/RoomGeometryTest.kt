@@ -105,4 +105,77 @@ class RoomGeometryTest {
             }
         }
     }
+
+    @Test
+    fun `corner fusion works on acute, 90, and obtuse corners with independent depths and outward CCW winding`() {
+        val baseRoom = RoomSpec(
+            clearWidthMm = 3600f,
+            clearHeightMm = 2600f,
+            clearDepthMm = 3600f,
+            angleACDeg = 105f, // Obtuse corner NW (A-B)
+        ).withAddedContainer(
+            wall = com.closetstudio.core.model.WallIndex.WEST,
+            id = "west_c",
+            defaultWidthMm = 1800f,
+            defaultDepthMm = 650f,
+        ).withUpdatedContainer("west_c") {
+            // Move near the NW corner (end of Wall WEST)
+            it.copy(offsetMm = 1750f)
+        }.withAddedContainer(
+            wall = com.closetstudio.core.model.WallIndex.NORTH,
+            id = "north_c",
+            defaultWidthMm = 1600f,
+            defaultDepthMm = 450f, // Independent depth!
+        ).withUpdatedContainer("north_c") {
+            // Move near the NW corner (start of Wall NORTH)
+            it.copy(offsetMm = 100f)
+        }
+
+        val candidates = baseRoom.detectCornerIntersections()
+        assertEquals(1, candidates.size)
+        assertEquals(com.closetstudio.core.model.RoomCorner.NW, candidates.single().corner)
+
+        val fusedRoom = baseRoom.withCornerFusion(com.closetstudio.core.model.RoomCorner.NW, fuse = true)
+        val westFused = fusedRoom.containers.first { it.id == "west_c" }
+        val northFused = fusedRoom.containers.first { it.id == "north_c" }
+        assertTrue(westFused.fuseEndCorner)
+        assertTrue(northFused.fuseStartCorner)
+        // Independent depths remain untouched
+        assertMm(650f, westFused.depthMm)
+        assertMm(450f, northFused.depthMm)
+
+        val parts = RoomGeometryBuilder.build(fusedRoom)
+        parts.filter {
+            it.surface == RoomSurface.CONTAINER_BODY ||
+                it.surface == RoomSurface.CONTAINER_SIDE_PANEL ||
+                it.surface == RoomSurface.CONTAINER_FRONT_EDGE ||
+                it.surface == RoomSurface.CONTAINER_BACK
+        }.forEach { part ->
+            val m = part.mesh
+            var t = 0
+            while (t < m.indices.size) {
+                val i0 = m.indices[t]
+                val i1 = m.indices[t + 1]
+                val i2 = m.indices[t + 2]
+
+                val ax = m.positions[i1 * 3] - m.positions[i0 * 3]
+                val ay = m.positions[i1 * 3 + 1] - m.positions[i0 * 3 + 1]
+                val az = m.positions[i1 * 3 + 2] - m.positions[i0 * 3 + 2]
+                val bx = m.positions[i2 * 3] - m.positions[i0 * 3]
+                val by = m.positions[i2 * 3 + 1] - m.positions[i0 * 3 + 1]
+                val bz = m.positions[i2 * 3 + 2] - m.positions[i0 * 3 + 2]
+
+                val cx = ay * bz - az * by
+                val cy = az * bx - ax * bz
+                val cz = ax * by - ay * bx
+
+                val dot = cx * m.normals[i0 * 3] +
+                    cy * m.normals[i0 * 3 + 1] +
+                    cz * m.normals[i0 * 3 + 2]
+
+                assertTrue(dot > 0f, "Fused part ${part.surface} triangle $t has inverted winding (dot=$dot)")
+                t += 3
+            }
+        }
+    }
 }

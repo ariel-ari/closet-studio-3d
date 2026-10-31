@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Save
@@ -1054,6 +1055,72 @@ fun RoomScreen() {
                                                 tint = Color(0xFF651FFF),
                                                 modifier = Modifier.size(25.dp),
                                             )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Floating Corner Fusion Buttons when 2 containers intersect or meet at a corner
+                            val cornerCandidates = remember(room) { room.detectCornerIntersections() }
+                            if (cornerCandidates.isNotEmpty()) {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = 14.dp),
+                                ) {
+                                    cornerCandidates.forEach { candidate ->
+                                        val isFused = candidate.isFused
+                                        val label = if (isFused) {
+                                            "${s.unfuseCornerButton} (${candidate.corner.codeLabel})"
+                                        } else {
+                                            "${s.fuseCornerButton} (${candidate.corner.codeLabel})"
+                                        }
+                                        Surface(
+                                            onClick = {
+                                                val updated = room.withCornerFusion(
+                                                    corner = candidate.corner,
+                                                    fuse = !isFused,
+                                                )
+                                                updateRoom(updated)
+                                                coroutineScope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        if (!isFused) {
+                                                            "${s.cornerFusedToast} (${candidate.corner.codeLabel})"
+                                                        } else {
+                                                            "${s.cornerUnfusedToast} (${candidate.corner.codeLabel})"
+                                                        },
+                                                    )
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(22.dp),
+                                            color = if (isFused) {
+                                                Color(0xFF1E6B47)
+                                            } else {
+                                                Color(0xFF2C55B5)
+                                            },
+                                            border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.85f)),
+                                            shadowElevation = 8.dp,
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.MergeType,
+                                                    contentDescription = label,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(20.dp),
+                                                )
+                                                Text(
+                                                    text = label,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White,
+                                                )
+                                            }
                                         }
                                     }
                                 }
