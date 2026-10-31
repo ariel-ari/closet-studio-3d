@@ -534,7 +534,7 @@ fun RoomFloorplan2D(
             drawBadgePill(
                 center = midDoor,
                 letter = "🚪",
-                text = "${room.door.widthMm.roundToInt()} ${if (room.door.lockWidth) "🔒" else "🔓"} (Total: ${room.wallSouthMm.roundToInt()})",
+                text = "${room.door.widthMm.roundToInt()} (Total: ${room.wallSouthMm.roundToInt()})",
                 badgeColor = Color(0xFF8B5A2B),
                 isSelected = isSouthSelected,
             )
@@ -763,7 +763,7 @@ private fun DrawScope.drawCornerAngleArc(
     } else {
         String.format(Locale.US, "%.1f°", angleDeg)
     }
-    val lockIcon = if (isLocked) "🔒" else "🔓"
+    val lockIcon = if (isLocked) " [L]" else ""
 
     val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = android.graphics.Color.WHITE
@@ -771,7 +771,7 @@ private fun DrawScope.drawCornerAngleArc(
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         textAlign = Paint.Align.CENTER
     }
-    val label = "$angleStr $lockIcon"
+    val label = angleStr
     val textW = textPaint.measureText(label)
     val pillW = textW + 10.dp.toPx()
     val pillH = 17.dp.toPx()
@@ -849,11 +849,10 @@ private fun DrawScope.drawWallDimensionCallout(
         x = (start.x + end.x) * 0.5f + nx * offsetPx,
         y = (start.y + end.y) * 0.5f + ny * offsetPx,
     )
-    val lockStr = if (isLocked) " 🔒" else " 🔓"
     drawBadgePill(
         center = mid,
         letter = letter,
-        text = "$valueText$lockStr",
+        text = valueText,
         badgeColor = badgeColor,
         isSelected = isSelected,
     )

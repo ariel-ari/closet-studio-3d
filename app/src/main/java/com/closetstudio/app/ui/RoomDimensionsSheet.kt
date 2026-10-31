@@ -379,6 +379,33 @@ private fun WallInspectorCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f),
                 ) {
+                    if (oppositeButtonLabel != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isLocked) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                            shadowElevation = 1.dp,
+                            onClick = onLockToggle,
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                    contentDescription = if (isLocked) "Bloqueado" else "Adaptable",
+                                    tint = if (isLocked) {
+                                        Color(0xFF2C55B5)
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+
                     WallBadge(letter = letter)
                     Column {
                         Text(
@@ -392,26 +419,6 @@ private fun WallInspectorCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                }
-
-                if (oppositeButtonLabel != null) {
-                    FilterChip(
-                        selected = isLocked,
-                        onClick = onLockToggle,
-                        label = {
-                            Text(
-                                text = if (isLocked) "Bloqueado 🔒" else "Adaptable 🔓",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        },
-                    )
                 }
             }
 
@@ -488,6 +495,31 @@ private fun CornerInspectorCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.weight(1f),
                 ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isLocked) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        shadowElevation = 1.dp,
+                        onClick = onLockToggle,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = if (isLocked) "Esquina bloqueada" else "Esquina libre",
+                                tint = if (isLocked) {
+                                    Color(0xFFD97706)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+
                     WallBadge(letter = "∠ $cornerCode", bgColor = Color(0xFFD97706))
                     Column {
                         Text(
@@ -504,39 +536,18 @@ private fun CornerInspectorCard(
                 }
             }
 
-            // Checkbox to enable/unlock editing this corner's angle
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+            if (allOthersLocked && !isLocked) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = !isLocked,
-                            onCheckedChange = { onLockToggle() },
-                        )
-                        Text(
-                            text = when {
-                                isLocked -> "Esquina bloqueada 🔒 (no cambia al mover otras)"
-                                allOthersLocked -> "Desbloqueá al menos otra esquina para compensar Σ=360°"
-                                else -> "Esquina libre 🔓 (editable y absorbe compensación)"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (allOthersLocked && !isLocked) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                        )
-                    }
+                    Text(
+                        text = "Desbloqueá al menos otra esquina para compensar Σ=360°",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
                 }
             }
 
@@ -579,10 +590,9 @@ private fun CornerInspectorCard(
             Text(
                 text = String.format(
                     Locale.US,
-                    "Cierre automático activo (Σ = %.0f°) • E-D: %d mm %s",
+                    "Cierre automático activo (Σ = %.0f°) • E-D: %d mm",
                     sumAngles,
                     room.wallSouthMm.roundToInt(),
-                    if (room.lockWallSouth) "🔒" else "🔓",
                 ),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -618,6 +628,31 @@ private fun DoorWallInspectorCard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (room.lockWallSouth) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        shadowElevation = 1.dp,
+                        onClick = { onRoomChange(room.copy(lockWallSouth = !room.lockWallSouth)) },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (room.lockWallSouth) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = if (room.lockWallSouth) "Pared E-D fija" else "Pared E-D adaptable",
+                                tint = if (room.lockWallSouth) {
+                                    Color(0xFF2C55B5)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+
                     WallBadge(letter = "E")
                     Icon(
                         Icons.Default.DoorFront,
@@ -634,23 +669,6 @@ private fun DoorWallInspectorCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(
-                        selected = room.lockWallSouth,
-                        onClick = { onRoomChange(room.copy(lockWallSouth = !room.lockWallSouth)) },
-                        label = {
-                            Text(
-                                text = if (room.lockWallSouth) "Fija 🔒" else "Cierre 🔓",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = if (room.lockWallSouth) Icons.Default.Lock else Icons.Default.LockOpen,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        },
-                    )
                     Checkbox(
                         checked = doorCentered,
                         onCheckedChange = onDoorCenteredChange,
@@ -682,7 +700,7 @@ private fun DoorWallInspectorCard(
                         color = Color(0xFF2C55B5),
                     )
                     Text(
-                        text = "+ 🚪 ${room.door.widthMm.roundToInt()} mm ${if (room.door.lockWidth) "🔒" else "🔓"} +",
+                        text = "+ 🚪 ${room.door.widthMm.roundToInt()} mm +",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF8B5A2B),
@@ -707,36 +725,44 @@ private fun DoorWallInspectorCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = if (room.door.lockWidth) {
-                        "Ancho de Puerta 🔒 (no crece con las paredes)"
-                    } else {
-                        "Ancho de Puerta 🔓 (escala con la pared)"
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (room.door.lockWidth) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surface
+                        },
+                        shadowElevation = 1.dp,
+                        onClick = {
+                            onRoomChange(room.copy(door = room.door.copy(lockWidth = !room.door.lockWidth)))
+                        },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (room.door.lockWidth) Icons.Default.Lock else Icons.Default.LockOpen,
+                                contentDescription = if (room.door.lockWidth) "Puerta fija" else "Puerta escalable",
+                                tint = if (room.door.lockWidth) {
+                                    Color(0xFF8B5A2B)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
 
-                FilterChip(
-                    selected = room.door.lockWidth,
-                    onClick = {
-                        onRoomChange(room.copy(door = room.door.copy(lockWidth = !room.door.lockWidth)))
-                    },
-                    label = {
-                        Text(
-                            text = if (room.door.lockWidth) "Puerta Fija 🔒" else "Escalar 🔓",
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = if (room.door.lockWidth) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                        )
-                    },
-                )
+                    Text(
+                        text = "Ancho de Puerta",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
 
             DirectNumericInputRow(
