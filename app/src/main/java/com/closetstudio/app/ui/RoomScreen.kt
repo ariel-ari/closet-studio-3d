@@ -532,10 +532,15 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
     onPan: (panX: Float, panY: Float) -> Unit,
     onZoom: (zoomFactor: Float) -> Unit,
     onTap: (tapPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Unit = { _, _, _ -> },
+    canDragPartitionAt: (downPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Boolean = { _, _, _ -> false },
+    onDragPartition: (pointerPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Unit = { _, _, _ -> },
 ) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         val downPos = down.position
+        val vw = size.width.toFloat().coerceAtLeast(1f)
+        val vh = size.height.toFloat().coerceAtLeast(1f)
+        val isPartitionDrag = canDragPartitionAt(downPos, vw, vh)
         var lastSinglePos = downPos
         var totalMoveDistance = 0f
         var prevCentroid = Offset.Zero
@@ -557,7 +562,11 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
                     if (delta != Offset.Zero) {
                         totalMoveDistance += delta.getDistance()
                         if (totalMoveDistance > 8f) {
-                            onOrbit(delta.x, delta.y)
+                            if (isPartitionDrag) {
+                                onDragPartition(pointer.position, vw, vh)
+                            } else {
+                                onOrbit(delta.x, delta.y)
+                            }
                             pointer.consume()
                         }
                     }
@@ -759,6 +768,80 @@ private fun pickPartitionAtScreenTap(
         rayDirY = dir[1],
         rayDirZ = dir[2],
     )
+}
+
+private fun projectScreenToContainerInterior(
+    room: RoomSpec,
+    container: ClosetContainerSpec,
+    screenPos: Offset,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
+    targetX: Float,
+    targetY: Float,
+    targetZ: Float,
+    yawDeg: Float,
+    pitchDeg: Float,
+    distanceM: Float,
+    isOrtho: Boolean = false,
+    orthoSize: Float = 3.0f,
+): Pair<Float, Float>? {
+    val (rayOrigin, rayDir) = computeTapRayMm(
+        tapPos = screenPos,
+        viewportWidthPx = viewportWidthPx,
+        viewportHeightPx = viewportHeightPx,
+        targetX = targetX,
+        targetY = targetY,
+        targetZ = targetZ,
+        yawDeg = yawDeg,
+        pitchDeg = pitchDeg,
+        distanceM = distanceM,
+        isOrtho = isOrtho,
+        orthoSize = orthoSize,
+    )
+
+    val (pStart, pEnd) = when (container.wall) {
+        WallIndex.NORTH -> room.vertexNW to room.vertexNE
+        WallIndex.EAST -> room.vertexNE to room.vertexSE
+        WallIndex.SOUTH -> room.vertexSE to room.vertexSW
+        WallIndex.WEST -> room.vertexSW to room.vertexNW
+    }
+
+    val dx = pEnd.x - pStart.x
+    val dz = pEnd.z - pStart.z
+    val wallLen = kotlin.math.sqrt(dx * dx + dz * dz)
+    if (wallLen < 10f) return null
+
+    val ux = dx / wallLen
+    val uz = dz / wallLen
+    val nx = -uz
+    val nz = ux
+
+    val wallGap = 4f
+    val totalD = container.depthMm.coerceAtLeast(350f)
+    val planeD = wallGap + totalD
+
+    val denom = rayDir[0] * nx + rayDir[2] * nz
+    if (kotlin.math.abs(denom) < 1e-4f) return null
+
+    val p0x = pStart.x + planeD * nx
+    val p0z = pStart.z + planeD * nz
+    val numer = (p0x - rayOrigin[0]) * nx + (p0z - rayOrigin[2]) * nz
+    val t = numer / denom
+    if (t < 0f) return null
+
+    val hitX = rayOrigin[0] + t * rayDir[0]
+    val hitY = rayOrigin[1] + t * rayDir[1]
+    val hitZ = rayOrigin[2] + t * rayDir[2]
+
+    val relX = hitX - pStart.x
+    val relZ = hitZ - pStart.z
+    val s = relX * ux + relZ * uz
+
+    val s0Inner = container.offsetMm + container.panelThicknessMm.coerceAtLeast(18f)
+    val innerX = s - s0Inner
+    val innerY = hitY - (container.plinthHeightMm + container.panelThicknessMm.coerceAtLeast(18f))
+
+    return innerX to innerY
 }
 
 @Composable
@@ -1691,7 +1774,7 @@ fun RoomScreen() {
                                         selectedPartitionId = partHit.partitionId
                                         selectedPartitionIsVertical = partHit.isVertical
                                         isEditingContainerInPanel = false
-                                        showUnitsColumn = true
+                                        showUnitsColumn = false
                                     } else {
                                         val hitId = pickContainerAtScreenTap(
                                             room = room,
@@ -1712,6 +1795,59 @@ fun RoomScreen() {
                                         if (hitId == null && (isEditingContainerInPanel || showUnitsColumn)) {
                                             isEditingContainerInPanel = false
                                             showUnitsColumn = false
+                                        }
+                                    }
+                                },
+                                canDragPartitionAt = { downPos, vw, vh ->
+                                    if (selectedPartitionId == null || activeContainer == null) {
+                                        false
+                                    } else {
+                                        val hit = pickPartitionAtScreenTap(
+                                            room = room,
+                                            tapPos = downPos,
+                                            viewportWidthPx = vw,
+                                            viewportHeightPx = vh,
+                                            targetX = targetXAnim.value,
+                                            targetY = targetYAnim.value,
+                                            targetZ = targetZAnim.value,
+                                            yawDeg = yawAnim.value,
+                                            pitchDeg = pitchAnim.value,
+                                            distanceM = distanceAnim.value,
+                                            isOrtho = isOrthoMode,
+                                            orthoSize = orthoSizeAnim.value,
+                                        )
+                                        hit?.partitionId == selectedPartitionId
+                                    }
+                                },
+                                onDragPartition = { pointerPos, vw, vh ->
+                                    val partId = selectedPartitionId
+                                    val c = activeContainer
+                                    if (partId != null && c != null) {
+                                        val interiorPt = projectScreenToContainerInterior(
+                                            room = room,
+                                            container = c,
+                                            screenPos = pointerPos,
+                                            viewportWidthPx = vw,
+                                            viewportHeightPx = vh,
+                                            targetX = targetXAnim.value,
+                                            targetY = targetYAnim.value,
+                                            targetZ = targetZAnim.value,
+                                            yawDeg = yawAnim.value,
+                                            pitchDeg = pitchAnim.value,
+                                            distanceM = distanceAnim.value,
+                                            isOrtho = isOrthoMode,
+                                            orthoSize = orthoSizeAnim.value,
+                                        )
+                                        if (interiorPt != null) {
+                                            val (dragXMm, dragYMm) = interiorPt
+                                            val updatedRoom = room.withUpdatedContainer(c.id) { currentC ->
+                                                if (selectedPartitionIsVertical) {
+                                                    currentC.withMovedDivider(partId, newOffsetXMm = dragXMm, targetYMm = dragYMm)
+                                                } else {
+                                                    currentC.withMovedShelf(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
+                                                }
+                                            }
+                                            updateRoom(updatedRoom)
                                         }
                                     }
                                 },
@@ -1905,15 +2041,28 @@ fun RoomScreen() {
                                         .navigationBarsPadding()
                                         .padding(start = 16.dp, bottom = if (isLandscape) 18.dp else 76.dp),
                                 ) {
-                                    // Wall Badge for active container
+                                    val hasSelectedPartition = selectedPartitionId != null
+                                    val isEditingActive = if (hasSelectedPartition) {
+                                        showUnitsColumn && !isEditingContainerInPanel
+                                    } else {
+                                        showUnitsColumn && isEditingContainerInPanel
+                                    }
+
+                                    // Wall Badge for active container / partition
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
-                                        color = Color(0xFF2C55B5),
+                                        color = if (hasSelectedPartition) Color(0xFF651FFF) else Color(0xFF2C55B5),
                                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.85f)),
                                         shadowElevation = 4.dp,
                                     ) {
+                                        val baseLetter = containerWallLetter(activeContainer, room, splitDoorWall)
+                                        val badgeText = if (hasSelectedPartition) {
+                                            if (selectedPartitionIsVertical) "$baseLetter • DIV" else "$baseLetter • EST"
+                                        } else {
+                                            baseLetter
+                                        }
                                         Text(
-                                            text = containerWallLetter(activeContainer, room, splitDoorWall),
+                                            text = badgeText,
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = Color.White,
@@ -1921,20 +2070,25 @@ fun RoomScreen() {
                                         )
                                     }
 
-                                    // 1. Edit Button (✏️ opens right-side size inspector)
+                                    // 1. Edit Button (✏️ opens right-side inspector)
                                     Surface(
                                         onClick = {
-                                            selectedContainerId = activeContainer.id
-                                            isEditingContainerInPanel = true
-                                            showUnitsColumn = true
+                                            if (hasSelectedPartition) {
+                                                isEditingContainerInPanel = false
+                                                showUnitsColumn = true
+                                            } else {
+                                                selectedContainerId = activeContainer.id
+                                                isEditingContainerInPanel = true
+                                                showUnitsColumn = true
+                                            }
                                         },
                                         shape = CircleShape,
-                                        color = if (showUnitsColumn && isEditingContainerInPanel) {
-                                            Color(0xFF2C55B5)
+                                        color = if (isEditingActive) {
+                                            if (hasSelectedPartition) Color(0xFF651FFF) else Color(0xFF2C55B5)
                                         } else {
                                             Color(0xFFE5DFDA).copy(alpha = 0.95f)
                                         },
-                                        border = BorderStroke(2.dp, Color(0xFF4355B9)),
+                                        border = BorderStroke(2.dp, if (hasSelectedPartition) Color(0xFF7C4DFF) else Color(0xFF4355B9)),
                                         shadowElevation = 6.dp,
                                         modifier = Modifier.size(if (isLandscape) 46.dp else 52.dp),
                                     ) {
@@ -1942,10 +2096,10 @@ fun RoomScreen() {
                                             Icon(
                                                 imageVector = Icons.Default.Edit,
                                                 contentDescription = s.editContainerDesc,
-                                                tint = if (showUnitsColumn && isEditingContainerInPanel) {
+                                                tint = if (isEditingActive) {
                                                     Color.White
                                                 } else {
-                                                    Color(0xFF3949AB)
+                                                    if (hasSelectedPartition) Color(0xFF651FFF) else Color(0xFF3949AB)
                                                 },
                                                 modifier = Modifier.size(if (isLandscape) 22.dp else 24.dp),
                                             )
@@ -1955,18 +2109,48 @@ fun RoomScreen() {
                                     // 2. Duplicate Button (❐)
                                     Surface(
                                         onClick = {
-                                            val (updatedRoom, newId) = room.withDuplicatedContainer(activeContainer.id)
-                                            updateRoom(updatedRoom)
-                                            if (newId != null) {
-                                                selectedContainerId = newId
+                                            if (hasSelectedPartition && selectedPartitionId != null) {
+                                                var createdId: String? = null
+                                                val updatedRoom = room.withUpdatedContainer(activeContainer.id) { container ->
+                                                    if (selectedPartitionIsVertical) {
+                                                        val source = container.dividers.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
+                                                        val newOff = (source.offsetXMm + source.thicknessMm + 80f).coerceAtMost((container.interiorWidthMm - source.thicknessMm).coerceAtLeast(0f))
+                                                        val newDiv = source.copy(
+                                                            id = "div_${System.currentTimeMillis()}_${container.dividers.size + 1}",
+                                                            offsetXMm = newOff,
+                                                        )
+                                                        createdId = newDiv.id
+                                                        container.copy(dividers = container.dividers + newDiv)
+                                                    } else {
+                                                        val source = container.shelves.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
+                                                        val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
+                                                        val newShelf = source.copy(
+                                                            id = "shelf_${System.currentTimeMillis()}_${container.shelves.size + 1}",
+                                                            elevationYMm = newElev,
+                                                        )
+                                                        createdId = newShelf.id
+                                                        container.copy(shelves = container.shelves + newShelf)
+                                                    }
+                                                }
+                                                updateRoom(updatedRoom)
+                                                createdId?.let { selectedPartitionId = it }
                                                 coroutineScope.launch {
-                                                    messageHostState.showSnackbar(s.containerDuplicatedToast)
+                                                    messageHostState.showSnackbar(s.duplicateButton)
+                                                }
+                                            } else {
+                                                val (updatedRoom, newId) = room.withDuplicatedContainer(activeContainer.id)
+                                                updateRoom(updatedRoom)
+                                                if (newId != null) {
+                                                    selectedContainerId = newId
+                                                    coroutineScope.launch {
+                                                        messageHostState.showSnackbar(s.containerDuplicatedToast)
+                                                    }
                                                 }
                                             }
                                         },
                                         shape = CircleShape,
                                         color = Color(0xFFE5DFDA).copy(alpha = 0.95f),
-                                        border = BorderStroke(2.dp, Color(0xFF4355B9)),
+                                        border = BorderStroke(2.dp, if (hasSelectedPartition) Color(0xFF7C4DFF) else Color(0xFF4355B9)),
                                         shadowElevation = 6.dp,
                                         modifier = Modifier.size(if (isLandscape) 46.dp else 52.dp),
                                     ) {
@@ -1974,7 +2158,7 @@ fun RoomScreen() {
                                             Icon(
                                                 imageVector = Icons.Default.ContentCopy,
                                                 contentDescription = s.duplicateContainerDesc,
-                                                tint = Color(0xFF3949AB),
+                                                tint = if (hasSelectedPartition) Color(0xFF651FFF) else Color(0xFF3949AB),
                                                 modifier = Modifier.size(if (isLandscape) 21.dp else 23.dp),
                                             )
                                         }
@@ -1983,19 +2167,30 @@ fun RoomScreen() {
                                     // 3. Delete Button (🗑️)
                                     Surface(
                                         onClick = {
-                                            val updatedRoom = room.withRemovedContainer(activeContainer.id)
-                                            updateRoom(updatedRoom)
-                                            selectedContainerId = updatedRoom.containers.lastOrNull()?.id
-                                            if (updatedRoom.containers.isEmpty()) {
-                                                isEditingContainerInPanel = false
-                                            }
-                                            coroutineScope.launch {
-                                                messageHostState.showSnackbar(s.containerDeletedToast)
+                                            if (hasSelectedPartition && selectedPartitionId != null) {
+                                                val partId = selectedPartitionId!!
+                                                val updatedRoom = room.withUpdatedContainer(activeContainer.id) { it.withRemovedPartition(partId) }
+                                                updateRoom(updatedRoom)
+                                                selectedPartitionId = null
+                                                showUnitsColumn = false
+                                                coroutineScope.launch {
+                                                    messageHostState.showSnackbar(s.partitionDeletedToast)
+                                                }
+                                            } else {
+                                                val updatedRoom = room.withRemovedContainer(activeContainer.id)
+                                                updateRoom(updatedRoom)
+                                                selectedContainerId = updatedRoom.containers.lastOrNull()?.id
+                                                if (updatedRoom.containers.isEmpty()) {
+                                                    isEditingContainerInPanel = false
+                                                }
+                                                coroutineScope.launch {
+                                                    messageHostState.showSnackbar(s.containerDeletedToast)
+                                                }
                                             }
                                         },
                                         shape = CircleShape,
                                         color = Color(0xFFE5DFDA).copy(alpha = 0.95f),
-                                        border = BorderStroke(2.dp, Color(0xFF4355B9)),
+                                        border = BorderStroke(2.dp, if (hasSelectedPartition) Color(0xFF7C4DFF) else Color(0xFF4355B9)),
                                         shadowElevation = 6.dp,
                                         modifier = Modifier.size(if (isLandscape) 46.dp else 52.dp),
                                     ) {
@@ -2327,7 +2522,7 @@ fun RoomScreen() {
                                             selectedContainerId = target.id
                                             selectedPartitionId = newDiv?.id
                                             selectedPartitionIsVertical = true
-                                            showUnitsColumn = true
+                                            showUnitsColumn = false
                                             coroutineScope.launch {
                                                 messageHostState.showSnackbar(s.partitionAddedToast)
                                             }
@@ -2343,7 +2538,7 @@ fun RoomScreen() {
                                             selectedContainerId = newId
                                             selectedPartitionId = newDiv?.id
                                             selectedPartitionIsVertical = true
-                                            showUnitsColumn = true
+                                            showUnitsColumn = false
                                             coroutineScope.launch {
                                                 messageHostState.showSnackbar(s.partitionAddedToast)
                                             }
@@ -2362,7 +2557,7 @@ fun RoomScreen() {
                                             selectedContainerId = target.id
                                             selectedPartitionId = newShelf?.id
                                             selectedPartitionIsVertical = false
-                                            showUnitsColumn = true
+                                            showUnitsColumn = false
                                             coroutineScope.launch {
                                                 messageHostState.showSnackbar(s.partitionAddedToast)
                                             }
@@ -2378,7 +2573,7 @@ fun RoomScreen() {
                                             selectedContainerId = newId
                                             selectedPartitionId = newShelf?.id
                                             selectedPartitionIsVertical = false
-                                            showUnitsColumn = true
+                                            showUnitsColumn = false
                                             coroutineScope.launch {
                                                 messageHostState.showSnackbar(s.partitionAddedToast)
                                             }
@@ -2526,7 +2721,6 @@ fun RoomScreen() {
                                         selectedPartitionId = null
                                     },
                                     onClose = {
-                                        selectedPartitionId = null
                                         showUnitsColumn = false
                                     },
                                     modifier = Modifier
@@ -3136,15 +3330,19 @@ private fun RoomViewport(
     onPan: (Float, Float) -> Unit,
     onZoom: (Float) -> Unit,
     onTap: (Offset, Float, Float) -> Unit = { _, _, _ -> },
+    canDragPartitionAt: (Offset, Float, Float) -> Boolean = { _, _, _ -> false },
+    onDragPartition: (Offset, Float, Float) -> Unit = { _, _, _ -> },
 ) {
     Box(
         modifier = modifier
-            .pointerInput(Unit) {
+            .pointerInput(selectedPartitionId, selectedContainerId) {
                 detectRoomInspectionGestures(
                     onOrbit = onOrbit,
                     onPan = onPan,
                     onZoom = onZoom,
                     onTap = onTap,
+                    canDragPartitionAt = canDragPartitionAt,
+                    onDragPartition = onDragPartition,
                 )
             },
     ) {
@@ -3973,21 +4171,29 @@ private fun ModuleInspectorContent(
                     }
                 }
 
-                // Height (interior height of carcass)
+                // Height (effective height of divider)
                 ModuleDimensionRow(
                     label = s.partitionHeightLabel,
-                    valueMm = activeContainer.interiorHeightMm,
+                    valueMm = div.effectiveHeight(activeContainer.interiorHeightMm),
                     unitSystem = unitSystem,
                     enabled = false,
                 ) {}
 
-                // Depth (carcass interior depth)
+                // Depth (editable, anchored to back panel)
+                val currentDepth = div.effectiveDepth(activeContainer.interiorDepthMm)
                 ModuleDimensionRow(
                     label = s.partitionDepthLabel,
-                    valueMm = activeContainer.depthMm,
+                    valueMm = currentDepth,
                     unitSystem = unitSystem,
-                    enabled = false,
-                ) {}
+                    stepMm = step,
+                    minMm = 50f,
+                    maxMm = 2000f,
+                    enabled = true,
+                ) { newDepth ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedDivider(div.id) { it.copy(depthMm = newDepth) }
+                    }
+                }
 
                 // Position header with lock icon
                 Row(
@@ -4087,13 +4293,21 @@ private fun ModuleInspectorContent(
                     }
                 }
 
-                // Depth
+                // Depth (editable, anchored to back panel)
+                val currentDepth = shelf.effectiveDepth(activeContainer.interiorDepthMm)
                 ModuleDimensionRow(
                     label = s.partitionDepthLabel,
-                    valueMm = activeContainer.depthMm,
+                    valueMm = currentDepth,
                     unitSystem = unitSystem,
-                    enabled = false,
-                ) {}
+                    stepMm = step,
+                    minMm = 50f,
+                    maxMm = 2000f,
+                    enabled = true,
+                ) { newDepth ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedShelf(shelf.id) { it.copy(depthMm = newDepth) }
+                    }
+                }
 
                 // Position header with lock icon
                 Row(

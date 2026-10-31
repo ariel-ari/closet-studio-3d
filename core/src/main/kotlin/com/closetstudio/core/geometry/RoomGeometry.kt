@@ -670,10 +670,10 @@ object RoomGeometryBuilder {
         for (div in container.dividers) {
             val divS0 = s0Inner + div.offsetXMm
             val divS1 = divS0 + div.thicknessMm
-            val divY0 = plinthH + t
-            val divY1 = totalH - t
+            val divY0 = plinthH + t + div.effectiveStartY()
+            val divY1 = plinthH + t + div.effectiveEndY(container.interiorHeightMm)
             val divD0 = wallGap + backT
-            val divD1 = wallGap + totalD
+            val divD1 = wallGap + backT + div.effectiveDepth(container.interiorDepthMm)
 
             if (divS1 > divS0 && divY1 > divY0) {
                 addWallAlignedBox(
@@ -734,7 +734,7 @@ object RoomGeometryBuilder {
             val shelfY0 = plinthH + t + shelf.elevationYMm
             val shelfY1 = shelfY0 + shelf.thicknessMm
             val shelfD0 = wallGap + backT
-            val shelfD1 = wallGap + totalD
+            val shelfD1 = wallGap + backT + shelf.effectiveDepth(container.interiorDepthMm)
 
             if (shelfS1 > shelfS0 && shelfY1 > shelfY0 && shelfY1 <= totalH - t) {
                 addWallAlignedBox(

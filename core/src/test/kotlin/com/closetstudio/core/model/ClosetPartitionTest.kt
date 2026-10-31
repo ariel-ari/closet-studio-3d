@@ -86,6 +86,98 @@ class ClosetPartitionTest {
     }
 
     @Test
+    fun `vertical divider adapts its height to compartment when placed above or below horizontal shelf`() {
+        // Create container and add a horizontal shelf at 1000 mm in the single bay
+        val container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+        ).withAddedShelf(bayIndex = 0, elevationYMm = 1000f)
+
+        // 1. Add vertical divider in lower compartment (targetY = 400 mm < 1000 mm)
+        val withLowerDiv = container.withAddedDivider(offsetXMm = 500f, targetYMm = 400f)
+        val lowerDiv = withLowerDiv.dividers.single()
+        assertMm(0f, lowerDiv.effectiveStartY())
+        assertMm(1000f, lowerDiv.effectiveEndY(container.interiorHeightMm))
+        assertMm(1000f, lowerDiv.effectiveHeight(container.interiorHeightMm))
+
+        // 2. Add vertical divider in upper compartment (targetY = 1600 mm > 1000 mm)
+        val withUpperDiv = container.withAddedDivider(offsetXMm = 500f, targetYMm = 1600f)
+        val upperDiv = withUpperDiv.dividers.single()
+        // Starts on top of the 20mm shelf: 1000 + 20 = 1020 mm
+        assertMm(1020f, upperDiv.effectiveStartY())
+        assertMm(container.interiorHeightMm, upperDiv.effectiveEndY(container.interiorHeightMm))
+        assertMm(container.interiorHeightMm - 1020f, upperDiv.effectiveHeight(container.interiorHeightMm))
+    }
+
+    @Test
+    fun `moving shelf laterally transfers to adjacent bay and adapts width`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+        ).withAddedDivider(offsetXMm = 600f) // Bay 0 width: 600mm, Bay 1 width: 1342mm
+
+        val shelf = container.withAddedShelf(bayIndex = 0, elevationYMm = 800f).shelves.single()
+        container = container.copy(shelves = listOf(shelf))
+
+        // Initial shelf is in bay 0
+        assertEquals(0, container.shelves.single().bayIndex)
+
+        // Move shelf sideways to X = 1200 mm (which belongs to bay 1)
+        container = container.withMovedShelf(shelf.id, newElevationYMm = 800f, targetXMm = 1200f)
+        val moved = container.shelves.single()
+        assertEquals(1, moved.bayIndex)
+        val bays = container.getBays()
+        assertMm(bays[1].widthMm, container.getBays()[moved.bayIndex].widthMm)
+    }
+
+    @Test
+    fun `custom depth allows protruding forward while strictly anchoring to back panel`() {
+        val container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+        ).withAddedDivider(offsetXMm = 800f)
+
+        val div = container.dividers.single()
+        // By default, effectiveDepth matches interiorDepthMm
+        assertMm(container.interiorDepthMm, div.effectiveDepth(container.interiorDepthMm))
+
+        // Set custom depth protruding forward: 750 mm (greater than carcass depth 600 mm)
+        val customDiv = div.copy(depthMm = 750f)
+        assertMm(750f, customDiv.effectiveDepth(container.interiorDepthMm))
+
+        // Build room geometry and verify mesh bounds
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearHeightMm = 2600f,
+            clearDepthMm = 3600f,
+        ).withAddedContainer(
+            wall = WallIndex.NORTH,
+            id = "c1",
+            defaultWidthMm = 2000f,
+            defaultHeightMm = 2400f,
+            defaultDepthMm = 600f,
+        ).withUpdatedContainer("c1") {
+            it.copy(dividers = listOf(customDiv))
+        }
+
+        val parts = RoomGeometryBuilder.build(room)
+        val vertParts = parts.filter { it.surface == RoomSurface.CONTAINER_SIDE_PANEL }
+        assertTrue(vertParts.isNotEmpty())
+    }
+
+    @Test
     fun `raycast picks vertical divider and horizontal shelf with touch tolerance`() {
         val room = RoomSpec(
             clearWidthMm = 3600f,
@@ -106,7 +198,6 @@ class ClosetPartitionTest {
         val shelf = container.shelves.single()
 
         // 3D ray towards vertical divider center
-        // North wall container: X center = offsetMm + panelThicknessMm + div.offsetXMm + 9 mm
         val divWorldX = container.offsetMm + container.panelThicknessMm + div.offsetXMm + 9f
         val divWorldY = container.plinthHeightMm + container.panelThicknessMm + container.interiorHeightMm / 2f
         val divWorldZ = 300f

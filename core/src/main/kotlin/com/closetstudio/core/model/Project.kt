@@ -65,11 +65,26 @@ data class VerticalDividerSpec(
     val id: String = java.util.UUID.randomUUID().toString(),
     val offsetXMm: Float = 0f,
     val thicknessMm: Float = 18f,
+    val startYMm: Float = 0f,
+    val endYMm: Float? = null,
+    val depthMm: Float? = null,
 ) {
     init {
         require(offsetXMm >= 0f) { "divider offset must be non-negative" }
         require(thicknessMm > 0f) { "divider thickness must be positive" }
+        require(startYMm >= 0f) { "divider startY must be non-negative" }
+        if (endYMm != null) {
+            require(endYMm > startYMm) { "divider endY must be greater than startY" }
+        }
+        if (depthMm != null) {
+            require(depthMm > 0f) { "divider depth must be positive" }
+        }
     }
+
+    fun effectiveStartY(): Float = startYMm
+    fun effectiveEndY(interiorHeightMm: Float): Float = (endYMm ?: interiorHeightMm).coerceAtLeast(startYMm + 10f)
+    fun effectiveHeight(interiorHeightMm: Float): Float = (effectiveEndY(interiorHeightMm) - startYMm).coerceAtLeast(10f)
+    fun effectiveDepth(interiorDepthMm: Float): Float = (depthMm ?: interiorDepthMm).coerceAtLeast(50f)
 }
 
 @Serializable
@@ -78,12 +93,18 @@ data class HorizontalShelfSpec(
     val bayIndex: Int = 0,
     val elevationYMm: Float = 600f,
     val thicknessMm: Float = 18f,
+    val depthMm: Float? = null,
 ) {
     init {
         require(bayIndex >= 0) { "shelf bayIndex must be non-negative" }
         require(elevationYMm >= 0f) { "shelf elevation must be non-negative" }
         require(thicknessMm > 0f) { "shelf thickness must be positive" }
+        if (depthMm != null) {
+            require(depthMm > 0f) { "shelf depth must be positive" }
+        }
     }
+
+    fun effectiveDepth(interiorDepthMm: Float): Float = (depthMm ?: interiorDepthMm).coerceAtLeast(50f)
 }
 
 @Serializable
@@ -147,8 +168,37 @@ data class ClosetContainerSpec(
         return bays.firstOrNull { xMm >= it.startXMm && xMm <= it.endXMm } ?: bays.lastOrNull() ?: ContainerBay(0, 0f, interiorWidthMm)
     }
 
-    fun withAddedDivider(offsetXMm: Float? = null): ClosetContainerSpec {
+    fun findVerticalCompartmentRange(bayIndex: Int, targetYMm: Float): Pair<Float, Float> {
+        val innerH = interiorHeightMm
+        val bayShelves = shelves.filter { it.bayIndex == bayIndex }.sortedBy { it.elevationYMm }
+        if (bayShelves.isEmpty()) {
+            return 0f to innerH
+        }
+
+        var prevY = 0f
+        for (shelf in bayShelves) {
+            val shelfBottom = shelf.elevationYMm
+            val shelfTop = shelfBottom + shelf.thicknessMm
+            if (targetYMm < shelfBottom) {
+                return prevY to shelfBottom
+            }
+            if (targetYMm in shelfBottom..shelfTop) {
+                val mid = (shelfBottom + shelfTop) * 0.5f
+                return if (targetYMm <= mid) {
+                    prevY to shelfBottom
+                } else {
+                    val nextShelfBottom = bayShelves.firstOrNull { it.elevationYMm > shelfTop }?.elevationYMm ?: innerH
+                    shelfTop to nextShelfBottom
+                }
+            }
+            prevY = shelfTop
+        }
+        return prevY to innerH
+    }
+
+    fun withAddedDivider(offsetXMm: Float? = null, targetYMm: Float? = null): ClosetContainerSpec {
         val innerW = interiorWidthMm
+        val innerH = interiorHeightMm
         val thickness = panelThicknessMm.coerceAtLeast(18f)
         val targetOffset = offsetXMm ?: run {
             val bays = getBays()
@@ -156,12 +206,76 @@ data class ClosetContainerSpec(
             widest.startXMm + (widest.widthMm - thickness) * 0.5f
         }
         val clampedOffset = targetOffset.coerceIn(20f, (innerW - thickness - 20f).coerceAtLeast(20f))
+        val targetBay = findBayAtX(clampedOffset)
+
+        val (startY, endY) = if (targetYMm != null) {
+            findVerticalCompartmentRange(targetBay.index, targetYMm)
+        } else {
+            0f to innerH
+        }
+
         val newDivider = VerticalDividerSpec(
             id = "div_${System.currentTimeMillis()}_${dividers.size + 1}",
             offsetXMm = clampedOffset,
             thicknessMm = thickness,
+            startYMm = startY,
+            endYMm = if (endY < innerH - 1f) endY else null,
         )
         return copy(dividers = dividers + newDivider)
+    }
+
+    fun withMovedDivider(
+        id: String,
+        newOffsetXMm: Float,
+        targetYMm: Float? = null,
+        maintainCompartmentIfPossible: Boolean = true,
+    ): ClosetContainerSpec {
+        val div = dividers.firstOrNull { it.id == id } ?: return this
+        val innerW = interiorWidthMm
+        val innerH = interiorHeightMm
+        val thickness = div.thicknessMm
+        val clampedOffset = newOffsetXMm.coerceIn(10f, (innerW - thickness - 10f).coerceAtLeast(10f))
+        val targetBay = findBayAtX(clampedOffset)
+
+        val (newStartY, newEndY) = if (targetYMm != null) {
+            findVerticalCompartmentRange(targetBay.index, targetYMm)
+        } else if (maintainCompartmentIfPossible && (div.startYMm > 10f || (div.endYMm != null && div.endYMm < innerH - 10f))) {
+            val currentMidY = (div.startYMm + div.effectiveEndY(innerH)) * 0.5f
+            findVerticalCompartmentRange(targetBay.index, currentMidY)
+        } else {
+            0f to innerH
+        }
+
+        return withUpdatedDivider(id) {
+            it.copy(
+                offsetXMm = clampedOffset,
+                startYMm = newStartY,
+                endYMm = if (newEndY < innerH - 1f) newEndY else null,
+            )
+        }
+    }
+
+    fun withMovedShelf(
+        id: String,
+        newElevationYMm: Float,
+        targetXMm: Float? = null,
+    ): ClosetContainerSpec {
+        val shelf = shelves.firstOrNull { it.id == id } ?: return this
+        val innerH = interiorHeightMm
+        val thickness = shelf.thicknessMm
+        val clampedElev = newElevationYMm.coerceIn(10f, (innerH - thickness - 10f).coerceAtLeast(10f))
+        val newBayIndex = if (targetXMm != null) {
+            findBayAtX(targetXMm).index
+        } else {
+            shelf.bayIndex
+        }
+
+        return withUpdatedShelf(id) {
+            it.copy(
+                elevationYMm = clampedElev,
+                bayIndex = newBayIndex.coerceIn(0, getBays().lastIndex),
+            )
+        }
     }
 
     fun withAddedShelf(bayIndex: Int? = null, elevationYMm: Float? = null): ClosetContainerSpec {
@@ -1425,10 +1539,10 @@ data class RoomSpec(
             for (div in c.dividers) {
                 val divS0 = s0Inner + div.offsetXMm - 45f
                 val divS1 = s0Inner + div.offsetXMm + div.thicknessMm + 45f
-                val divY0 = plinthH + t - 20f
-                val divY1 = totalH - t + 20f
+                val divY0 = plinthH + t + div.effectiveStartY() - 25f
+                val divY1 = plinthH + t + div.effectiveEndY(c.interiorHeightMm) + 25f
                 val divD0 = 0f
-                val divD1 = wallGap + totalD + 25f
+                val divD1 = wallGap + backT + div.effectiveDepth(c.interiorDepthMm) + 30f
 
                 val hitT = intersectAABB(divS0, divS1, divY0, divY1, divD0, divD1)
                 if (hitT != null && hitT < bestT) {
@@ -1446,7 +1560,7 @@ data class RoomSpec(
                 val shelfY0 = plinthH + t + shelf.elevationYMm - 45f
                 val shelfY1 = plinthH + t + shelf.elevationYMm + shelf.thicknessMm + 45f
                 val shelfD0 = 0f
-                val shelfD1 = wallGap + totalD + 25f
+                val shelfD1 = wallGap + backT + shelf.effectiveDepth(c.interiorDepthMm) + 30f
 
                 val hitT = intersectAABB(shelfS0, shelfS1, shelfY0, shelfY1, shelfD0, shelfD1)
                 if (hitT != null && hitT < bestT) {
