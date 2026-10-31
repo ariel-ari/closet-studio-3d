@@ -608,6 +608,75 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
 }
 
 /**
+ * Direction-aware gesture recognizer for units in the catalog:
+ * - Vertical slide: Treated as a catalog list scroll (allows [verticalScroll] in parent without consuming).
+ * - Horizontal drag to the left: Pulls unit out of the catalog drawer into the 3D closet.
+ * - Quick stationary tap (< 14px): Invokes [onTap] to place the item at the default location.
+ */
+private suspend fun PointerInputScope.detectCatalogUnitDragGestures(
+    onDragStart: (Offset) -> Unit,
+    onDrag: (Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
+    onTap: () -> Unit = {},
+) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val downPos = down.position
+        var totalDeltaX = 0f
+        var totalDeltaY = 0f
+        var isHorizontalDrag = false
+        var isVerticalScroll = false
+        var prevPos = downPos
+
+        do {
+            val event = awaitPointerEvent()
+            val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+
+            if (!pointer.pressed) {
+                if (isHorizontalDrag) {
+                    pointer.consume()
+                    onDragEnd()
+                } else if (!isVerticalScroll) {
+                    val dist = (pointer.position - downPos).getDistance()
+                    if (dist < 14f) {
+                        pointer.consume()
+                        onTap()
+                    }
+                }
+                break
+            }
+
+            val currentPos = pointer.position
+            val delta = currentPos - prevPos
+            prevPos = currentPos
+
+            if (!isHorizontalDrag && !isVerticalScroll) {
+                totalDeltaX += delta.x
+                totalDeltaY += delta.y
+                val absX = kotlin.math.abs(totalDeltaX)
+                val absY = kotlin.math.abs(totalDeltaY)
+
+                val slop = 16f
+                if (totalDeltaX < -slop) {
+                    // Dragged towards the left (into the 3D room)
+                    isHorizontalDrag = true
+                    pointer.consume()
+                    onDragStart(downPos)
+                    onDrag(Offset(totalDeltaX, totalDeltaY))
+                } else if (absY > slop && absY > absX * 1.2f) {
+                    // Scrolling vertically through catalog units
+                    isVerticalScroll = true
+                }
+            } else if (isHorizontalDrag) {
+                pointer.consume()
+                onDrag(delta)
+            }
+        } while (event.changes.any { it.pressed })
+    }
+}
+
+/**
  * Projects a 2D viewport tap coordinate into a 3D world-space ray (in millimeters)
  * matching [RoomScene]'s camera projection and tests intersection against placed containers.
  */
@@ -3736,20 +3805,17 @@ private fun RightSideUnitsAndInspectorColumn(
                             .onGloballyPositioned { coordinates ->
                                 carcassRootOffset = coordinates.positionInRoot()
                             }
-                            .clickable {
-                                onAddContainerOnCurrentWall(null)
-                            }
                             .pointerInput(Unit) {
-                                detectDragGestures(
+                                detectCatalogUnitDragGestures(
                                     onDragStart = { localOffset ->
                                         onDragUnitStart(DraggedUnitType.CARCASS, carcassRootOffset + localOffset)
                                     },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
+                                    onDrag = { dragAmount ->
                                         onDragUnitMove(dragAmount)
                                     },
                                     onDragEnd = { onDragUnitEnd() },
                                     onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddContainerOnCurrentWall(null) },
                                 )
                             },
                     ) {
@@ -3772,20 +3838,17 @@ private fun RightSideUnitsAndInspectorColumn(
                             .onGloballyPositioned { coordinates ->
                                 dividerRootOffset = coordinates.positionInRoot()
                             }
-                            .clickable {
-                                onAddDivider(null)
-                            }
                             .pointerInput(Unit) {
-                                detectDragGestures(
+                                detectCatalogUnitDragGestures(
                                     onDragStart = { localOffset ->
                                         onDragUnitStart(DraggedUnitType.VERTICAL_DIVIDER, dividerRootOffset + localOffset)
                                     },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
+                                    onDrag = { dragAmount ->
                                         onDragUnitMove(dragAmount)
                                     },
                                     onDragEnd = { onDragUnitEnd() },
                                     onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddDivider(null) },
                                 )
                             },
                     ) {
@@ -3808,20 +3871,17 @@ private fun RightSideUnitsAndInspectorColumn(
                             .onGloballyPositioned { coordinates ->
                                 shelfRootOffset = coordinates.positionInRoot()
                             }
-                            .clickable {
-                                onAddShelf(null, null)
-                            }
                             .pointerInput(Unit) {
-                                detectDragGestures(
+                                detectCatalogUnitDragGestures(
                                     onDragStart = { localOffset ->
                                         onDragUnitStart(DraggedUnitType.HORIZONTAL_SHELF, shelfRootOffset + localOffset)
                                     },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
+                                    onDrag = { dragAmount ->
                                         onDragUnitMove(dragAmount)
                                     },
                                     onDragEnd = { onDragUnitEnd() },
                                     onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddShelf(null, null) },
                                 )
                             },
                     ) {
