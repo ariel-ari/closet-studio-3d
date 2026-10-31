@@ -1,8 +1,11 @@
 package com.closetstudio.app.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -76,15 +79,16 @@ import dev.romainguy.kotlin.math.Float3
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
  * Returns the base target position (center point on the wall) for a given wall index.
- * - Wall 0: South (Z = clearDepthMm, wall with door)
- * - Wall 1: West (X = 0)
- * - Wall 2: North (Z = 0)
- * - Wall 3: East (X = clearWidthMm)
+ * - Wall 0: South (Z = clearDepthMm, wall with door segments D and E)
+ * - Wall 1: West (X = 0, Wall C)
+ * - Wall 2: North (Z = 0, Wall A)
+ * - Wall 3: East (X = clearWidthMm, Wall B)
  */
 private fun getWallTarget(wallStep: Int, room: RoomSpec): Float3 {
     val w = room.clearWidthMm * MM_TO_M
@@ -102,10 +106,10 @@ private fun getWallTarget(wallStep: Int, room: RoomSpec): Float3 {
 private fun getWallName(wallStep: Int): String {
     val wall = ((wallStep % 4) + 4) % 4
     return when (wall) {
-        0 -> "Pared Sur (Fondo / Puerta)"
-        1 -> "Pared Oeste (Lateral Izquierda)"
-        2 -> "Pared Norte (Frente)"
-        else -> "Pared Este (Lateral Derecha)"
+        0 -> "Pared Sur (Tramos D y E / Puerta)"
+        1 -> "Pared Oeste (Pared C)"
+        2 -> "Pared Norte (Pared A / Frente)"
+        else -> "Pared Este (Pared B)"
     }
 }
 
@@ -225,22 +229,54 @@ fun RoomScreen() {
         val targetPos = getWallTarget(wallStep.intValue, room)
         val targetYaw = 180f + wallStep.intValue * 90f
         coroutineScope.launch {
-            launch { yawAnim.animateTo(targetYaw, tween(300, easing = FastOutSlowInEasing)) }
-            launch { pitchAnim.animateTo(0f, tween(250, easing = FastOutSlowInEasing)) }
-            launch { distanceAnim.animateTo(3.40f, tween(250, easing = FastOutSlowInEasing)) }
-            launch { targetXAnim.animateTo(targetPos.x, tween(300, easing = FastOutSlowInEasing)) }
-            launch { targetYAnim.animateTo(targetPos.y, tween(300, easing = FastOutSlowInEasing)) }
-            launch { targetZAnim.animateTo(targetPos.z, tween(300, easing = FastOutSlowInEasing)) }
+            launch { yawAnim.animateTo(targetYaw, tween(350, easing = FastOutSlowInEasing)) }
+            launch { pitchAnim.animateTo(0f, tween(300, easing = FastOutSlowInEasing)) }
+            launch { distanceAnim.animateTo(3.40f, tween(300, easing = FastOutSlowInEasing)) }
+            launch { targetXAnim.animateTo(targetPos.x, tween(350, easing = FastOutSlowInEasing)) }
+            launch { targetYAnim.animateTo(targetPos.y, tween(350, easing = FastOutSlowInEasing)) }
+            launch { targetZAnim.animateTo(targetPos.z, tween(350, easing = FastOutSlowInEasing)) }
         }
+    }
+
+    // Top-down / Floorplan Camera Transition for Dimensioning
+    fun enterDimensionsMode() {
+        showDimensionsSheet = true
+        selectedCategory = "Habitación"
+        val centerX = room.clearWidthMm * 0.5f * MM_TO_M
+        val centerZ = room.clearDepthMm * 0.5f * MM_TO_M
+        coroutineScope.launch {
+            launch { yawAnim.animateTo(180f, tween(450, easing = FastOutSlowInEasing)) }
+            // Pitch cenital a -86°: el techo desaparece solo por backface culling
+            launch { pitchAnim.animateTo(-86f, tween(450, easing = FastOutSlowInEasing)) }
+            launch { distanceAnim.animateTo(3.90f, tween(450, easing = FastOutSlowInEasing)) }
+            launch { targetXAnim.animateTo(centerX, tween(450, easing = FastOutSlowInEasing)) }
+            launch { targetYAnim.animateTo(0.10f, tween(450, easing = FastOutSlowInEasing)) }
+            launch { targetZAnim.animateTo(centerZ, tween(450, easing = FastOutSlowInEasing)) }
+        }
+    }
+
+    fun exitDimensionsMode() {
+        showDimensionsSheet = false
+        recenterCurrentWall()
     }
 
     fun updateRoom(newRoom: RoomSpec) {
         room = newRoom
-        val targetPos = getWallTarget(wallStep.intValue, newRoom)
-        coroutineScope.launch {
-            targetXAnim.snapTo(targetPos.x)
-            targetYAnim.snapTo(targetPos.y)
-            targetZAnim.snapTo(targetPos.z)
+        if (showDimensionsSheet) {
+            val centerX = newRoom.clearWidthMm * 0.5f * MM_TO_M
+            val centerZ = newRoom.clearDepthMm * 0.5f * MM_TO_M
+            coroutineScope.launch {
+                targetXAnim.snapTo(centerX)
+                targetYAnim.snapTo(0.10f)
+                targetZAnim.snapTo(centerZ)
+            }
+        } else {
+            val targetPos = getWallTarget(wallStep.intValue, newRoom)
+            coroutineScope.launch {
+                targetXAnim.snapTo(targetPos.x)
+                targetYAnim.snapTo(targetPos.y)
+                targetZAnim.snapTo(targetPos.z)
+            }
         }
     }
 
@@ -274,7 +310,7 @@ fun RoomScreen() {
                     selected = false,
                     onClick = {
                         coroutineScope.launch { drawerState.close() }
-                        showDimensionsSheet = true
+                        enterDimensionsMode()
                     },
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
@@ -328,7 +364,7 @@ fun RoomScreen() {
                             onOrbit = { deltaX, deltaY ->
                                 coroutineScope.launch {
                                     yawAnim.snapTo(yawAnim.value - deltaX * 0.22f)
-                                    val newPitch = (pitchAnim.value - deltaY * 0.18f).coerceIn(-55f, 25f)
+                                    val newPitch = (pitchAnim.value - deltaY * 0.18f).coerceIn(-88f, 25f)
                                     pitchAnim.snapTo(newPitch)
                                 }
                             },
@@ -431,12 +467,11 @@ fun RoomScreen() {
                             onDismissRequest = { showCategoryMenu = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Habitación (Dimensiones)") },
+                                text = { Text("Habitación (Plano y Cotas)") },
                                 leadingIcon = { Icon(Icons.Default.Straighten, null) },
                                 onClick = {
-                                    selectedCategory = "Habitación"
                                     showCategoryMenu = false
-                                    showDimensionsSheet = true
+                                    enterDimensionsMode()
                                 },
                             )
                             DropdownMenuItem(
@@ -463,10 +498,7 @@ fun RoomScreen() {
 
                     // Undo (↶)
                     IconButton(
-                        onClick = {
-                            // Reset current wall target
-                            recenterCurrentWall()
-                        },
+                        onClick = { recenterCurrentWall() },
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Undo,
@@ -514,11 +546,11 @@ fun RoomScreen() {
                             onDismissRequest = { showOverflowMenu = false },
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Dimensiones del cuarto...") },
+                                text = { Text("Plano y dimensiones...") },
                                 leadingIcon = { Icon(Icons.Default.Straighten, null) },
                                 onClick = {
                                     showOverflowMenu = false
-                                    showDimensionsSheet = true
+                                    enterDimensionsMode()
                                 },
                             )
                             DropdownMenuItem(
@@ -542,86 +574,161 @@ fun RoomScreen() {
                 }
             }
 
-            // 3. Left Navigation Button (< Previous Wall)
-            FilledIconButton(
-                onClick = { switchWall(wallStep.intValue - 1) },
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 16.dp)
-                    .size(48.dp)
-                    .shadow(4.dp, CircleShape),
+            // 3. Top-Down Floorplan Overlay Badges (Visible in top-down mode / pitch < -50°)
+            AnimatedVisibility(
+                visible = showDimensionsSheet || pitchAnim.value < -50f,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize(),
             ) {
-                Icon(
-                    imageVector = Icons.Default.ChevronLeft,
-                    contentDescription = "Pared anterior",
-                    modifier = Modifier.size(32.dp),
-                )
-            }
-
-            // 4. Right Navigation Button (> Next Wall)
-            FilledIconButton(
-                onClick = { switchWall(wallStep.intValue + 1) },
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(end = 16.dp)
-                    .size(48.dp)
-                    .shadow(4.dp, CircleShape),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.ChevronRight,
-                    contentDescription = "Pared siguiente",
-                    modifier = Modifier.size(32.dp),
-                )
-            }
-
-            // 5. Bottom Recenter / Reset Button
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-                shadowElevation = 3.dp,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 20.dp),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                Box(
                     modifier = Modifier
-                        .clickable { recenterCurrentWall() }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .padding(top = 64.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.CenterFocusStrong,
-                        contentDescription = "Centrar pared",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp),
+                    // Top Wall (Pared A / Norte)
+                    FloorplanWallBadge(
+                        letter = "A",
+                        dimensionText = "${room.clearWidthMm.roundToInt()} mm",
+                        modifier = Modifier.align(Alignment.TopCenter),
                     )
-                    Text(
-                        text = "  Centrar",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+
+                    // Right Wall (Pared B / Este)
+                    FloorplanWallBadge(
+                        letter = "B",
+                        dimensionText = "${room.clearDepthMm.roundToInt()} mm",
+                        modifier = Modifier.align(Alignment.CenterEnd),
                     )
+
+                    // Left Wall (Pared C / Oeste)
+                    FloorplanWallBadge(
+                        letter = "C",
+                        dimensionText = "${room.clearDepthMm.roundToInt()} mm",
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    )
+
+                    // Bottom Wall with Door (Tramos D y E)
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+                        shadowElevation = 6.dp,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 16.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        ) {
+                            FloorplanSegmentBadge("D", "${room.segmentDMm.roundToInt()} mm")
+                            Text("•", color = Color.Gray)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Default.DoorFront, contentDescription = null, tint = Color(0xFF8B5A2B), modifier = Modifier.size(16.dp))
+                                Text(
+                                    text = "${room.door.widthMm.roundToInt()} mm",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF8B5A2B),
+                                )
+                            }
+                            Text("•", color = Color.Gray)
+                            FloorplanSegmentBadge("E", "${room.segmentEMm.roundToInt()} mm")
+                        }
+                    }
+
+                    // 4 Corner 90° Indicators
+                    CornerAngleBadge(text = "90°", modifier = Modifier.align(Alignment.TopStart))
+                    CornerAngleBadge(text = "90°", modifier = Modifier.align(Alignment.TopEnd))
+                    CornerAngleBadge(text = "90°", modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 40.dp))
+                    CornerAngleBadge(text = "90°", modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 40.dp))
                 }
             }
 
-            // 6. Room Dimensions ModalBottomSheet
+            // 4. Wall Navigation Buttons (< and >) - Only visible during normal 3D wall inspection
+            if (!showDimensionsSheet) {
+                // Left Navigation Button (< Previous Wall)
+                FilledIconButton(
+                    onClick = { switchWall(wallStep.intValue - 1) },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 16.dp)
+                        .size(48.dp)
+                        .shadow(4.dp, CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronLeft,
+                        contentDescription = "Pared anterior",
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+
+                // Right Navigation Button (> Next Wall)
+                FilledIconButton(
+                    onClick = { switchWall(wallStep.intValue + 1) },
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 16.dp)
+                        .size(48.dp)
+                        .shadow(4.dp, CircleShape),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ChevronRight,
+                        contentDescription = "Pared siguiente",
+                        modifier = Modifier.size(32.dp),
+                    )
+                }
+
+                // Bottom Recenter / Reset Button
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                    shadowElevation = 3.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 20.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { recenterCurrentWall() }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CenterFocusStrong,
+                            contentDescription = "Centrar pared",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = "  Centrar",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
+                }
+            }
+
+            // 5. Room Dimensions ModalBottomSheet
             if (showDimensionsSheet) {
                 RoomDimensionsSheet(
                     room = room,
                     onRoomChange = { updateRoom(it) },
-                    onDismiss = { showDimensionsSheet = false },
+                    onDismiss = { exitDimensionsMode() },
                 )
             }
 
-            // 7. Info Dialog (ⓘ)
+            // 6. Info Dialog (ⓘ)
             if (showInfoDialog) {
                 AlertDialog(
                     onDismissRequest = { showInfoDialog = false },
@@ -629,11 +736,14 @@ fun RoomScreen() {
                     title = { Text("Datos del Ambiente") },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("• Ancho (X): ${room.clearWidthMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearWidthMm / 1000f)} m)")
-                            Text("• Profundidad (Z): ${room.clearDepthMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearDepthMm / 1000f)} m)")
+                            Text("• Pared A (Norte): ${room.clearWidthMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearWidthMm / 1000f)} m)")
+                            Text("• Pared B y C (Prof.): ${room.clearDepthMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearDepthMm / 1000f)} m)")
+                            Text("• Tramo D: ${room.segmentDMm.toInt()} mm")
+                            Text("• Puerta: ${room.door.widthMm.toInt()} mm")
+                            Text("• Tramo E: ${room.segmentEMm.toInt()} mm")
                             Text("• Altura (Y): ${room.clearHeightMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearHeightMm / 1000f)} m)")
                             Text("• Superficie Piso: ${String.format(Locale.US, "%.2f", (room.clearWidthMm * room.clearDepthMm) / 1_000_000f)} m²")
-                            Text("• Pared Activa: ${getWallName(wallStep.intValue)}")
+                            Text("• Vista actual: ${getWallName(wallStep.intValue)}")
                         }
                     },
                     confirmButton = {
@@ -644,5 +754,85 @@ fun RoomScreen() {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FloorplanWallBadge(letter: String, dimensionText: String, modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
+        shadowElevation = 5.dp,
+        modifier = modifier,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = Color(0xFF2C55B5),
+            ) {
+                Text(
+                    text = " $letter ",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                )
+            }
+            Text(
+                text = dimensionText,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FloorplanSegmentBadge(letter: String, dimensionText: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = Color(0xFF2C55B5),
+        ) {
+            Text(
+                text = " $letter ",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+            )
+        }
+        Text(
+            text = dimensionText,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF2C55B5),
+        )
+    }
+}
+
+@Composable
+private fun CornerAngleBadge(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+        shadowElevation = 2.dp,
+        modifier = modifier,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+        )
     }
 }

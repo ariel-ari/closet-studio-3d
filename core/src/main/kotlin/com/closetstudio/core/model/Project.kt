@@ -57,4 +57,51 @@ data class RoomSpec(
         }
         return (wallLength - door.widthMm).coerceAtLeast(0f)
     }
+
+    /** Total length of the wall containing the door. */
+    val doorWallLengthMm: Float
+        get() = if (door.wall == WallIndex.NORTH || door.wall == WallIndex.SOUTH) clearWidthMm else clearDepthMm
+
+    /** Length of segment D (wall segment before the door). */
+    val segmentDMm: Float
+        get() = door.offsetMm.coerceIn(0f, maxDoorOffset())
+
+    /** Length of segment E (wall segment after the door). */
+    val segmentEMm: Float
+        get() = (doorWallLengthMm - segmentDMm - door.widthMm).coerceAtLeast(0f)
+
+    /** Returns true if the door is centered within 1mm tolerance. */
+    val isDoorCentered: Boolean
+        get() = kotlin.math.abs(segmentDMm - segmentEMm) < 1f
+
+    /** Centers the door between segment D and E. */
+    fun withCenteredDoor(): RoomSpec {
+        val centered = ((doorWallLengthMm - door.widthMm) / 2f).coerceAtLeast(0f)
+        return copy(door = door.copy(offsetMm = centered))
+    }
+
+    /** Updates segment D length, adapting segment E so door width is immutable. */
+    fun withSegmentD(newDMm: Float): RoomSpec {
+        val clampedD = newDMm.coerceIn(0f, maxDoorOffset())
+        return copy(door = door.copy(offsetMm = clampedD))
+    }
+
+    /** Updates segment E length, adapting segment D so door width is immutable. */
+    fun withSegmentE(newEMm: Float): RoomSpec {
+        val newD = (doorWallLengthMm - door.widthMm - newEMm).coerceIn(0f, maxDoorOffset())
+        return copy(door = door.copy(offsetMm = newD))
+    }
+
+    /** Updates door width while keeping it valid on the wall. */
+    fun withDoorWidth(newWidthMm: Float, keepCentered: Boolean = false): RoomSpec {
+        val maxW = doorWallLengthMm.coerceAtLeast(100f)
+        val clampedW = newWidthMm.coerceIn(500f, maxW)
+        val maxOffset = (doorWallLengthMm - clampedW).coerceAtLeast(0f)
+        val newOffset = if (keepCentered) {
+            maxOffset / 2f
+        } else {
+            door.offsetMm.coerceIn(0f, maxOffset)
+        }
+        return copy(door = door.copy(widthMm = clampedW, offsetMm = newOffset))
+    }
 }
