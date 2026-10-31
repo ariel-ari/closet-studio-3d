@@ -1,7 +1,9 @@
 package com.closetstudio.core.geometry
 
+import com.closetstudio.core.model.ClosetContainerSpec
 import com.closetstudio.core.model.DoorSpec
 import com.closetstudio.core.model.RoomSpec
+import com.closetstudio.core.model.Vec2Mm
 import com.closetstudio.core.model.WallIndex
 
 enum class RoomSurface {
@@ -11,6 +13,9 @@ enum class RoomSurface {
     DOOR_FRAME,
     DOOR_LEAF,
     DOOR_HANDLE,
+    CONTAINER_BODY,
+    CONTAINER_BACK,
+    CONTAINER_SELECTED,
 }
 
 data class RoomPart(
@@ -30,7 +35,11 @@ data class RoomPart(
  */
 object RoomGeometryBuilder {
 
-    fun build(room: RoomSpec, uvScaleMm: Float = 600f): List<RoomPart> {
+    fun build(
+        room: RoomSpec,
+        uvScaleMm: Float = 600f,
+        selectedContainerId: String? = null,
+    ): List<RoomPart> {
         val h = room.clearHeightMm
         val slab = 40f
 
@@ -207,6 +216,228 @@ object RoomGeometryBuilder {
         parts += RoomPart(RoomSurface.DOOR_LEAF, leafBuilder.build())
         parts += RoomPart(RoomSurface.DOOR_HANDLE, handleBuilder.build())
 
+        if (room.containers.isNotEmpty()) {
+            val containerBodyBuilder = MeshBuilder(uvScaleMm)
+            val containerSelectedBuilder = MeshBuilder(uvScaleMm)
+            val containerBackBuilder = MeshBuilder(uvScaleMm)
+
+            for (rawContainer in room.containers) {
+                val container = room.clampContainer(rawContainer)
+                if (container.widthMm < 40f || container.heightMm < 40f || container.depthMm < 40f) continue
+                val bodyTarget = if (container.id == selectedContainerId) {
+                    containerSelectedBuilder
+                } else {
+                    containerBodyBuilder
+                }
+                addContainerToBuilders(
+                    room = room,
+                    container = container,
+                    bodyBuilder = bodyTarget,
+                    backBuilder = containerBackBuilder,
+                )
+            }
+
+            val bodyMesh = containerBodyBuilder.build()
+            if (bodyMesh.vertexCount > 0) {
+                parts += RoomPart(RoomSurface.CONTAINER_BODY, bodyMesh)
+            }
+            val selectedMesh = containerSelectedBuilder.build()
+            if (selectedMesh.vertexCount > 0) {
+                parts += RoomPart(RoomSurface.CONTAINER_SELECTED, selectedMesh)
+            }
+            val backMesh = containerBackBuilder.build()
+            if (backMesh.vertexCount > 0) {
+                parts += RoomPart(RoomSurface.CONTAINER_BACK, backMesh)
+            }
+        }
+
         return parts
+    }
+
+    /**
+     * Builds a 3D oriented box in local wall coordinates:
+     * - `s0..s1`: distance along the wall from its start vertex (`pStart` -> `pEnd`)
+     * - `y0..y1`: vertical height from floor (`0`) to ceiling
+     * - `d0..d1`: depth protruding inward from the wall along `inwardNormal`
+     */
+    private fun addWallAlignedBox(
+        builder: MeshBuilder,
+        pStart: Vec2Mm,
+        ux: Float,
+        uz: Float,
+        nx: Float,
+        nz: Float,
+        s0: Float,
+        s1: Float,
+        y0: Float,
+        y1: Float,
+        d0: Float,
+        d1: Float,
+    ) {
+        if (s1 <= s0 || y1 <= y0 || d1 <= d0) return
+
+        fun pt(s: Float, y: Float, d: Float): Vec3 = Vec3(
+            x = pStart.x + s * ux + d * nx,
+            y = y,
+            z = pStart.z + s * uz + d * nz,
+        )
+
+        val nFront = Vec3(nx, 0f, nz)
+        val nBack = Vec3(-nx, 0f, -nz)
+        val nRight = Vec3(ux, 0f, uz)
+        val nLeft = Vec3(-ux, 0f, -uz)
+
+        // Front face (d = d1, facing into room)
+        builder.addQuad(
+            a = pt(s1, y0, d1),
+            b = pt(s0, y0, d1),
+            c = pt(s0, y1, d1),
+            d = pt(s1, y1, d1),
+            normal = nFront,
+        )
+        // Back face (d = d0, facing wall)
+        builder.addQuad(
+            a = pt(s0, y0, d0),
+            b = pt(s1, y0, d0),
+            c = pt(s1, y1, d0),
+            d = pt(s0, y1, d0),
+            normal = nBack,
+        )
+        // Left outer face (s = s0, normal -u)
+        builder.addQuad(
+            a = pt(s0, y0, d1),
+            b = pt(s0, y0, d0),
+            c = pt(s0, y1, d0),
+            d = pt(s0, y1, d1),
+            normal = nLeft,
+        )
+        // Right outer face (s = s1, normal +u)
+        builder.addQuad(
+            a = pt(s1, y0, d0),
+            b = pt(s1, y0, d1),
+            c = pt(s1, y1, d1),
+            d = pt(s1, y1, d0),
+            normal = nRight,
+        )
+        // Top face (y = y1, normal +Y)
+        builder.addQuad(
+            a = pt(s0, y1, d0),
+            b = pt(s1, y1, d0),
+            c = pt(s1, y1, d1),
+            d = pt(s0, y1, d1),
+            normal = Vec3.UNIT_Y,
+        )
+        // Bottom face (y = y0, normal -Y)
+        builder.addQuad(
+            a = pt(s0, y0, d1),
+            b = pt(s1, y0, d1),
+            c = pt(s1, y0, d0),
+            d = pt(s0, y0, d0),
+            normal = Vec3(0f, -1f, 0f),
+        )
+    }
+
+    private fun addContainerToBuilders(
+        room: RoomSpec,
+        container: ClosetContainerSpec,
+        bodyBuilder: MeshBuilder,
+        backBuilder: MeshBuilder,
+    ) {
+        val nw = room.vertexNW
+        val ne = room.vertexNE
+        val se = room.vertexSE
+        val sw = room.vertexSW
+
+        val (pStart, pEnd) = when (container.wall) {
+            WallIndex.NORTH -> nw to ne
+            WallIndex.EAST -> ne to se
+            WallIndex.SOUTH -> se to sw
+            WallIndex.WEST -> sw to nw
+        }
+
+        val dx = pEnd.x - pStart.x
+        val dz = pEnd.z - pStart.z
+        val wallLen = kotlin.math.sqrt(dx * dx + dz * dz)
+        if (wallLen < 10f) return
+
+        val ux = dx / wallLen
+        val uz = dz / wallLen
+        // Inward normal pointing into the room interior
+        val nx = -uz
+        val nz = ux
+
+        val s0 = container.offsetMm
+        val s1 = s0 + container.widthMm
+        val totalH = container.heightMm
+        val totalD = container.depthMm
+        val t = container.panelThicknessMm.coerceIn(10f, (container.widthMm * 0.2f).coerceAtLeast(12f))
+        val plinthH = container.plinthHeightMm.coerceIn(0f, (totalH * 0.25f).coerceAtLeast(0f))
+        val backT = container.backThicknessMm.coerceIn(3f, 18f)
+
+        val wallGap = 2f // 2mm offset from wall surface to prevent Z-fighting
+
+        // 1. Left Side Panel (full height 0..totalH, full depth)
+        addWallAlignedBox(
+            builder = bodyBuilder,
+            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+            s0 = s0, s1 = s0 + t,
+            y0 = 0f, y1 = totalH,
+            d0 = wallGap, d1 = wallGap + totalD,
+        )
+
+        // 2. Right Side Panel (full height 0..totalH, full depth)
+        addWallAlignedBox(
+            builder = bodyBuilder,
+            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+            s0 = s1 - t, s1 = s1,
+            y0 = 0f, y1 = totalH,
+            d0 = wallGap, d1 = wallGap + totalD,
+        )
+
+        // 3. Top Roof Panel (between side panels, y = totalH - t .. totalH)
+        if (s1 - t > s0 + t && totalH > t) {
+            addWallAlignedBox(
+                builder = bodyBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s0 + t, s1 = s1 - t,
+                y0 = totalH - t, y1 = totalH,
+                d0 = wallGap + backT, d1 = wallGap + totalD,
+            )
+        }
+
+        // 4. Bottom Floor Panel (elevated above plinth, y = plinthH .. plinthH + t)
+        if (s1 - t > s0 + t && totalH > plinthH + t * 2f) {
+            addWallAlignedBox(
+                builder = bodyBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s0 + t, s1 = s1 - t,
+                y0 = plinthH, y1 = plinthH + t,
+                d0 = wallGap + backT, d1 = wallGap + totalD,
+            )
+        }
+
+        // 5. Front Plinth / Toe-Kick (zocalo inferior at front edge, y = 0 .. plinthH)
+        if (s1 - t > s0 + t && plinthH > 2f) {
+            val plinthSetback = 12f
+            val dFront = (wallGap + totalD - plinthSetback).coerceAtLeast(wallGap + t)
+            addWallAlignedBox(
+                builder = bodyBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s0 + t, s1 = s1 - t,
+                y0 = 0f, y1 = plinthH,
+                d0 = (dFront - t).coerceAtLeast(wallGap), d1 = dFront,
+            )
+        }
+
+        // 6. Back Panel (espaldar claro contrastado dentro del contenedor)
+        if (s1 - t > s0 + t && totalH > plinthH + t) {
+            addWallAlignedBox(
+                builder = backBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s0 + t, s1 = s1 - t,
+                y0 = plinthH, y1 = totalH - t,
+                d0 = wallGap, d1 = wallGap + backT,
+            )
+        }
     }
 }

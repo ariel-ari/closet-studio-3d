@@ -33,6 +33,25 @@ data class Vec2Mm(
 )
 
 @Serializable
+data class ClosetContainerSpec(
+    val id: String,
+    val wall: WallIndex = WallIndex.NORTH,
+    val offsetMm: Float = 900f,
+    val widthMm: Float = 1800f,
+    val heightMm: Float = 2200f,
+    val depthMm: Float = 600f,
+    val panelThicknessMm: Float = 18f,
+    val plinthHeightMm: Float = 80f,
+    val backThicknessMm: Float = 6f,
+) {
+    init {
+        require(widthMm >= 0f) { "container width must be non-negative" }
+        require(heightMm >= 0f) { "container height must be non-negative" }
+        require(depthMm >= 0f) { "container depth must be non-negative" }
+    }
+}
+
+@Serializable
 data class DoorSpec(
     val wall: WallIndex = WallIndex.SOUTH,
     val offsetMm: Float = 1350f,
@@ -79,6 +98,7 @@ data class RoomSpec(
     val lockAngleBE: Boolean = false,
     val lockAngleCD: Boolean = false,
     val door: DoorSpec = DoorSpec(),
+    val containers: List<ClosetContainerSpec> = emptyList(),
 ) {
     init {
         require(clearWidthMm >= 0f) { "Room width must be non-negative, got $clearWidthMm" }
@@ -226,7 +246,10 @@ data class RoomSpec(
             keepCentered -> maxOffset / 2f
             else -> door.offsetMm.coerceIn(0f, maxOffset)
         }
-        return copy(door = door.copy(widthMm = updatedWidth, offsetMm = updatedOffset))
+        return copy(
+            door = door.copy(widthMm = updatedWidth, offsetMm = updatedOffset),
+            containers = containers.map { clampContainer(it) },
+        )
     }
 
     /** Resets the room to orthogonal 90° corners with B = C and A = South. */
@@ -805,5 +828,114 @@ data class RoomSpec(
             else -> door.offsetMm.coerceIn(0f, maxOffset)
         }
         return copy(door = door.copy(widthMm = clampedW, offsetMm = newOffset))
+    }
+
+    /** Length in mm of the specified [wall]. */
+    fun wallLengthMm(wall: WallIndex): Float = when (wall) {
+        WallIndex.NORTH -> wallAMm
+        WallIndex.EAST -> wallBMm
+        WallIndex.SOUTH -> wallSouthMm
+        WallIndex.WEST -> wallCMm
+    }
+
+    /**
+     * Maximum safe depth (in mm) for a closet container placed against [wall] so it never
+     * overflows or exceeds the adjacent walls.
+     */
+    fun maxContainerDepthForWall(wall: WallIndex): Float = when (wall) {
+        WallIndex.NORTH, WallIndex.SOUTH -> minOf(wallCMm, wallBMm).coerceAtLeast(100f)
+        WallIndex.WEST, WallIndex.EAST -> minOf(wallAMm, wallSouthMm).coerceAtLeast(100f)
+    }
+
+    /**
+     * Clamps [container] so its width, height, depth, and offset never overflow its host wall,
+     * the ceiling (`clearHeightMm`), or the adjacent walls (`maxContainerDepthForWall`).
+     */
+    fun clampContainer(container: ClosetContainerSpec): ClosetContainerSpec {
+        val maxW = wallLengthMm(container.wall).coerceAtLeast(0f)
+        val maxH = clearHeightMm.coerceAtLeast(0f)
+        val maxD = maxContainerDepthForWall(container.wall).coerceAtLeast(0f)
+
+        val clampedW = container.widthMm.coerceIn(0f, maxW)
+        val clampedH = container.heightMm.coerceIn(0f, maxH)
+        val clampedD = container.depthMm.coerceIn(0f, maxD)
+        val maxOff = (maxW - clampedW).coerceAtLeast(0f)
+        val clampedOff = container.offsetMm.coerceIn(0f, maxOff)
+
+        return container.copy(
+            widthMm = clampedW,
+            heightMm = clampedH,
+            depthMm = clampedD,
+            offsetMm = clampedOff,
+        )
+    }
+
+    /**
+     * Creates and adds a new [ClosetContainerSpec] with predefined dimensions (`1800 x 2200 x 600 mm`)
+     * centered on [wall] (or placed on the largest available segment if [wall] has the door),
+     * automatically clamped so it never overflows the wall or adjacent walls.
+     */
+    fun withAddedContainer(
+        wall: WallIndex,
+        id: String = "container_${containers.size + 1}_${wall.name.lowercase()}",
+        defaultWidthMm: Float = 1800f,
+        defaultHeightMm: Float = 2200f,
+        defaultDepthMm: Float = 600f,
+    ): RoomSpec {
+        val wallLen = wallLengthMm(wall).coerceAtLeast(0f)
+        val maxH = clearHeightMm.coerceAtLeast(0f)
+        val maxD = maxContainerDepthForWall(wall).coerceAtLeast(0f)
+
+        val w = defaultWidthMm.coerceAtMost(wallLen)
+        val h = defaultHeightMm.coerceAtMost(maxH)
+        val d = defaultDepthMm.coerceAtMost(maxD)
+        val centeredOffset = ((wallLen - w) * 0.5f).coerceAtLeast(0f)
+
+        val raw = ClosetContainerSpec(
+            id = id,
+            wall = wall,
+            offsetMm = centeredOffset,
+            widthMm = w,
+            heightMm = h,
+            depthMm = d,
+        )
+        val clamped = clampContainer(raw)
+        return copy(containers = containers + clamped)
+    }
+
+    /** Updates an existing container by [id], clamping its bounds to the room. */
+    fun withUpdatedContainer(id: String, transform: (ClosetContainerSpec) -> ClosetContainerSpec): RoomSpec {
+        return copy(
+            containers = containers.map { item ->
+                if (item.id == id) clampContainer(transform(item)) else clampContainer(item)
+            },
+        )
+    }
+
+    /** Duplicates an existing container by [id], shifting it slightly along the wall if space allows. */
+    fun withDuplicatedContainer(
+        sourceId: String,
+        newId: String = "container_${System.currentTimeMillis()}_${containers.size + 1}",
+    ): Pair<RoomSpec, String?> {
+        val source = containers.firstOrNull { it.id == sourceId } ?: return this to null
+        val wallLen = wallLengthMm(source.wall).coerceAtLeast(0f)
+        val maxOff = (wallLen - source.widthMm).coerceAtLeast(0f)
+        val shiftedOffset = if (source.offsetMm + source.widthMm + 40f <= wallLen) {
+            source.offsetMm + source.widthMm + 20f
+        } else {
+            (source.offsetMm + 120f).coerceIn(0f, maxOff)
+        }
+        val copyItem = clampContainer(
+            source.copy(
+                id = newId,
+                offsetMm = shiftedOffset,
+            ),
+        )
+        return copy(containers = containers + copyItem) to copyItem.id
+    }
+
+    /** Removes a container by [id]. */
+    fun withRemovedContainer(id: String): RoomSpec {
+        return copy(containers = containers.filterNot { it.id == id })
     }
 }

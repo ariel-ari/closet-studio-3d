@@ -54,9 +54,12 @@ fun RoomScene(
     yawAngleDegrees: Float,
     pitchAngleDegrees: Float = 0f,
     distance: Float = 2.45f,
+    selectedContainerId: String? = null,
     modifier: Modifier = Modifier,
 ) {
-    val parts = remember(room) { RoomGeometryBuilder.build(room) }
+    val parts = remember(room, selectedContainerId) {
+        RoomGeometryBuilder.build(room, selectedContainerId = selectedContainerId)
+    }
 
     val engine = rememberEngine()
     val materialLoader = rememberMaterialLoader(engine)
@@ -186,6 +189,24 @@ fun RoomScene(
                                 metallic = 0.95f,
                                 roughness = 0.1f,
                                 reflectance = 0.95f,
+                            )
+                            RoomSurface.CONTAINER_BODY -> materialLoader.createColorInstance(
+                                color = Color(0xFFC19668), // Warm unicolor oak/beech carcass frame (distinct from walls)
+                                metallic = 0.04f,
+                                roughness = 0.42f,
+                                reflectance = 0.52f,
+                            )
+                            RoomSurface.CONTAINER_SELECTED -> materialLoader.createColorInstance(
+                                color = Color(0xFFB58350), // Warm highlighted carcass when selected
+                                metallic = 0.08f,
+                                roughness = 0.36f,
+                                reflectance = 0.62f,
+                            )
+                            RoomSurface.CONTAINER_BACK -> materialLoader.createColorInstance(
+                                color = Color(0xFFF2E8D5), // Warm cream interior backing board (distinct from wall & frame)
+                                metallic = 0.02f,
+                                roughness = 0.55f,
+                                reflectance = 0.45f,
                             )
                         }
                     }

@@ -8,6 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -30,8 +32,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
@@ -40,9 +44,11 @@ import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DoorFront
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
@@ -53,12 +59,15 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -68,7 +77,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -96,6 +107,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.closetstudio.app.data.ProjectStorage
 import com.closetstudio.app.render.MM_TO_M
+import com.closetstudio.core.model.ClosetContainerSpec
 import com.closetstudio.core.model.DoorSpec
 import com.closetstudio.core.model.RoomSpec
 import com.closetstudio.core.model.SavedProject
@@ -140,6 +152,30 @@ private fun getWallName(wallStep: Int, lang: AppLanguage): String {
         2 -> tr(lang, "Pared B", "Wall B")
         else -> tr(lang, "Pared C", "Wall C")
     }
+}
+
+private fun wallIndexFromStep(wallStep: Int): WallIndex {
+    val wall = ((wallStep % 4) + 4) % 4
+    return when (wall) {
+        0 -> WallIndex.SOUTH
+        1 -> WallIndex.WEST
+        2 -> WallIndex.NORTH
+        else -> WallIndex.EAST
+    }
+}
+
+private fun stepFromWallIndex(wall: WallIndex): Int = when (wall) {
+    WallIndex.SOUTH -> 0
+    WallIndex.WEST -> 1
+    WallIndex.NORTH -> 2
+    WallIndex.EAST -> 3
+}
+
+private fun wallDisplayName(wall: WallIndex, lang: AppLanguage): String = when (wall) {
+    WallIndex.WEST -> tr(lang, "Pared A", "Wall A")
+    WallIndex.NORTH -> tr(lang, "Pared B", "Wall B")
+    WallIndex.EAST -> tr(lang, "Pared C", "Wall C")
+    WallIndex.SOUTH -> tr(lang, "Pared E-D", "Wall E-D")
 }
 
 /**
@@ -246,6 +282,8 @@ fun RoomScreen() {
     var showMyProjectsDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showUnitsColumn by remember { mutableStateOf(false) }
+    var isEditingContainerInPanel by remember { mutableStateOf(false) }
+    var selectedContainerId by remember { mutableStateOf<String?>(null) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var selectedCategoryKey by remember { mutableStateOf("CONTENT") }
@@ -712,6 +750,19 @@ fun RoomScreen() {
 
                     // 2. Interactive Body Area
                     if (!showDimensionsSheet) {
+                        val activeContainer = room.containers.firstOrNull { it.id == selectedContainerId }
+                            ?: room.containers.lastOrNull()
+                        LaunchedEffect(room.containers, selectedContainerId) {
+                            if (selectedContainerId != null && room.containers.none { it.id == selectedContainerId }) {
+                                selectedContainerId = room.containers.lastOrNull()?.id
+                                if (selectedContainerId == null) {
+                                    isEditingContainerInPanel = false
+                                }
+                            } else if (selectedContainerId == null && room.containers.isNotEmpty()) {
+                                selectedContainerId = room.containers.last().id
+                            }
+                        }
+
                         // Normal 3D Mode: Fullscreen RoomScene + navigation arrows + centrar
                         Box(modifier = Modifier.fillMaxSize()) {
                             RoomViewport(
@@ -722,6 +773,7 @@ fun RoomScreen() {
                                 yaw = yawAnim.value,
                                 pitch = pitchAnim.value,
                                 distance = distanceAnim.value,
+                                selectedContainerId = activeContainer?.id,
                                 onOrbit = { deltaX, deltaY ->
                                     coroutineScope.launch {
                                         yawAnim.snapTo(yawAnim.value - deltaX * 0.22f)
@@ -778,6 +830,106 @@ fun RoomScreen() {
                                     contentDescription = s.previousWall,
                                     modifier = Modifier.size(32.dp),
                                 )
+                            }
+
+                            // Floating Action Buttons for Selected Container (Edit ✏️, Duplicate ❐, Delete 🗑️)
+                            if (activeContainer != null) {
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .navigationBarsPadding()
+                                        .padding(start = 16.dp, bottom = 20.dp),
+                                ) {
+                                    // 1. Edit Button (✏️ opens right-side size inspector)
+                                    Surface(
+                                        onClick = {
+                                            selectedContainerId = activeContainer.id
+                                            isEditingContainerInPanel = true
+                                            showUnitsColumn = true
+                                        },
+                                        shape = CircleShape,
+                                        color = if (showUnitsColumn && isEditingContainerInPanel) {
+                                            Color(0xFF2C55B5)
+                                        } else {
+                                            Color(0xFFE5DFDA).copy(alpha = 0.95f)
+                                        },
+                                        border = BorderStroke(2.dp, Color(0xFF4355B9)),
+                                        shadowElevation = 6.dp,
+                                        modifier = Modifier.size(52.dp),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = s.editContainerDesc,
+                                                tint = if (showUnitsColumn && isEditingContainerInPanel) {
+                                                    Color.White
+                                                } else {
+                                                    Color(0xFF3949AB)
+                                                },
+                                                modifier = Modifier.size(24.dp),
+                                            )
+                                        }
+                                    }
+
+                                    // 2. Duplicate Button (❐)
+                                    Surface(
+                                        onClick = {
+                                            val (updatedRoom, newId) = room.withDuplicatedContainer(activeContainer.id)
+                                            updateRoom(updatedRoom)
+                                            if (newId != null) {
+                                                selectedContainerId = newId
+                                                coroutineScope.launch {
+                                                    snackbarHostState.showSnackbar(s.containerDuplicatedToast)
+                                                }
+                                            }
+                                        },
+                                        shape = CircleShape,
+                                        color = Color(0xFFE5DFDA).copy(alpha = 0.95f),
+                                        border = BorderStroke(2.dp, Color(0xFF4355B9)),
+                                        shadowElevation = 6.dp,
+                                        modifier = Modifier.size(52.dp),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = s.duplicateContainerDesc,
+                                                tint = Color(0xFF3949AB),
+                                                modifier = Modifier.size(23.dp),
+                                            )
+                                        }
+                                    }
+
+                                    // 3. Delete Button (🗑️)
+                                    Surface(
+                                        onClick = {
+                                            val updatedRoom = room.withRemovedContainer(activeContainer.id)
+                                            updateRoom(updatedRoom)
+                                            selectedContainerId = updatedRoom.containers.lastOrNull()?.id
+                                            if (updatedRoom.containers.isEmpty()) {
+                                                isEditingContainerInPanel = false
+                                            }
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar(s.containerDeletedToast)
+                                            }
+                                        },
+                                        shape = CircleShape,
+                                        color = Color(0xFFE5DFDA).copy(alpha = 0.95f),
+                                        border = BorderStroke(2.dp, Color(0xFF4355B9)),
+                                        shadowElevation = 6.dp,
+                                        modifier = Modifier.size(52.dp),
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.DeleteOutline,
+                                                contentDescription = s.deleteContainerDesc,
+                                                tint = Color(0xFF651FFF),
+                                                modifier = Modifier.size(25.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             // Right Navigation Button (>)
@@ -841,7 +993,10 @@ fun RoomScreen() {
                                     .padding(end = 20.dp, bottom = 20.dp),
                             ) {
                                 FloatingActionButton(
-                                    onClick = { showUnitsColumn = true },
+                                    onClick = {
+                                        isEditingContainerInPanel = false
+                                        showUnitsColumn = true
+                                    },
                                     shape = CircleShape,
                                     containerColor = Color(0xFF2C55B5),
                                     contentColor = Color.White,
@@ -856,9 +1011,9 @@ fun RoomScreen() {
 
                             // Right-Side Units / Components Column (partial width in both Tablet and Phone modes)
                             val unitsColumnWidth = if (isLandscape) {
-                                (screenWidth * 0.34f).coerceIn(280.dp, 360.dp)
+                                (screenWidth * 0.36f).coerceIn(290.dp, 380.dp)
                             } else {
-                                (screenWidth * 0.72f).coerceIn(240.dp, 310.dp)
+                                (screenWidth * 0.76f).coerceIn(255.dp, 330.dp)
                             }
 
                             androidx.compose.animation.AnimatedVisibility(
@@ -875,74 +1030,57 @@ fun RoomScreen() {
                                     .align(Alignment.CenterEnd)
                                     .fillMaxHeight(),
                             ) {
-                                Surface(
+                                RightSideUnitsAndInspectorColumn(
+                                    room = room,
+                                    appLanguage = appLanguage,
+                                    s = s,
+                                    currentWallStep = wallStep.intValue,
+                                    activeContainer = activeContainer,
+                                    isEditingContainer = isEditingContainerInPanel && activeContainer != null,
+                                    onToggleEditMode = { isEditingContainerInPanel = it },
+                                    onSelectContainer = { container ->
+                                        selectedContainerId = container.id
+                                        val targetStep = stepFromWallIndex(container.wall)
+                                        if (targetStep != wallStep.intValue) {
+                                            switchWall(targetStep)
+                                        }
+                                    },
+                                    onAddContainerOnCurrentWall = {
+                                        val targetWall = wallIndexFromStep(wallStep.intValue)
+                                        val newId = "container_${System.currentTimeMillis()}_${room.containers.size + 1}"
+                                        val updatedRoom = room.withAddedContainer(wall = targetWall, id = newId)
+                                        updateRoom(updatedRoom)
+                                        selectedContainerId = newId
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(
+                                                "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
+                                            )
+                                        }
+                                    },
+                                    onUpdateContainer = { id, transform ->
+                                        val updatedRoom = room.withUpdatedContainer(id, transform)
+                                        updateRoom(updatedRoom)
+                                    },
+                                    onDuplicateContainer = { id ->
+                                        val (updatedRoom, newId) = room.withDuplicatedContainer(id)
+                                        updateRoom(updatedRoom)
+                                        if (newId != null) {
+                                            selectedContainerId = newId
+                                        }
+                                    },
+                                    onDeleteContainer = { id ->
+                                        val updatedRoom = room.withRemovedContainer(id)
+                                        updateRoom(updatedRoom)
+                                        selectedContainerId = updatedRoom.containers.lastOrNull()?.id
+                                        if (updatedRoom.containers.isEmpty()) {
+                                            isEditingContainerInPanel = false
+                                        }
+                                    },
+                                    onClose = { showUnitsColumn = false },
                                     modifier = Modifier
                                         .width(unitsColumnWidth)
                                         .fillMaxHeight(),
-                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
-                                    tonalElevation = 6.dp,
-                                    shadowElevation = 12.dp,
-                                    shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
-                                ) {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .navigationBarsPadding()
-                                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = s.unitsPanelTitle,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFF2C55B5),
-                                                )
-                                                Text(
-                                                    text = s.unitsPanelSubtitle,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                )
-                                            }
-                                            IconButton(
-                                                onClick = { showUnitsColumn = false },
-                                                modifier = Modifier.size(34.dp),
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Close,
-                                                    contentDescription = s.closeButton,
-                                                )
-                                            }
-                                        }
-
-                                        HorizontalDivider()
-
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .weight(1f),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Surface(
-                                                shape = RoundedCornerShape(12.dp),
-                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                                modifier = Modifier.fillMaxWidth(),
-                                            ) {
-                                                Text(
-                                                    text = s.unitsPanelEmptyHint,
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.padding(16.dp),
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
+                                )
                             }
                         }
                     } else {
@@ -1404,6 +1542,7 @@ private fun RoomViewport(
     yaw: Float,
     pitch: Float,
     distance: Float,
+    selectedContainerId: String? = null,
     onOrbit: (Float, Float) -> Unit,
     onPan: (Float, Float) -> Unit,
     onZoom: (Float) -> Unit,
@@ -1425,7 +1564,531 @@ private fun RoomViewport(
             yawAngleDegrees = yaw,
             pitchAngleDegrees = pitch,
             distance = distance,
+            selectedContainerId = selectedContainerId,
         )
+    }
+}
+
+@Composable
+private fun RightSideUnitsAndInspectorColumn(
+    room: RoomSpec,
+    appLanguage: AppLanguage,
+    s: UiStrings,
+    currentWallStep: Int,
+    activeContainer: ClosetContainerSpec?,
+    isEditingContainer: Boolean,
+    onToggleEditMode: (Boolean) -> Unit,
+    onSelectContainer: (ClosetContainerSpec) -> Unit,
+    onAddContainerOnCurrentWall: () -> Unit,
+    onUpdateContainer: (String, (ClosetContainerSpec) -> ClosetContainerSpec) -> Unit,
+    onDuplicateContainer: (String) -> Unit,
+    onDeleteContainer: (String) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        tonalElevation = 6.dp,
+        shadowElevation = 12.dp,
+        shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (isEditingContainer && activeContainer != null) {
+                            s.editContainerTitle
+                        } else {
+                            s.unitsPanelTitle
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2C55B5),
+                    )
+                    Text(
+                        text = if (isEditingContainer && activeContainer != null) {
+                            s.editContainerSubtitle
+                        } else {
+                            s.unitsPanelSubtitle
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                if (isEditingContainer && activeContainer != null) {
+                    TextButton(onClick = { onToggleEditMode(false) }) {
+                        Text(
+                            text = s.backToCatalogButton,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(34.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = s.closeButton,
+                    )
+                }
+            }
+
+            HorizontalDivider()
+
+            if (isEditingContainer && activeContainer != null) {
+                // --- CONTAINER SIZE & POSITION EDITOR PANEL ---
+                val clamped = room.clampContainer(activeContainer)
+                val maxW = room.wallLengthMm(clamped.wall).coerceAtLeast(100f)
+                val maxH = room.clearHeightMm.coerceAtLeast(100f)
+                val maxD = room.maxContainerDepthForWall(clamped.wall).coerceAtLeast(100f)
+                val maxOff = (maxW - clamped.widthMm).coerceAtLeast(0f)
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // Wall Selector Chips (A, B, C, E-D)
+                    Text(
+                        text = s.containerWallLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        val walls = listOf(
+                            WallIndex.WEST to "A",
+                            WallIndex.NORTH to "B",
+                            WallIndex.EAST to "C",
+                            WallIndex.SOUTH to "E-D",
+                        )
+                        walls.forEach { (wIdx, label) ->
+                            val selected = clamped.wall == wIdx
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    onUpdateContainer(clamped.id) { current ->
+                                        val newWallLen = room.wallLengthMm(wIdx).coerceAtLeast(0f)
+                                        val newW = current.widthMm.coerceAtMost(newWallLen)
+                                        current.copy(
+                                            wall = wIdx,
+                                            widthMm = newW,
+                                            offsetMm = ((newWallLen - newW) * 0.5f).coerceAtLeast(0f),
+                                        )
+                                    }
+                                    onSelectContainer(clamped.copy(wall = wIdx))
+                                },
+                                label = { Text(label, fontWeight = FontWeight.Bold) },
+                            )
+                        }
+                    }
+
+                    // 1. Width (Ancho)
+                    ContainerDimensionControlCard(
+                        label = s.containerWidthLabel,
+                        valueMm = clamped.widthMm,
+                        minMm = 200f.coerceAtMost(maxW),
+                        maxMm = maxW,
+                        onValueChange = { newW ->
+                            onUpdateContainer(clamped.id) { it.copy(widthMm = newW) }
+                        },
+                    )
+
+                    // 2. Height (Alto)
+                    ContainerDimensionControlCard(
+                        label = s.containerHeightLabel,
+                        valueMm = clamped.heightMm,
+                        minMm = 300f.coerceAtMost(maxH),
+                        maxMm = maxH,
+                        onValueChange = { newH ->
+                            onUpdateContainer(clamped.id) { it.copy(heightMm = newH) }
+                        },
+                    )
+
+                    // 3. Depth (Profundidad — bounded by adjacent walls)
+                    ContainerDimensionControlCard(
+                        label = s.containerDepthLabel,
+                        valueMm = clamped.depthMm,
+                        minMm = 200f.coerceAtMost(maxD),
+                        maxMm = maxD,
+                        onValueChange = { newD ->
+                            onUpdateContainer(clamped.id) { it.copy(depthMm = newD) }
+                        },
+                    )
+
+                    // 4. Offset along Wall (Posición en la pared + Botón Centrar)
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = s.containerOffsetLabel,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                OutlinedButton(
+                                    onClick = {
+                                        onUpdateContainer(clamped.id) {
+                                            it.copy(offsetMm = ((maxW - it.widthMm) * 0.5f).coerceAtLeast(0f))
+                                        }
+                                    },
+                                ) {
+                                    Text(s.centerOnWallButton, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                            Text(
+                                text = "${clamped.offsetMm.roundToInt()} mm / max ${maxOff.roundToInt()} mm",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF2C55B5),
+                            )
+                            Slider(
+                                value = clamped.offsetMm.coerceIn(0f, maxOff.coerceAtLeast(1f)),
+                                onValueChange = { newOff ->
+                                    onUpdateContainer(clamped.id) { it.copy(offsetMm = newOff) }
+                                },
+                                valueRange = 0f..maxOff.coerceAtLeast(1f),
+                                enabled = maxOff > 1f,
+                            )
+                        }
+                    }
+
+                    // Action row inside editor (Duplicate & Delete)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { onDuplicateContainer(clamped.id) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(tr(appLanguage, "Duplicar", "Duplicate"), style = MaterialTheme.typography.labelMedium)
+                        }
+                        OutlinedButton(
+                            onClick = { onDeleteContainer(clamped.id) },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(tr(appLanguage, "Eliminar", "Delete"), style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            } else {
+                // --- CATALOG VIEW: 1. CLOSET CONTAINER (CASCO / CAJÓN BASE) ---
+                val currentWall = wallIndexFromStep(currentWallStep)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                        ),
+                        border = BorderStroke(1.5.dp, Color(0xFF2C55B5).copy(alpha = 0.35f)),
+                        onClick = onAddContainerOnCurrentWall,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                // Custom 2D/3D Vector Preview of the Closet Container (Carcass)
+                                ClosetContainerPreviewIcon(
+                                    modifier = Modifier.size(64.dp),
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = s.containerUnitTitle,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        text = s.containerUnitSubtitle,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+
+                            Button(
+                                onClick = onAddContainerOnCurrentWall,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C55B5)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "${s.addContainerButton} (${wallDisplayName(currentWall, appLanguage)})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+
+                    // List of already placed containers in the room
+                    if (room.containers.isNotEmpty()) {
+                        HorizontalDivider()
+                        Text(
+                            text = "${s.placedContainersSection} (${room.containers.size})",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2C55B5),
+                        )
+
+                        room.containers.forEachIndexed { idx, item ->
+                            val isSelected = activeContainer?.id == item.id
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) {
+                                        Color(0xFF2C55B5).copy(alpha = 0.14f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f)
+                                    },
+                                ),
+                                border = if (isSelected) BorderStroke(1.5.dp, Color(0xFF2C55B5)) else null,
+                                onClick = { onSelectContainer(item) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "#${idx + 1} • ${wallDisplayName(item.wall, appLanguage)}",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) Color(0xFF2C55B5) else MaterialTheme.colorScheme.onSurface,
+                                        )
+                                        Text(
+                                            text = "${item.widthMm.roundToInt()} × ${item.heightMm.roundToInt()} × ${item.depthMm.roundToInt()} mm",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        IconButton(
+                                            onClick = {
+                                                onSelectContainer(item)
+                                                onToggleEditMode(true)
+                                            },
+                                            modifier = Modifier.size(32.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = s.editContainerDesc,
+                                                tint = Color(0xFF2C55B5),
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { onDuplicateContainer(item.id) },
+                                            modifier = Modifier.size(32.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ContentCopy,
+                                                contentDescription = s.duplicateContainerDesc,
+                                                tint = Color(0xFF2C55B5),
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { onDeleteContainer(item.id) },
+                                            modifier = Modifier.size(32.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.DeleteOutline,
+                                                contentDescription = s.deleteContainerDesc,
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = s.unitsPanelEmptyHint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(14.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContainerDimensionControlCard(
+    label: String,
+    valueMm: Float,
+    minMm: Float,
+    maxMm: Float,
+    onValueChange: (Float) -> Unit,
+) {
+    val safeMax = maxMm.coerceAtLeast(minMm + 1f)
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "${valueMm.roundToInt()} mm (máx ${maxMm.roundToInt()})",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF2C55B5),
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                listOf(-100f, -25f, +25f, +100f).forEach { delta ->
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(1.dp, Color(0xFF2C55B5).copy(alpha = 0.3f)),
+                        onClick = {
+                            onValueChange((valueMm + delta).coerceIn(minMm, maxMm))
+                        },
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.padding(vertical = 6.dp),
+                        ) {
+                            Text(
+                                text = if (delta > 0) "+${delta.toInt()}" else "${delta.toInt()}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2C55B5),
+                            )
+                        }
+                    }
+                }
+            }
+
+            Slider(
+                value = valueMm.coerceIn(minMm, safeMax),
+                onValueChange = { onValueChange(it.coerceIn(minMm, maxMm)) },
+                valueRange = minMm..safeMax,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClosetContainerPreviewIcon(modifier: Modifier = Modifier) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color(0xFFEDE6DC),
+        border = BorderStroke(1.dp, Color(0xFFC19668)),
+        modifier = modifier,
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+            val w = size.width
+            val h = size.height
+            val frameT = w * 0.11f
+            val plinthH = h * 0.12f
+
+            // Back panel (cream)
+            drawRect(
+                color = Color(0xFFF5ECD8),
+                topLeft = Offset(frameT, frameT),
+                size = androidx.compose.ui.geometry.Size(w - frameT * 2f, h - frameT - plinthH),
+            )
+            // Outer frame (left, right, top, bottom floor, plinth)
+            val wood = Color(0xFFC19668)
+            val woodDark = Color(0xFF9C7348)
+            // Left panel
+            drawRect(color = wood, topLeft = Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(frameT, h))
+            // Right panel
+            drawRect(color = wood, topLeft = Offset(w - frameT, 0f), size = androidx.compose.ui.geometry.Size(frameT, h))
+            // Top panel
+            drawRect(color = wood, topLeft = Offset(frameT, 0f), size = androidx.compose.ui.geometry.Size(w - frameT * 2f, frameT))
+            // Plinth + bottom shelf
+            drawRect(
+                color = woodDark,
+                topLeft = Offset(frameT, h - plinthH - frameT * 0.7f),
+                size = androidx.compose.ui.geometry.Size(w - frameT * 2f, plinthH + frameT * 0.7f),
+            )
+        }
     }
 }
 

@@ -47,4 +47,29 @@ class RoomGeometryTest {
         assertTrue(bounds.max.x >= 4000f)
         assertTrue(bounds.max.z >= 4000f)
     }
+
+    @Test
+    fun `closet container clamps to host wall, room height, and adjacent wall depth and builds 3D carcass`() {
+        val room = RoomSpec(
+            clearWidthMm = 2000f,
+            clearHeightMm = 2100f,
+            clearDepthMm = 500f,
+        ).withAddedContainer(
+            wall = com.closetstudio.core.model.WallIndex.NORTH,
+            id = "c1",
+            defaultWidthMm = 2500f,  // exceeds wall width 2000f
+            defaultHeightMm = 2400f, // exceeds room height 2100f
+            defaultDepthMm = 700f,   // exceeds adjacent wall depth 500f
+        )
+
+        val placed = room.containers.single()
+        assertMm(2000f, placed.widthMm)
+        assertMm(2100f, placed.heightMm)
+        assertMm(500f, placed.depthMm)
+        assertMm(0f, placed.offsetMm)
+
+        val parts = RoomGeometryBuilder.build(room, selectedContainerId = "c1")
+        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SELECTED })
+        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_BACK })
+    }
 }
