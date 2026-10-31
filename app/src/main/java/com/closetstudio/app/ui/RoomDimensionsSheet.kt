@@ -740,6 +740,48 @@ private fun DoorWallInspectorCard(
                 }
             }
 
+            // Total Wall E-D Direct Input & Slider
+            DirectNumericInputRow(
+                label = "Total Pared E-D (mm)",
+                currentValueText = room.doorWallLengthMm.roundToInt().toString(),
+                unitSuffix = "mm",
+                enabled = !room.lockWallSouth,
+                onCommitValue = { parsed ->
+                    if (!room.lockWallSouth) {
+                        onRoomChange(room.withWallSouth(parsed.coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                    }
+                },
+                trailingButtons = {
+                    StepButton("-100", enabled = !room.lockWallSouth) {
+                        onRoomChange(room.withWallSouth((room.doorWallLengthMm - 100f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                    }
+                    StepButton("-25", enabled = !room.lockWallSouth) {
+                        onRoomChange(room.withWallSouth((room.doorWallLengthMm - 25f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                    }
+                    StepButton("+25", enabled = !room.lockWallSouth) {
+                        onRoomChange(room.withWallSouth((room.doorWallLengthMm + 25f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                    }
+                    StepButton("+100", enabled = !room.lockWallSouth) {
+                        onRoomChange(room.withWallSouth((room.doorWallLengthMm + 100f).coerceIn(1500f, 6000f), keepDoorCentered = doorCentered))
+                    }
+                },
+            )
+
+            DimensionSlider(
+                label = "Deslizar Total Pared E-D",
+                valueMm = room.doorWallLengthMm,
+                rangeMm = 1500f..6000f,
+                stepMm = 25f,
+                enabled = !room.lockWallSouth,
+                onValueChange = { newTotal ->
+                    if (!room.lockWallSouth) {
+                        onRoomChange(room.withWallSouth(newTotal, keepDoorCentered = doorCentered))
+                    }
+                },
+            )
+
+            HorizontalDivider()
+
             // Door Width Lock + Direct Input section
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -819,69 +861,160 @@ private fun DoorWallInspectorCard(
                 },
             )
 
-            val maxSide = room.maxDoorOffset().coerceAtLeast(100f)
-            val segmentsEnabled = !room.lockWallSouth
+            HorizontalDivider()
 
-            // Side-by-side Direct Numeric Inputs for Tramo E (left of door) and Tramo D (right of door)
+            val maxSide = if (room.lockSegmentE || room.lockSegmentD) {
+                3500f
+            } else {
+                room.maxDoorOffset().coerceAtLeast(100f)
+            }
+            val canEditE = !room.lockSegmentD && !(room.lockSegmentE && room.lockWallSouth)
+            val canEditD = !room.lockSegmentE && !(room.lockSegmentD && room.lockWallSouth)
+
+            // Tramo E Lock + Header
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    DirectNumericInputRow(
-                        label = "Tramo E (mm)",
-                        currentValueText = room.segmentDMm.roundToInt().toString(),
-                        unitSuffix = "mm",
-                        enabled = segmentsEnabled,
-                        onCommitValue = { parsed ->
-                            if (segmentsEnabled) {
-                                if (doorCentered) onDoorCenteredChange(false)
-                                onRoomChange(room.withSegmentD(parsed.coerceIn(0f, maxSide)))
-                            }
-                        },
-                        trailingButtons = {},
-                    )
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (room.lockSegmentD) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                    shadowElevation = 1.dp,
+                    onClick = { onRoomChange(room.copy(lockSegmentD = !room.lockSegmentD)) },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (room.lockSegmentD) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = if (room.lockSegmentD) "Tramo E bloqueado" else "Tramo E adaptable",
+                            tint = if (room.lockSegmentD) {
+                                Color(0xFF2C55B5)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
-                Box(modifier = Modifier.weight(1f)) {
-                    DirectNumericInputRow(
-                        label = "Tramo D (mm)",
-                        currentValueText = room.segmentEMm.roundToInt().toString(),
-                        unitSuffix = "mm",
-                        enabled = segmentsEnabled,
-                        onCommitValue = { parsed ->
-                            if (segmentsEnabled) {
-                                if (doorCentered) onDoorCenteredChange(false)
-                                onRoomChange(room.withSegmentE(parsed.coerceIn(0f, maxSide)))
-                            }
-                        },
-                        trailingButtons = {},
-                    )
-                }
+                WallBadge(letter = "E")
+                Text(
+                    text = "Tramo E",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
 
+            DirectNumericInputRow(
+                label = "Tramo E (mm)",
+                currentValueText = room.segmentDMm.roundToInt().toString(),
+                unitSuffix = "mm",
+                enabled = canEditE,
+                onCommitValue = { parsed ->
+                    if (canEditE) {
+                        if (doorCentered) onDoorCenteredChange(false)
+                        onRoomChange(room.withSegmentD(parsed.coerceIn(0f, maxSide)))
+                    }
+                },
+                trailingButtons = {
+                    StepButton("-50", enabled = canEditE) {
+                        if (doorCentered) onDoorCenteredChange(false)
+                        onRoomChange(room.withSegmentD((room.segmentDMm - 50f).coerceIn(0f, maxSide)))
+                    }
+                    StepButton("+50", enabled = canEditE) {
+                        if (doorCentered) onDoorCenteredChange(false)
+                        onRoomChange(room.withSegmentD((room.segmentDMm + 50f).coerceIn(0f, maxSide)))
+                    }
+                },
+            )
+
             DimensionSlider(
-                label = "Deslizar Tramo E (D se adapta solo)",
+                label = if (room.lockSegmentE) "Deslizar Tramo E (agranda el total)" else "Deslizar Tramo E (D se adapta solo)",
                 valueMm = room.segmentDMm,
                 rangeMm = 0f..maxSide,
                 stepMm = 25f,
-                enabled = segmentsEnabled,
+                enabled = canEditE,
                 onValueChange = { newE ->
-                    if (segmentsEnabled) {
+                    if (canEditE) {
                         if (doorCentered) onDoorCenteredChange(false)
                         onRoomChange(room.withSegmentD(newE))
                     }
                 },
             )
 
+            HorizontalDivider()
+
+            // Tramo D Lock + Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (room.lockSegmentE) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    },
+                    shadowElevation = 1.dp,
+                    onClick = { onRoomChange(room.copy(lockSegmentE = !room.lockSegmentE)) },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (room.lockSegmentE) Icons.Default.Lock else Icons.Default.LockOpen,
+                            contentDescription = if (room.lockSegmentE) "Tramo D bloqueado" else "Tramo D adaptable",
+                            tint = if (room.lockSegmentE) {
+                                Color(0xFF2C55B5)
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                WallBadge(letter = "D")
+                Text(
+                    text = "Tramo D",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+
+            DirectNumericInputRow(
+                label = "Tramo D (mm)",
+                currentValueText = room.segmentEMm.roundToInt().toString(),
+                unitSuffix = "mm",
+                enabled = canEditD,
+                onCommitValue = { parsed ->
+                    if (canEditD) {
+                        if (doorCentered) onDoorCenteredChange(false)
+                        onRoomChange(room.withSegmentE(parsed.coerceIn(0f, maxSide)))
+                    }
+                },
+                trailingButtons = {
+                    StepButton("-50", enabled = canEditD) {
+                        if (doorCentered) onDoorCenteredChange(false)
+                        onRoomChange(room.withSegmentE((room.segmentEMm - 50f).coerceIn(0f, maxSide)))
+                    }
+                    StepButton("+50", enabled = canEditD) {
+                        if (doorCentered) onDoorCenteredChange(false)
+                        onRoomChange(room.withSegmentE((room.segmentEMm + 50f).coerceIn(0f, maxSide)))
+                    }
+                },
+            )
+
             DimensionSlider(
-                label = "Deslizar Tramo D (E se adapta solo)",
+                label = if (room.lockSegmentD) "Deslizar Tramo D (agranda el total)" else "Deslizar Tramo D (E se adapta solo)",
                 valueMm = room.segmentEMm,
                 rangeMm = 0f..maxSide,
                 stepMm = 25f,
-                enabled = segmentsEnabled,
+                enabled = canEditD,
                 onValueChange = { newD ->
-                    if (segmentsEnabled) {
+                    if (canEditD) {
                         if (doorCentered) onDoorCenteredChange(false)
                         onRoomChange(room.withSegmentE(newD))
                     }

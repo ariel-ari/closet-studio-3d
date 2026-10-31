@@ -63,6 +63,8 @@ data class RoomSpec(
     val lockWallB: Boolean = false,
     val lockWallC: Boolean = false,
     val lockWallSouth: Boolean = false,
+    val lockSegmentD: Boolean = false,
+    val lockSegmentE: Boolean = false,
     val lockAngleAC: Boolean = true,
     val lockAngleAB: Boolean = true,
     val lockAngleBE: Boolean = false,
@@ -184,12 +186,15 @@ data class RoomSpec(
      * - If `door.lockWidth == true` (default): `door.widthMm` stays strictly invariant (`🔒`)
      *   and does NOT grow or shrink with the walls; only segments D and E absorb the wall length change.
      * - If `door.lockWidth == false` (`🔓`): `door.widthMm` scales proportionally with the door wall length.
+     * - If `lockSegmentD == true`: `segmentDMm` (UI Tramo E) stays fixed while `segmentEMm` absorbs the change.
+     * - If `lockSegmentE == true`: `segmentEMm` (UI Tramo D) stays fixed while `segmentDMm` absorbs the change.
      */
     private fun applyDoorAdaptation(
         keepCentered: Boolean,
         previousWallLengthMm: Float = doorWallLengthMm,
     ): RoomSpec {
         val currentWallLen = doorWallLengthMm
+        val prevSegmentEMm = (previousWallLengthMm - door.offsetMm - door.widthMm).coerceAtLeast(0f)
         val updatedWidth = if (door.lockWidth || previousWallLengthMm <= 1f) {
             door.widthMm
         } else {
@@ -198,10 +203,11 @@ data class RoomSpec(
                 .coerceIn(500f, (currentWallLen - 200f).coerceAtLeast(500f))
         }
         val maxOffset = (currentWallLen - updatedWidth).coerceAtLeast(0f)
-        val updatedOffset = if (keepCentered) {
-            maxOffset / 2f
-        } else {
-            door.offsetMm.coerceIn(0f, maxOffset)
+        val updatedOffset = when {
+            lockSegmentD && !lockSegmentE -> door.offsetMm.coerceIn(0f, maxOffset)
+            lockSegmentE && !lockSegmentD -> (currentWallLen - updatedWidth - prevSegmentEMm).coerceIn(0f, maxOffset)
+            keepCentered -> maxOffset / 2f
+            else -> door.offsetMm.coerceIn(0f, maxOffset)
         }
         return copy(door = door.copy(widthMm = updatedWidth, offsetMm = updatedOffset))
     }
@@ -333,8 +339,19 @@ data class RoomSpec(
         val radAB = Math.toRadians(angleABDeg.toDouble()).toFloat()
         val dz = se.z - sw.z
         val dx = sqrt((clampedS * clampedS - dz * dz).coerceAtLeast(250_000f))
-        val newA = (sw.x + dx + wallBMm * cos(radAB)).coerceIn(1500f, 6000f)
-        return copy(clearWidthMm = newA).applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
+        return if (!lockWallA) {
+            val newA = (sw.x + dx + wallBMm * cos(radAB)).coerceIn(1500f, 6000f)
+            copy(clearWidthMm = newA).applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
+        } else if (!lockWallB) {
+            val sinAB = sin(radAB).coerceAtLeast(0.2f)
+            val newDx = se.x - sw.x
+            val targetDz = sqrt((clampedS * clampedS - newDx * newDx).coerceAtLeast(0f))
+            val newB = ((sw.z + targetDz) / sinAB).coerceIn(1500f, 6000f)
+            copy(wallBMm = newB).applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
+        } else {
+            val newA = (sw.x + dx + wallBMm * cos(radAB)).coerceIn(1500f, 6000f)
+            copy(clearWidthMm = newA).applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
+        }
     }
 
     /**
@@ -607,27 +624,66 @@ data class RoomSpec(
         }
     }
 
-    /** Updates segment D length, adapting segment E so door width is immutable. */
+    /**
+     * Updates segment D length (UI Tramo E):
+     * - If `lockSegmentE` (UI Tramo D) is locked and `!lockWallSouth`: keeps `segmentEMm` fixed and resizes the total wall!
+     * - Otherwise: adapts `segmentEMm` within the current wall length so door width is immutable.
+     */
     fun withSegmentD(newDMm: Float): RoomSpec {
+        if (lockSegmentD) return this
+        if (lockSegmentE && !lockWallSouth) {
+            val clampedD = newDMm.coerceIn(0f, 4500f)
+            val fixedE = segmentEMm
+            val targetTotal = (clampedD + door.widthMm + fixedE).coerceIn(1500f, 6000f)
+            val resized = withWallSouth(targetTotal, keepDoorCentered = false)
+            val maxOff = resized.maxDoorOffset()
+            return resized.copy(door = resized.door.copy(offsetMm = (resized.doorWallLengthMm - resized.door.widthMm - fixedE).coerceIn(0f, maxOff)))
+        }
+        if (lockSegmentE && lockWallSouth) return this
         val clampedD = newDMm.coerceIn(0f, maxDoorOffset())
         return copy(door = door.copy(offsetMm = clampedD))
     }
 
-    /** Updates segment E length, adapting segment D so door width is immutable. */
+    /**
+     * Updates segment E length (UI Tramo D):
+     * - If `lockSegmentD` (UI Tramo E) is locked and `!lockWallSouth`: keeps `segmentDMm` fixed and resizes the total wall!
+     * - Otherwise: adapts `segmentDMm` within the current wall length so door width is immutable.
+     */
     fun withSegmentE(newEMm: Float): RoomSpec {
+        if (lockSegmentE) return this
+        if (lockSegmentD && !lockWallSouth) {
+            val clampedE = newEMm.coerceIn(0f, 4500f)
+            val fixedD = segmentDMm
+            val targetTotal = (fixedD + door.widthMm + clampedE).coerceIn(1500f, 6000f)
+            val resized = withWallSouth(targetTotal, keepDoorCentered = false)
+            val maxOff = resized.maxDoorOffset()
+            return resized.copy(door = resized.door.copy(offsetMm = fixedD.coerceIn(0f, maxOff)))
+        }
+        if (lockSegmentD && lockWallSouth) return this
         val newD = (doorWallLengthMm - door.widthMm - newEMm).coerceIn(0f, maxDoorOffset())
         return copy(door = door.copy(offsetMm = newD))
     }
 
-    /** Updates door width while keeping it valid on the wall. */
+    /** Updates door width while keeping it valid on the wall (or resizing the wall if both segments D & E are locked). */
     fun withDoorWidth(newWidthMm: Float, keepCentered: Boolean = false): RoomSpec {
+        if (door.lockWidth) return this
+        if (lockSegmentD && lockSegmentE && !lockWallSouth) {
+            val clampedW = newWidthMm.coerceIn(500f, 2000f)
+            val fixedD = segmentDMm
+            val fixedE = segmentEMm
+            val targetTotal = (fixedD + clampedW + fixedE).coerceIn(1500f, 6000f)
+            val resized = withWallSouth(targetTotal, keepDoorCentered = false)
+            val maxOff = (resized.doorWallLengthMm - clampedW).coerceAtLeast(0f)
+            return resized.copy(door = resized.door.copy(widthMm = clampedW, offsetMm = fixedD.coerceIn(0f, maxOff)))
+        }
         val maxW = doorWallLengthMm.coerceAtLeast(100f)
         val clampedW = newWidthMm.coerceIn(500f, maxW)
         val maxOffset = (doorWallLengthMm - clampedW).coerceAtLeast(0f)
-        val newOffset = if (keepCentered) {
-            maxOffset / 2f
-        } else {
-            door.offsetMm.coerceIn(0f, maxOffset)
+        val newOffset = when {
+            lockSegmentD && !lockSegmentE -> door.offsetMm.coerceIn(0f, maxOffset)
+            lockSegmentE && !lockSegmentD -> (doorWallLengthMm - clampedW - segmentEMm).coerceIn(0f, maxOffset)
+            keepCentered -> maxOffset / 2f
+            else -> door.offsetMm.coerceIn(0f, maxOffset)
         }
         return copy(door = door.copy(widthMm = clampedW, offsetMm = newOffset))
     }

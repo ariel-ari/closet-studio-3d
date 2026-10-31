@@ -530,7 +530,7 @@ fun RoomFloorplan2D(
                 text = "${room.segmentDMm.roundToInt()}",
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
-                isLocked = room.lockWallSouth,
+                isLocked = room.lockSegmentD || room.lockWallSouth,
             )
             drawBadgePill(
                 center = midDoor,
@@ -538,7 +538,7 @@ fun RoomFloorplan2D(
                 text = "${room.door.widthMm.roundToInt()} (Total: ${room.wallSouthMm.roundToInt()})",
                 badgeColor = Color(0xFF8B5A2B),
                 isSelected = isSouthSelected,
-                isLocked = room.door.lockWidth,
+                isLocked = room.door.lockWidth || room.lockWallSouth,
                 isDoorIcon = true,
             )
             drawBadgePill(
@@ -547,7 +547,7 @@ fun RoomFloorplan2D(
                 text = "${room.segmentEMm.roundToInt()}",
                 badgeColor = Color(0xFF2C55B5),
                 isSelected = isSouthSelected,
-                isLocked = room.lockWallSouth,
+                isLocked = room.lockSegmentE || room.lockWallSouth,
             )
         }
 

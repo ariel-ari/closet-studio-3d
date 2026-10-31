@@ -183,4 +183,23 @@ class RoomSpecTest {
         assertTrue(angled.wallCMm < 3600f)
         assertEquals(96f, angled.angleCDDeg, 0.2f)
     }
+
+    @Test
+    fun `locking segment D or E preserves locked segment and grows total wall when unlocked segment is edited`() {
+        val room = RoomSpec(
+            clearWidthMm = 3600f,
+            clearDepthMm = 3600f,
+            lockSegmentE = true, // UI Tramo D locked at 1350 mm
+            door = DoorSpec(widthMm = 900f, offsetMm = 1350f, lockWidth = true),
+        )
+        // Direct attempt to edit locked segment E must be ignored
+        assertEquals(1350f, room.withSegmentE(2000f).segmentEMm, 0.01f)
+
+        // Editing unlocked segment D (UI Tramo E) to 1650 mm must keep segment E at 1350 mm and grow total wall to 3900 mm!
+        val grown = room.withSegmentD(1650f)
+        assertEquals(1650f, grown.segmentDMm, 0.5f)
+        assertEquals(1350f, grown.segmentEMm, 0.5f)
+        assertEquals(900f, grown.door.widthMm, 0.01f)
+        assertEquals(3900f, grown.doorWallLengthMm, 1f)
+    }
 }
