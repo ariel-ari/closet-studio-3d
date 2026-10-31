@@ -806,6 +806,19 @@ private fun DoorWallInspectorCard(
                 },
             )
 
+            DimensionSlider(
+                label = "Deslizar Puerta",
+                valueMm = room.door.widthMm,
+                rangeMm = 600f..1400f,
+                stepMm = 25f,
+                enabled = !room.door.lockWidth,
+                onValueChange = { newW ->
+                    if (!room.door.lockWidth) {
+                        onRoomChange(room.withDoorWidth(newW, keepCentered = doorCentered))
+                    }
+                },
+            )
+
             val maxSide = room.maxDoorOffset().coerceAtLeast(100f)
             val segmentsEnabled = !room.lockWallSouth
 
@@ -857,6 +870,20 @@ private fun DoorWallInspectorCard(
                     if (segmentsEnabled) {
                         if (doorCentered) onDoorCenteredChange(false)
                         onRoomChange(room.withSegmentD(newE))
+                    }
+                },
+            )
+
+            DimensionSlider(
+                label = "Deslizar Tramo D (E se adapta solo)",
+                valueMm = room.segmentEMm,
+                rangeMm = 0f..maxSide,
+                stepMm = 25f,
+                enabled = segmentsEnabled,
+                onValueChange = { newD ->
+                    if (segmentsEnabled) {
+                        if (doorCentered) onDoorCenteredChange(false)
+                        onRoomChange(room.withSegmentE(newD))
                     }
                 },
             )
