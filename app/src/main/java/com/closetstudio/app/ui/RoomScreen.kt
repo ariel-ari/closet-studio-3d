@@ -534,12 +534,18 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
     onTap: (tapPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Unit = { _, _, _ -> },
     canDragPartitionAt: (downPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Boolean = { _, _, _ -> false },
     onDragPartition: (pointerPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Unit = { _, _, _ -> },
+    isPanelOpen: Boolean = false,
+    panelWidthPx: Float = 0f,
 ) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
         val downPos = down.position
         val vw = size.width.toFloat().coerceAtLeast(1f)
         val vh = size.height.toFloat().coerceAtLeast(1f)
+        if (isPanelOpen && downPos.x >= (vw - panelWidthPx - 10f)) {
+            // Touch started inside the open catalog / inspector panel: ignore in 3D viewport
+            return@awaitEachGesture
+        }
         val isPartitionDrag = canDragPartitionAt(downPos, vw, vh)
         var lastSinglePos = downPos
         var totalMoveDistance = 0f
@@ -972,6 +978,7 @@ fun RoomScreen() {
     }
     var showUnitsColumn by remember { mutableStateOf(false) }
     var isEditingContainerInPanel by remember { mutableStateOf(false) }
+    var isEditingPartitionInPanel by remember { mutableStateOf(false) }
     var selectedContainerId by remember { mutableStateOf<String?>(null) }
     var selectedPartitionId by remember { mutableStateOf<String?>(null) }
     var selectedPartitionIsVertical by remember { mutableStateOf(true) }
@@ -1744,6 +1751,12 @@ fun RoomScreen() {
                     // 2. Interactive Body Area
                     if (!showDimensionsSheet) {
                         val activeContainer = room.containers.firstOrNull { it.id == selectedContainerId }
+                        val unitsColumnWidth = if (isLandscape) {
+                            (screenWidth * 0.36f).coerceIn(290.dp, 380.dp)
+                        } else {
+                            (screenWidth * 0.76f).coerceIn(255.dp, 330.dp)
+                        }
+                        val unitsColumnWidthPx = with(LocalDensity.current) { unitsColumnWidth.toPx() }
                         var isDraggingUnit by remember { mutableStateOf(false) }
                         var activeDragPartitionId by remember { mutableStateOf<String?>(null) }
                         var draggedUnitType by remember { mutableStateOf(DraggedUnitType.CARCASS) }
@@ -1792,6 +1805,8 @@ fun RoomScreen() {
                                 orthoSize = orthoSizeAnim.value,
                                 selectedContainerId = activeContainer?.id,
                                 selectedPartitionId = selectedPartitionId,
+                                isPanelOpen = showUnitsColumn,
+                                panelWidthPx = unitsColumnWidthPx,
                                 onOrbit = { deltaX, deltaY ->
                                     currentViewMode = RoomViewMode.PERSPECTIVE_3D
                                     coroutineScope.launch {
@@ -1871,8 +1886,9 @@ fun RoomScreen() {
                                         )
                                         selectedContainerId = hitId
                                         selectedPartitionId = null
-                                        if (hitId == null && (isEditingContainerInPanel || showUnitsColumn)) {
+                                        if (hitId == null && (isEditingContainerInPanel || isEditingPartitionInPanel || showUnitsColumn)) {
                                             isEditingContainerInPanel = false
+                                            isEditingPartitionInPanel = false
                                             showUnitsColumn = false
                                         }
                                     }
@@ -2122,7 +2138,7 @@ fun RoomScreen() {
                                 ) {
                                     val hasSelectedPartition = selectedPartitionId != null
                                     val isEditingActive = if (hasSelectedPartition) {
-                                        showUnitsColumn && !isEditingContainerInPanel
+                                        showUnitsColumn && isEditingPartitionInPanel
                                     } else {
                                         showUnitsColumn && isEditingContainerInPanel
                                     }
@@ -2153,11 +2169,13 @@ fun RoomScreen() {
                                     Surface(
                                         onClick = {
                                             if (hasSelectedPartition) {
+                                                isEditingPartitionInPanel = true
                                                 isEditingContainerInPanel = false
                                                 showUnitsColumn = true
                                             } else {
                                                 selectedContainerId = activeContainer.id
                                                 isEditingContainerInPanel = true
+                                                isEditingPartitionInPanel = false
                                                 showUnitsColumn = true
                                             }
                                         },
@@ -2498,6 +2516,7 @@ fun RoomScreen() {
                                     FloatingActionButton(
                                         onClick = {
                                             isEditingContainerInPanel = false
+                                            isEditingPartitionInPanel = false
                                             showUnitsColumn = true
                                         },
                                         shape = CircleShape,
@@ -2514,12 +2533,6 @@ fun RoomScreen() {
                             }
 
                             // Right-Side Units / Components Column (partial width in both Tablet and Phone modes)
-                            val unitsColumnWidth = if (isLandscape) {
-                                (screenWidth * 0.36f).coerceIn(290.dp, 380.dp)
-                            } else {
-                                (screenWidth * 0.76f).coerceIn(255.dp, 330.dp)
-                            }
-
                             androidx.compose.animation.AnimatedVisibility(
                                 visible = showUnitsColumn,
                                 enter = slideInHorizontally(
@@ -2539,10 +2552,12 @@ fun RoomScreen() {
                                     s = s,
                                     activeContainer = activeContainer,
                                     isEditingContainer = isEditingContainerInPanel && activeContainer != null,
+                                    isEditingPartition = isEditingPartitionInPanel && activeContainer != null,
                                     selectedPartitionId = selectedPartitionId,
                                     selectedPartitionIsVertical = selectedPartitionIsVertical,
                                     isDragging = isDraggingUnit,
                                     onToggleEditMode = { isEditingContainerInPanel = it },
+                                    onTogglePartitionEditMode = { isEditingPartitionInPanel = it },
                                     onSelectContainer = { container ->
                                         selectedContainerId = container.id
                                         selectedPartitionId = null
@@ -2691,17 +2706,17 @@ fun RoomScreen() {
                                             if (interiorPt != null) {
                                                 val (rawX, rawY) = interiorPt
                                                 val isOverPanel = showUnitsColumn && (dragScreenOffset.x + viewportOriginInRoot.x >= (panelOriginInRootX - 15f))
-                                                val isOverContainer = !isOverPanel &&
-                                                    rawX >= -25f && rawX <= (target.interiorWidthMm + 25f) &&
-                                                    rawY >= -25f && rawY <= (target.interiorHeightMm + 25f)
+                                                val isInsideCloset = !isOverPanel &&
+                                                    rawX >= -20f && rawX <= (target.interiorWidthMm + 20f) &&
+                                                    rawY >= -20f && rawY <= (target.interiorHeightMm + 20f)
 
-                                                if (isOverContainer) {
-                                                    val clampedX = rawX.coerceIn(10f, (target.interiorWidthMm - 28f).coerceAtLeast(10f))
-                                                    val clampedY = rawY.coerceIn(10f, (target.interiorHeightMm - 28f).coerceAtLeast(10f))
+                                                val clampedX = rawX.coerceIn(10f, (target.interiorWidthMm - 28f).coerceAtLeast(10f))
+                                                val clampedY = rawY.coerceIn(10f, (target.interiorHeightMm - 28f).coerceAtLeast(10f))
 
-                                                    if (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER) {
-                                                        val partId = activeDragPartitionId
-                                                        if (partId == null) {
+                                                if (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        if (isInsideCloset) {
                                                             val updated = target.withAddedDivider(offsetXMm = clampedX, targetYMm = clampedY)
                                                             val newDiv = updated.dividers.lastOrNull()
                                                             if (newDiv != null) {
@@ -2711,15 +2726,17 @@ fun RoomScreen() {
                                                                 selectedPartitionIsVertical = true
                                                                 updateRoom(room.withUpdatedContainer(target.id) { updated })
                                                             }
-                                                        } else {
-                                                            val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
-                                                                currentC.withMovedDivider(partId, newOffsetXMm = clampedX, targetYMm = clampedY)
-                                                            }
-                                                            updateRoom(updatedRoom)
                                                         }
-                                                    } else if (draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF) {
-                                                        val partId = activeDragPartitionId
-                                                        if (partId == null) {
+                                                    } else {
+                                                        val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                            currentC.withMovedDivider(partId, newOffsetXMm = clampedX, targetYMm = clampedY)
+                                                        }
+                                                        updateRoom(updatedRoom)
+                                                    }
+                                                } else if (draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        if (isInsideCloset) {
                                                             val bay = target.findBayAtX(clampedX)
                                                             val updated = target.withAddedShelf(bayIndex = bay.index, elevationYMm = clampedY)
                                                             val newShelf = updated.shelves.lastOrNull()
@@ -2730,23 +2747,12 @@ fun RoomScreen() {
                                                                 selectedPartitionIsVertical = false
                                                                 updateRoom(room.withUpdatedContainer(target.id) { updated })
                                                             }
-                                                        } else {
-                                                            val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
-                                                                currentC.withMovedShelf(partId, newElevationYMm = clampedY, targetXMm = clampedX)
-                                                            }
-                                                            updateRoom(updatedRoom)
                                                         }
-                                                    }
-                                                } else {
-                                                    // User dragged finger out of closet back into room or catalog: pop it out of container
-                                                    val partId = activeDragPartitionId
-                                                    if (partId != null) {
+                                                    } else {
                                                         val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
-                                                            currentC.withRemovedPartition(partId)
+                                                            currentC.withMovedShelf(partId, newElevationYMm = clampedY, targetXMm = clampedX)
                                                         }
                                                         updateRoom(updatedRoom)
-                                                        activeDragPartitionId = null
-                                                        selectedPartitionId = null
                                                     }
                                                 }
                                             }
@@ -2791,6 +2797,7 @@ fun RoomScreen() {
                                                     selectedPartitionId = null
                                                     showUnitsColumn = false
                                                     isEditingContainerInPanel = false
+                                                    isEditingPartitionInPanel = false
                                                     coroutineScope.launch {
                                                         messageHostState.showSnackbar(
                                                             "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage, splitDoorWall, isD)}",
@@ -2809,6 +2816,7 @@ fun RoomScreen() {
                                                     }
                                                     showUnitsColumn = false
                                                     isEditingContainerInPanel = false
+                                                    isEditingPartitionInPanel = false
                                                 }
                                             }
                                             activeDragPartitionId = null
@@ -2834,6 +2842,7 @@ fun RoomScreen() {
                                         isDraggingUnit = false
                                         showUnitsColumn = false
                                         isEditingContainerInPanel = false
+                                        isEditingPartitionInPanel = false
                                     },
                                     onUpdateContainer = { id, transform ->
                                         val updatedRoom = room.withUpdatedContainer(id, transform)
@@ -3495,6 +3504,8 @@ private fun RoomViewport(
     modifier: Modifier = Modifier,
     selectedContainerId: String? = null,
     selectedPartitionId: String? = null,
+    isPanelOpen: Boolean = false,
+    panelWidthPx: Float = 0f,
     onOrbit: (Float, Float) -> Unit,
     onPan: (Float, Float) -> Unit,
     onZoom: (Float) -> Unit,
@@ -3504,7 +3515,7 @@ private fun RoomViewport(
 ) {
     Box(
         modifier = modifier
-            .pointerInput(selectedPartitionId, selectedContainerId) {
+            .pointerInput(selectedPartitionId, selectedContainerId, isPanelOpen, panelWidthPx) {
                 detectRoomInspectionGestures(
                     onOrbit = onOrbit,
                     onPan = onPan,
@@ -3512,6 +3523,8 @@ private fun RoomViewport(
                     onTap = onTap,
                     canDragPartitionAt = canDragPartitionAt,
                     onDragPartition = onDragPartition,
+                    isPanelOpen = isPanelOpen,
+                    panelWidthPx = panelWidthPx,
                 )
             },
     ) {
@@ -3535,10 +3548,12 @@ private fun RightSideUnitsAndInspectorColumn(
     s: UiStrings,
     activeContainer: ClosetContainerSpec?,
     isEditingContainer: Boolean,
+    isEditingPartition: Boolean = false,
     selectedPartitionId: String? = null,
     selectedPartitionIsVertical: Boolean = true,
     isDragging: Boolean = false,
     onToggleEditMode: (Boolean) -> Unit,
+    onTogglePartitionEditMode: (Boolean) -> Unit = {},
     onSelectContainer: (ClosetContainerSpec) -> Unit,
     onAddContainerOnCurrentWall: (dropFractionX: Float?) -> Unit,
     onAddDivider: (dropFractionX: Float?) -> Unit = {},
@@ -3570,6 +3585,9 @@ private fun RightSideUnitsAndInspectorColumn(
                 .fillMaxSize()
                 .navigationBarsPadding(),
         ) {
+            val showModuleInspector = isEditingPartition && selectedPartitionId != null && activeContainer != null
+            val showContainerEditor = isEditingContainer && activeContainer != null
+
             // Minimalist Header: "Module ✕" or "Add Unit ✕" or "Edit Container ✕"
             Row(
                 modifier = Modifier
@@ -3580,8 +3598,8 @@ private fun RightSideUnitsAndInspectorColumn(
             ) {
                 Text(
                     text = when {
-                        selectedPartitionId != null && activeContainer != null -> s.moduleTitle
-                        isEditingContainer && activeContainer != null -> s.editContainerTitle
+                        showModuleInspector -> s.moduleTitle
+                        showContainerEditor -> s.editContainerTitle
                         else -> s.unitsPanelTitle
                     },
                     style = MaterialTheme.typography.titleLarge,
@@ -3590,8 +3608,11 @@ private fun RightSideUnitsAndInspectorColumn(
                 )
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isEditingContainer && activeContainer != null && selectedPartitionId == null) {
-                        TextButton(onClick = { onToggleEditMode(false) }) {
+                    if (showContainerEditor || showModuleInspector) {
+                        TextButton(onClick = {
+                            onToggleEditMode(false)
+                            onTogglePartitionEditMode(false)
+                        }) {
                             Text(
                                 text = s.backToCatalogButton,
                                 style = MaterialTheme.typography.labelMedium,
@@ -3603,8 +3624,9 @@ private fun RightSideUnitsAndInspectorColumn(
 
                     IconButton(
                         onClick = {
-                            if (selectedPartitionId != null) {
+                            if (showModuleInspector) {
                                 onClosePartition()
+                                onTogglePartitionEditMode(false)
                             } else {
                                 onClose()
                             }
@@ -3622,7 +3644,7 @@ private fun RightSideUnitsAndInspectorColumn(
 
             HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 1.dp)
 
-            if (selectedPartitionId != null && activeContainer != null) {
+            if (showModuleInspector) {
                 // --- MODULE INSPECTOR PANEL (matching user screenshot media_1793474801389_65881bdb.png) ---
                 ModuleInspectorContent(
                     activeContainer = activeContainer,
