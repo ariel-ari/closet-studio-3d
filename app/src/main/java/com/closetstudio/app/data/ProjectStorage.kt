@@ -16,6 +16,17 @@ class ProjectStorage(context: Context) {
     private val storageDir = File(context.filesDir, "closet_studio_projects").apply { mkdirs() }
     private val indexFile = File(storageDir, "projects.json")
     private val activeMetaFile = File(storageDir, "active_project_id.txt")
+    private val languageFile = File(storageDir, "app_language.txt")
+
+    fun getLanguageCode(): String {
+        if (!languageFile.exists()) return "ES"
+        return runCatching { languageFile.readText().trim().uppercase().ifEmpty { "ES" } }
+            .getOrDefault("ES")
+    }
+
+    fun setLanguageCode(code: String) {
+        runCatching { languageFile.writeText(code.trim().uppercase()) }
+    }
 
     fun loadAllProjects(): List<SavedProject> {
         if (!indexFile.exists()) return emptyList()
@@ -85,3 +96,4 @@ class ProjectStorage(context: Context) {
         }
     }
 }
+

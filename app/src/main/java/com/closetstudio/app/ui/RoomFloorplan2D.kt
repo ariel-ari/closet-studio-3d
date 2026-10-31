@@ -551,6 +551,8 @@ fun RoomFloorplan2D(
             )
         }
 
+        val lang = LocalAppLanguage.current
+
         // Top-left interactive hint chip
         Surface(
             shape = RoundedCornerShape(8.dp),
@@ -561,7 +563,11 @@ fun RoomFloorplan2D(
                 .padding(8.dp),
         ) {
             Text(
-                text = "Tocá cualquier pared o esquina en el plano 2D",
+                text = tr(
+                    lang,
+                    "Tocá cualquier pared o esquina en el plano 2D",
+                    "Tap any wall or corner on the 2D floorplan",
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF2C55B5),

@@ -75,6 +75,7 @@ fun RoomDimensionsPanel(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val lang = LocalAppLanguage.current
     var doorCentered by remember(room.isDoorCentered) { mutableStateOf(room.isDoorCentered) }
 
     Surface(
@@ -109,12 +110,16 @@ fun RoomDimensionsPanel(
                     )
                     Column {
                         Text(
-                            text = "Inspector del Plano 2D",
+                            text = tr(lang, "Inspector del Plano 2D", "2D Floorplan Inspector"),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "Tocá una pared o esquina en el dibujo para editarla",
+                            text = tr(
+                                lang,
+                                "Tocá una pared o esquina en el dibujo para editarla",
+                                "Tap a wall or corner on the drawing to edit it",
+                            ),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -126,11 +131,11 @@ fun RoomDimensionsPanel(
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                 ) {
                     Icon(Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Text(" Escuadra 90°", style = MaterialTheme.typography.labelSmall)
+                    Text(tr(lang, " Escuadra 90°", " Square 90°"), style = MaterialTheme.typography.labelSmall)
                 }
 
                 IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Cerrar", modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Close, contentDescription = tr(lang, "Cerrar", "Close"), modifier = Modifier.size(20.dp))
                 }
             }
 
@@ -141,16 +146,16 @@ fun RoomDimensionsPanel(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                ElementChip("Pared A", selectedElement == FloorplanElement.WallA) {
+                ElementChip(tr(lang, "Pared A", "Wall A"), selectedElement == FloorplanElement.WallA) {
                     onSelectElement(FloorplanElement.WallA)
                 }
-                ElementChip("Pared B", selectedElement == FloorplanElement.WallB) {
+                ElementChip(tr(lang, "Pared B", "Wall B"), selectedElement == FloorplanElement.WallB) {
                     onSelectElement(FloorplanElement.WallB)
                 }
-                ElementChip("Pared C", selectedElement == FloorplanElement.WallC) {
+                ElementChip(tr(lang, "Pared C", "Wall C"), selectedElement == FloorplanElement.WallC) {
                     onSelectElement(FloorplanElement.WallC)
                 }
-                ElementChip("Puerta E-D", selectedElement == FloorplanElement.WallSouthDoor) {
+                ElementChip(tr(lang, "Puerta E-D", "Door E-D"), selectedElement == FloorplanElement.WallSouthDoor) {
                     onSelectElement(FloorplanElement.WallSouthDoor)
                 }
                 ElementChip("∠ A-B", selectedElement == FloorplanElement.CornerAC, isCorner = true) {
@@ -165,7 +170,7 @@ fun RoomDimensionsPanel(
                 ElementChip("∠ A-E", selectedElement == FloorplanElement.CornerCD, isCorner = true) {
                     onSelectElement(FloorplanElement.CornerCD)
                 }
-                ElementChip("Altura Y", selectedElement == FloorplanElement.CeilingHeight) {
+                ElementChip(tr(lang, "Altura Y", "Height Y"), selectedElement == FloorplanElement.CeilingHeight) {
                     onSelectElement(FloorplanElement.CeilingHeight)
                 }
             }
@@ -178,13 +183,17 @@ fun RoomDimensionsPanel(
                 FloorplanElement.WallA -> {
                     WallInspectorCard(
                         letter = "A",
-                        title = "Pared A",
-                        subtitle = "Se redimensiona sola sin obligar a Pared C",
+                        title = tr(lang, "Pared A", "Wall A"),
+                        subtitle = tr(lang, "Se redimensiona sola sin obligar a Pared C", "Resizes independently without forcing Wall C"),
                         valueMm = room.wallCMm,
                         isLocked = room.lockWallC,
                         onLockToggle = { onRoomChange(room.copy(lockWallC = !room.lockWallC)) },
                         onValueChange = { onRoomChange(room.withWallC(it, doorCentered)) },
-                        oppositeButtonLabel = "Igualar A con Pared C (${room.wallBMm.roundToInt()} mm)",
+                        oppositeButtonLabel = tr(
+                            lang,
+                            "Igualar A con Pared C (${room.wallBMm.roundToInt()} mm)",
+                            "Match A with Wall C (${room.wallBMm.roundToInt()} mm)",
+                        ),
                         onMatchOpposite = { onRoomChange(room.withWallC(room.wallBMm, doorCentered)) },
                     )
                 }
@@ -192,13 +201,17 @@ fun RoomDimensionsPanel(
                 FloorplanElement.WallB -> {
                     WallInspectorCard(
                         letter = "B",
-                        title = "Pared B",
-                        subtitle = "Pared principal frente a la puerta",
+                        title = tr(lang, "Pared B", "Wall B"),
+                        subtitle = tr(lang, "Pared principal frente a la puerta", "Main wall opposite the door"),
                         valueMm = room.wallAMm,
                         isLocked = room.lockWallA,
                         onLockToggle = { onRoomChange(room.copy(lockWallA = !room.lockWallA)) },
                         onValueChange = { onRoomChange(room.withWallA(it, doorCentered)) },
-                        oppositeButtonLabel = "Igualar B con Pared E-D (${room.wallSouthMm.roundToInt()} mm)",
+                        oppositeButtonLabel = tr(
+                            lang,
+                            "Igualar B con Pared E-D (${room.wallSouthMm.roundToInt()} mm)",
+                            "Match B with Wall E-D (${room.wallSouthMm.roundToInt()} mm)",
+                        ),
                         onMatchOpposite = { onRoomChange(room.withWallA(room.wallSouthMm, doorCentered)) },
                     )
                 }
@@ -206,13 +219,17 @@ fun RoomDimensionsPanel(
                 FloorplanElement.WallC -> {
                     WallInspectorCard(
                         letter = "C",
-                        title = "Pared C",
-                        subtitle = "Se redimensiona sola sin obligar a Pared A",
+                        title = tr(lang, "Pared C", "Wall C"),
+                        subtitle = tr(lang, "Se redimensiona sola sin obligar a Pared A", "Resizes independently without forcing Wall A"),
                         valueMm = room.wallBMm,
                         isLocked = room.lockWallB,
                         onLockToggle = { onRoomChange(room.copy(lockWallB = !room.lockWallB)) },
                         onValueChange = { onRoomChange(room.withWallB(it, doorCentered)) },
-                        oppositeButtonLabel = "Igualar C con Pared A (${room.wallCMm.roundToInt()} mm)",
+                        oppositeButtonLabel = tr(
+                            lang,
+                            "Igualar C con Pared A (${room.wallCMm.roundToInt()} mm)",
+                            "Match C with Wall A (${room.wallCMm.roundToInt()} mm)",
+                        ),
                         onMatchOpposite = { onRoomChange(room.withWallB(room.wallCMm, doorCentered)) },
                     )
                 }
@@ -235,8 +252,8 @@ fun RoomDimensionsPanel(
                     val otherLockedCount = listOf(room.lockAngleAB, room.lockAngleCD, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "A-B",
-                        title = "Esquina A-B",
-                        subtitle = "Ángulo interior entre Pared A y Pared B",
+                        title = tr(lang, "Esquina A-B", "Corner A-B"),
+                        subtitle = tr(lang, "Ángulo interior entre Pared A y Pared B", "Interior angle between Wall A and Wall B"),
                         angleDeg = room.angleACDeg,
                         isLocked = room.lockAngleAC,
                         allOthersLocked = otherLockedCount == 3,
@@ -250,8 +267,8 @@ fun RoomDimensionsPanel(
                     val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleCD, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "B-C",
-                        title = "Esquina B-C",
-                        subtitle = "Ángulo interior entre Pared B y Pared C",
+                        title = tr(lang, "Esquina B-C", "Corner B-C"),
+                        subtitle = tr(lang, "Ángulo interior entre Pared B y Pared C", "Interior angle between Wall B and Wall C"),
                         angleDeg = room.angleABDeg,
                         isLocked = room.lockAngleAB,
                         allOthersLocked = otherLockedCount == 3,
@@ -265,8 +282,8 @@ fun RoomDimensionsPanel(
                     val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleAB, room.lockAngleCD).count { it }
                     CornerInspectorCard(
                         cornerCode = "C-D",
-                        title = "Esquina C-D",
-                        subtitle = "Ángulo interior entre Pared C y Tramo D",
+                        title = tr(lang, "Esquina C-D", "Corner C-D"),
+                        subtitle = tr(lang, "Ángulo interior entre Pared C y Tramo D", "Interior angle between Wall C and Segment D"),
                         angleDeg = room.angleBEDeg,
                         isLocked = room.lockAngleBE,
                         allOthersLocked = otherLockedCount == 3,
@@ -280,8 +297,8 @@ fun RoomDimensionsPanel(
                     val otherLockedCount = listOf(room.lockAngleAC, room.lockAngleAB, room.lockAngleBE).count { it }
                     CornerInspectorCard(
                         cornerCode = "A-E",
-                        title = "Esquina A-E",
-                        subtitle = "Ángulo interior entre Pared A y Tramo E",
+                        title = tr(lang, "Esquina A-E", "Corner A-E"),
+                        subtitle = tr(lang, "Ángulo interior entre Pared A y Tramo E", "Interior angle between Wall A and Segment E"),
                         angleDeg = room.angleCDDeg,
                         isLocked = room.lockAngleCD,
                         allOthersLocked = otherLockedCount == 3,
@@ -294,8 +311,8 @@ fun RoomDimensionsPanel(
                 FloorplanElement.CeilingHeight -> {
                     WallInspectorCard(
                         letter = "Y",
-                        title = "Altura del Techo",
-                        subtitle = "Distancia libre piso a techo",
+                        title = tr(lang, "Altura del Techo", "Ceiling Height"),
+                        subtitle = tr(lang, "Distancia libre piso a techo", "Clear floor-to-ceiling height"),
                         valueMm = room.clearHeightMm,
                         rangeMm = 2000f..3500f,
                         isLocked = false,
@@ -314,7 +331,7 @@ fun RoomDimensionsPanel(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
             ) {
-                Text("Listo • Ver en 3D", fontWeight = FontWeight.Bold)
+                Text(tr(lang, "Listo • Ver en 3D", "Done • View in 3D"), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -358,6 +375,7 @@ private fun WallInspectorCard(
     oppositeButtonLabel: String?,
     onMatchOpposite: () -> Unit,
 ) {
+    val lang = LocalAppLanguage.current
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
@@ -394,7 +412,7 @@ private fun WallInspectorCard(
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                                    contentDescription = if (isLocked) "Bloqueado" else "Adaptable",
+                                    contentDescription = if (isLocked) tr(lang, "Bloqueado", "Locked") else tr(lang, "Adaptable", "Unlocked"),
                                     tint = if (isLocked) {
                                         Color(0xFF2C55B5)
                                     } else {
@@ -414,7 +432,7 @@ private fun WallInspectorCard(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = if (isLocked) "Tamaño bloqueado (tocá el candado para editar)" else subtitle,
+                            text = if (isLocked) tr(lang, "Tamaño bloqueado (tocá el candado para editar)", "Size locked (tap padlock to edit)") else subtitle,
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isLocked) Color(0xFF2C55B5) else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -424,7 +442,7 @@ private fun WallInspectorCard(
 
             // Direct Numeric Input + Fine-tuning step buttons
             DirectNumericInputRow(
-                label = "Medida $letter (mm)",
+                label = tr(lang, "Medida $letter (mm)", "Dimension $letter (mm)"),
                 currentValueText = valueMm.roundToInt().toString(),
                 unitSuffix = "mm",
                 enabled = !isLocked,
@@ -442,7 +460,7 @@ private fun WallInspectorCard(
             )
 
             DimensionSlider(
-                label = "Deslizar medida ($letter)",
+                label = tr(lang, "Deslizar medida ($letter)", "Slide dimension ($letter)"),
                 valueMm = valueMm,
                 rangeMm = rangeMm,
                 stepMm = 25f,
@@ -477,6 +495,7 @@ private fun CornerInspectorCard(
     onLockToggle: () -> Unit,
     onAngleChange: (Float) -> Unit,
 ) {
+    val lang = LocalAppLanguage.current
     val canEdit = !isLocked && !allOthersLocked
     Card(
         colors = CardDefaults.cardColors(
@@ -513,7 +532,7 @@ private fun CornerInspectorCard(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                                contentDescription = if (isLocked) "Esquina bloqueada" else "Esquina libre",
+                                contentDescription = if (isLocked) tr(lang, "Esquina bloqueada", "Corner locked") else tr(lang, "Esquina libre", "Corner unlocked"),
                                 tint = if (isLocked) {
                                     Color(0xFFD97706)
                                 } else {
@@ -547,7 +566,7 @@ private fun CornerInspectorCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
-                        text = "Desbloqueá al menos otra esquina para compensar Σ=360°",
+                        text = tr(lang, "Desbloqueá al menos otra esquina para compensar Σ=360°", "Unlock at least one other corner to compensate Σ=360°"),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -557,7 +576,7 @@ private fun CornerInspectorCard(
 
             // Direct Numeric Input for Angle + fine step buttons
             DirectNumericInputRow(
-                label = "Ángulo $cornerCode (°)",
+                label = tr(lang, "Ángulo $cornerCode (°)", "Angle $cornerCode (°)"),
                 currentValueText = String.format(Locale.US, "%.1f", angleDeg),
                 unitSuffix = "°",
                 enabled = canEdit,
@@ -594,7 +613,11 @@ private fun CornerInspectorCard(
             Text(
                 text = String.format(
                     Locale.US,
-                    "Cierre automático activo (Σ = %.0f°) • E-D: %d mm",
+                    tr(
+                        lang,
+                        "Cierre automático activo (Σ = %.0f°) • E-D: %d mm",
+                        "Automatic closure active (Σ = %.0f°) • E-D: %d mm",
+                    ),
                     sumAngles,
                     room.wallSouthMm.roundToInt(),
                 ),
@@ -612,6 +635,7 @@ private fun DoorWallInspectorCard(
     onDoorCenteredChange: (Boolean) -> Unit,
     onRoomChange: (RoomSpec) -> Unit,
 ) {
+    val lang = LocalAppLanguage.current
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
@@ -662,7 +686,7 @@ private fun DoorWallInspectorCard(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = if (totalLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                                contentDescription = if (totalLocked) "Pared E-D fija" else "Pared E-D adaptable",
+                                contentDescription = if (totalLocked) tr(lang, "Pared E-D fija", "Wall E-D locked") else tr(lang, "Pared E-D adaptable", "Wall E-D unlocked"),
                                 tint = if (totalLocked) {
                                     Color(0xFF2C55B5)
                                 } else {
@@ -682,7 +706,7 @@ private fun DoorWallInspectorCard(
                     )
                     WallBadge(letter = "D")
                     Text(
-                        text = "Pared E - Puerta - D",
+                        text = tr(lang, "Pared E - Puerta - D", "Wall E - Door - D"),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                     )
@@ -695,7 +719,7 @@ private fun DoorWallInspectorCard(
                         onCheckedChange = onDoorCenteredChange,
                     )
                     Text(
-                        text = "Centrada",
+                        text = tr(lang, "Centrada", "Centered"),
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }
@@ -759,7 +783,7 @@ private fun DoorWallInspectorCard(
 
             // Total Wall E-D Direct Input & Slider
             DirectNumericInputRow(
-                label = "Total Pared E-D (mm)",
+                label = tr(lang, "Total Pared E-D (mm)", "Total Wall E-D (mm)"),
                 currentValueText = room.doorWallLengthMm.roundToInt().toString(),
                 unitSuffix = "mm",
                 enabled = !totalLocked,
@@ -786,9 +810,9 @@ private fun DoorWallInspectorCard(
 
             DimensionSlider(
                 label = if (allThreeSegmentsLocked) {
-                    "Total bloqueado (E, Puerta y D bloqueados)"
+                    tr(lang, "Total bloqueado (E, Puerta y D bloqueados)", "Total locked (E, Door and D locked)")
                 } else {
-                    "Deslizar Total Pared E-D"
+                    tr(lang, "Deslizar Total Pared E-D", "Slide Total Wall E-D")
                 },
                 valueMm = room.doorWallLengthMm,
                 rangeMm = 0f..maxOf(10000f, room.doorWallLengthMm * 1.5f),
@@ -829,7 +853,7 @@ private fun DoorWallInspectorCard(
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = if (room.door.lockWidth) Icons.Default.Lock else Icons.Default.LockOpen,
-                                contentDescription = if (room.door.lockWidth) "Puerta fija" else "Puerta escalable",
+                                contentDescription = if (room.door.lockWidth) tr(lang, "Puerta fija", "Door locked") else tr(lang, "Puerta escalable", "Door unlocked"),
                                 tint = if (room.door.lockWidth) {
                                     Color(0xFF8B5A2B)
                                 } else {
@@ -841,7 +865,7 @@ private fun DoorWallInspectorCard(
                     }
 
                     Text(
-                        text = "Ancho de Puerta",
+                        text = tr(lang, "Ancho de Puerta", "Door Width"),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -850,7 +874,7 @@ private fun DoorWallInspectorCard(
             }
 
             DirectNumericInputRow(
-                label = "Puerta (mm)",
+                label = tr(lang, "Puerta (mm)", "Door (mm)"),
                 currentValueText = room.door.widthMm.roundToInt().toString(),
                 unitSuffix = "mm",
                 enabled = !room.door.lockWidth,
@@ -870,7 +894,7 @@ private fun DoorWallInspectorCard(
             )
 
             DimensionSlider(
-                label = "Deslizar Puerta",
+                label = tr(lang, "Deslizar Puerta", "Slide Door Width"),
                 valueMm = room.door.widthMm,
                 rangeMm = 0f..maxOf(3000f, room.doorWallLengthMm, room.door.widthMm * 1.5f),
                 stepMm = 25f,
@@ -911,7 +935,7 @@ private fun DoorWallInspectorCard(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = if (room.lockSegmentD) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = if (room.lockSegmentD) "Tramo E bloqueado" else "Tramo E adaptable",
+                            contentDescription = if (room.lockSegmentD) tr(lang, "Tramo E bloqueado", "Segment E locked") else tr(lang, "Tramo E adaptable", "Segment E unlocked"),
                             tint = if (room.lockSegmentD) {
                                 Color(0xFF2C55B5)
                             } else {
@@ -923,14 +947,14 @@ private fun DoorWallInspectorCard(
                 }
                 WallBadge(letter = "E")
                 Text(
-                    text = "Tramo E",
+                    text = tr(lang, "Tramo E", "Segment E"),
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
 
             DirectNumericInputRow(
-                label = "Tramo E (mm)",
+                label = tr(lang, "Tramo E (mm)", "Segment E (mm)"),
                 currentValueText = room.segmentDMm.roundToInt().toString(),
                 unitSuffix = "mm",
                 enabled = canEditE,
@@ -953,7 +977,11 @@ private fun DoorWallInspectorCard(
             )
 
             DimensionSlider(
-                label = if (room.lockSegmentE) "Deslizar Tramo E (agranda el total)" else "Deslizar Tramo E (D se adapta solo)",
+                label = if (room.lockSegmentE) {
+                    tr(lang, "Deslizar Tramo E (agranda el total)", "Slide Segment E (resizes total wall)")
+                } else {
+                    tr(lang, "Deslizar Tramo E (D se adapta solo)", "Slide Segment E (D adapts automatically)")
+                },
                 valueMm = room.segmentDMm,
                 rangeMm = 0f..maxSliderSide,
                 stepMm = 25f,
@@ -987,7 +1015,7 @@ private fun DoorWallInspectorCard(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = if (room.lockSegmentE) Icons.Default.Lock else Icons.Default.LockOpen,
-                            contentDescription = if (room.lockSegmentE) "Tramo D bloqueado" else "Tramo D adaptable",
+                            contentDescription = if (room.lockSegmentE) tr(lang, "Tramo D bloqueado", "Segment D locked") else tr(lang, "Tramo D adaptable", "Segment D unlocked"),
                             tint = if (room.lockSegmentE) {
                                 Color(0xFF2C55B5)
                             } else {
@@ -999,14 +1027,14 @@ private fun DoorWallInspectorCard(
                 }
                 WallBadge(letter = "D")
                 Text(
-                    text = "Tramo D",
+                    text = tr(lang, "Tramo D", "Segment D"),
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
 
             DirectNumericInputRow(
-                label = "Tramo D (mm)",
+                label = tr(lang, "Tramo D (mm)", "Segment D (mm)"),
                 currentValueText = room.segmentEMm.roundToInt().toString(),
                 unitSuffix = "mm",
                 enabled = canEditD,
@@ -1029,7 +1057,11 @@ private fun DoorWallInspectorCard(
             )
 
             DimensionSlider(
-                label = if (room.lockSegmentD) "Deslizar Tramo D (agranda el total)" else "Deslizar Tramo D (E se adapta solo)",
+                label = if (room.lockSegmentD) {
+                    tr(lang, "Deslizar Tramo D (agranda el total)", "Slide Segment D (resizes total wall)")
+                } else {
+                    tr(lang, "Deslizar Tramo D (E se adapta solo)", "Slide Segment D (E adapts automatically)")
+                },
                 valueMm = room.segmentEMm,
                 rangeMm = 0f..maxSliderSide,
                 stepMm = 25f,

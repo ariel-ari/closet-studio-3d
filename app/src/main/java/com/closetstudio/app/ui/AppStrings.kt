@@ -1,0 +1,223 @@
+package com.closetstudio.app.ui
+
+import androidx.compose.runtime.compositionLocalOf
+
+/**
+ * Scalable i18n language registry for Closet Studio 3D.
+ * To add a new language in the future (e.g. PT, FR, IT, DE), simply add an entry here
+ * and register its `UiStrings` dictionary in [stringsFor].
+ */
+enum class AppLanguage(
+    val code: String,
+    val nativeName: String,
+    val subtitleName: String,
+) {
+    ES("ES", "Español", "Spanish"),
+    EN("EN", "English", "Inglés");
+
+    companion object {
+        fun fromCode(code: String): AppLanguage =
+            entries.firstOrNull { it.code.equals(code.trim(), ignoreCase = true) } ?: ES
+    }
+}
+
+/**
+ * Strongly-typed UI string catalog so every screen, dialog, and inspector card
+ * automatically adapts to any registered [AppLanguage].
+ */
+data class UiStrings(
+    val activeProjectPrefix: String,
+    val myProjectsSection: String,
+    val saveProject: String,
+    val createNew: String,
+    val myProjects: String,
+    val roomDimensions: String,
+    val center3dView: String,
+    val roomInfo: String,
+    val resetValues: String,
+    val languageMenuLabel: String,
+    val selectLanguageTitle: String,
+    val selectLanguageSubtitle: String,
+    val languageChangedMessage: String,
+    val modeRoom: String,
+    val modeModules: String,
+    val modeContent: String,
+    val menuRoomPlanAndDimensions: String,
+    val menuClosetModules: String,
+    val menuGeneral3dView: String,
+    val overflowFloorplanAndDimensions: String,
+    val overflowCenterWall: String,
+    val overflowReset36: String,
+    val centerButton: String,
+    val previousWall: String,
+    val nextWall: String,
+    val closeButton: String,
+    val cancelButton: String,
+    val understoodButton: String,
+    val activeBadge: String,
+    val deleteProject: String,
+    // Save / Create / Open Project Dialogs
+    val saveProjectDescription: String,
+    val projectNameLabel: String,
+    val saveAsCopyButton: String,
+    val saveButton: String,
+    val savedAsNewToast: String,
+    val projectSavedToast: String,
+    val createNewProjectTitle: String,
+    val createNewProjectDescription: String,
+    val newProjectNameLabel: String,
+    val createButton: String,
+    val projectCreatedToast: String,
+    val projectOpenedToast: String,
+    val emptyProjectsMessage: String,
+    val defaultProjectPrefix: String,
+    val copyOfPrefix: String,
+    // Room Info Dialog
+    val roomInfoTitle: String,
+    val projectLabel: String,
+    val wallALabel: String,
+    val wallBLabel: String,
+    val wallCLabel: String,
+    val wallEDTotalLabel: String,
+    val doorWord: String,
+    val anglesLabel: String,
+    val heightYLabel: String,
+    val currentViewLabel: String,
+)
+
+private val SpanishStrings = UiStrings(
+    activeProjectPrefix = "Proyecto activo",
+    myProjectsSection = "Mis Proyectos",
+    saveProject = "Guardar Proyecto",
+    createNew = "Crear nuevo",
+    myProjects = "Mis Proyectos",
+    roomDimensions = "Dimensiones de la Habitación",
+    center3dView = "Centrar Vista 3D",
+    roomInfo = "Información del Ambiente",
+    resetValues = "Restablecer Valores",
+    languageMenuLabel = "Idioma",
+    selectLanguageTitle = "Seleccionar Idioma",
+    selectLanguageSubtitle = "Elegí el idioma de la interfaz (preparado para más idiomas)",
+    languageChangedMessage = "Idioma cambiado a Español",
+    modeRoom = "Habitación",
+    modeModules = "Módulos",
+    modeContent = "Contenido",
+    menuRoomPlanAndDimensions = "Habitación (Plano y Cotas)",
+    menuClosetModules = "Módulos de Placard",
+    menuGeneral3dView = "Vista 3D General",
+    overflowFloorplanAndDimensions = "Plano y dimensiones...",
+    overflowCenterWall = "Centrar pared",
+    overflowReset36 = "Restablecer a 3.6 x 3.6 m",
+    centerButton = "  Centrar",
+    previousWall = "Pared anterior",
+    nextWall = "Pared siguiente",
+    closeButton = "Cerrar",
+    cancelButton = "Cancelar",
+    understoodButton = "Entendido",
+    activeBadge = "Activo",
+    deleteProject = "Eliminar proyecto",
+    saveProjectDescription = "Se guardarán todas las medidas de paredes (A, B, C, E-D), puerta, ángulos y candados de la configuración actual.",
+    projectNameLabel = "Nombre del proyecto",
+    saveAsCopyButton = "Guardar como copia",
+    saveButton = "Guardar",
+    savedAsNewToast = "Guardado como nuevo",
+    projectSavedToast = "Proyecto guardado",
+    createNewProjectTitle = "Crear nuevo proyecto",
+    createNewProjectDescription = "Iniciará una habitación nueva en escuadra (3600 × 3600 mm, altura 2600 mm, puerta de 900 mm).",
+    newProjectNameLabel = "Nombre del nuevo proyecto",
+    createButton = "Crear",
+    projectCreatedToast = "Nuevo proyecto creado",
+    projectOpenedToast = "Proyecto abierto",
+    emptyProjectsMessage = "Todavía no tenés proyectos guardados. Usá 'Guardar Proyecto' en el menú para guardar tus medidas.",
+    defaultProjectPrefix = "Proyecto",
+    copyOfPrefix = "Copia de",
+    roomInfoTitle = "Datos del Ambiente",
+    projectLabel = "Proyecto",
+    wallALabel = "Pared A",
+    wallBLabel = "Pared B",
+    wallCLabel = "Pared C",
+    wallEDTotalLabel = "Pared E-D (Total)",
+    doorWord = "Puerta",
+    anglesLabel = "Ángulos",
+    heightYLabel = "Altura (Y)",
+    currentViewLabel = "Vista actual",
+)
+
+private val EnglishStrings = UiStrings(
+    activeProjectPrefix = "Active project",
+    myProjectsSection = "My Projects",
+    saveProject = "Save Project",
+    createNew = "Create new",
+    myProjects = "My Projects",
+    roomDimensions = "Room Dimensions",
+    center3dView = "Center 3D View",
+    roomInfo = "Room Information",
+    resetValues = "Reset Values",
+    languageMenuLabel = "Language",
+    selectLanguageTitle = "Select Language",
+    selectLanguageSubtitle = "Choose the interface language (scalable for future languages)",
+    languageChangedMessage = "Language switched to English",
+    modeRoom = "Room",
+    modeModules = "Modules",
+    modeContent = "Content",
+    menuRoomPlanAndDimensions = "Room (2D Plan & Dimensions)",
+    menuClosetModules = "Closet Modules",
+    menuGeneral3dView = "General 3D View",
+    overflowFloorplanAndDimensions = "Floorplan & dimensions...",
+    overflowCenterWall = "Center wall",
+    overflowReset36 = "Reset to 3.6 x 3.6 m",
+    centerButton = "  Center",
+    previousWall = "Previous wall",
+    nextWall = "Next wall",
+    closeButton = "Close",
+    cancelButton = "Cancel",
+    understoodButton = "Got it",
+    activeBadge = "Active",
+    deleteProject = "Delete project",
+    saveProjectDescription = "All wall dimensions (A, B, C, E-D), door settings, corner angles, and locks from the current setup will be saved.",
+    projectNameLabel = "Project name",
+    saveAsCopyButton = "Save as copy",
+    saveButton = "Save",
+    savedAsNewToast = "Saved as new",
+    projectSavedToast = "Project saved",
+    createNewProjectTitle = "Create new project",
+    createNewProjectDescription = "Starts a fresh orthogonal room (3600 × 3600 mm, height 2600 mm, 900 mm door).",
+    newProjectNameLabel = "New project name",
+    createButton = "Create",
+    projectCreatedToast = "New project created",
+    projectOpenedToast = "Project opened",
+    emptyProjectsMessage = "You don't have saved projects yet. Use 'Save Project' in the menu to save your room configuration.",
+    defaultProjectPrefix = "Project",
+    copyOfPrefix = "Copy of",
+    roomInfoTitle = "Room Specifications",
+    projectLabel = "Project",
+    wallALabel = "Wall A",
+    wallBLabel = "Wall B",
+    wallCLabel = "Wall C",
+    wallEDTotalLabel = "Wall E-D (Total)",
+    doorWord = "Door",
+    anglesLabel = "Angles",
+    heightYLabel = "Height (Y)",
+    currentViewLabel = "Current view",
+)
+
+fun stringsFor(lang: AppLanguage): UiStrings = when (lang) {
+    AppLanguage.ES -> SpanishStrings
+    AppLanguage.EN -> EnglishStrings
+}
+
+val LocalAppLanguage = compositionLocalOf { AppLanguage.ES }
+
+/**
+ * Helper for inline localized strings, defaulting to [es] when not mapped.
+ * Can accept a map of future languages when expanding beyond ES/EN.
+ */
+fun tr(
+    lang: AppLanguage,
+    es: String,
+    en: String,
+    extra: Map<AppLanguage, String> = emptyMap(),
+): String = extra[lang] ?: when (lang) {
+    AppLanguage.ES -> es
+    AppLanguage.EN -> en
+}
