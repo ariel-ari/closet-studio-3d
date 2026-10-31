@@ -71,7 +71,6 @@ data class RoomSpec(
     val lockAngleBE: Boolean = false,
     val lockAngleCD: Boolean = false,
     val door: DoorSpec = DoorSpec(),
-    val customWallSouthMm: Float? = null,
 ) {
     init {
         require(clearWidthMm >= 0f) { "Room width must be non-negative, got $clearWidthMm" }
@@ -109,8 +108,8 @@ data class RoomSpec(
             )
         }
 
-    /** Geometric chord distance between vertexSW and vertexSE. */
-    val geometricWallSouthMm: Float
+    /** Resulting total length of the South Wall (Door wall: D + Door + E). */
+    val wallSouthMm: Float
         get() {
             val sw = vertexSW
             val se = vertexSE
@@ -118,10 +117,6 @@ data class RoomSpec(
             val dz = se.z - sw.z
             return sqrt(dx * dx + dz * dz).coerceAtLeast(0f)
         }
-
-    /** Resulting total length of the South Wall (Door wall: D + Door + E). */
-    val wallSouthMm: Float
-        get() = (customWallSouthMm ?: geometricWallSouthMm).coerceAtLeast(0f)
 
     /** Resulting interior angle (in degrees) at the South-West corner (between Wall C and Segment D). */
     val angleCDDeg: Float
@@ -233,16 +228,15 @@ data class RoomSpec(
             wallBMm = clearDepthMm,
             angleACDeg = 90f,
             angleABDeg = 90f,
-            customWallSouthMm = null,
         ).applyDoorAdaptation(keepDoorCentered, prevDoorWallLen)
     }
 
     /**
      * Adjusts an unlocked wall or unlocked corner so that `wallSouthMm` equals [targetSouthMm],
      * strictly preserving any locked walls (`lockWallA`, `lockWallB`, `lockWallC`) and locked corners
-     * (`lockAngleAC`, `lockAngleAB`). If the target is smaller or larger than a single unlocked wall
-     * can reach geometrically on its own, stores `customWallSouthMm = clampedS` so the South wall
-     * can shrink down to 0 or grow without artificial limits.
+     * (`lockAngleAC`, `lockAngleAB`). If the target is smaller than the geometric minimum imposed by
+     * locked walls/angles (e.g. `Pared B` and top 90° angles are locked), snaps to the minimum possible
+     * geometric length and stops decreasing so the 2D drawing and door scale never distort.
      */
     private fun solvePolygonForTargetSouth(
         targetSouthMm: Float,
@@ -262,10 +256,17 @@ data class RoomSpec(
             if (remSq >= 0f) {
                 val dx = sqrt(remSq)
                 val newA = (sw.x + dx + wallBMm * cos(radAB)).coerceAtLeast(0f)
-                return copy(clearWidthMm = newA, customWallSouthMm = null)
+                return copy(clearWidthMm = newA)
                     .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
             }
-            return copy(customWallSouthMm = clampedS)
+            if (!lockWallB) {
+                val minA = (sw.x + clampedS).coerceAtLeast(0f)
+                val alignedB = if (sin(radAB) > 1e-4f) (sw.z / sin(radAB)).coerceAtLeast(0f) else wallBMm
+                return copy(clearWidthMm = minA, wallBMm = alignedB)
+                    .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
+            }
+            val minA = (sw.x + wallBMm * cos(radAB)).coerceAtLeast(0f)
+            return copy(clearWidthMm = minA)
                 .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
         }
 
@@ -282,7 +283,7 @@ data class RoomSpec(
                 val candidates = listOf(deg1, deg2).filter { it in 5f..175f }
                 val bestDeg = candidates.minByOrNull { abs(it - angleABDeg) }
                 if (bestDeg != null) {
-                    return copy(angleABDeg = bestDeg, customWallSouthMm = null)
+                    return copy(angleABDeg = bestDeg)
                         .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
                 }
             }
@@ -300,7 +301,7 @@ data class RoomSpec(
                 val candidates = listOf(deg1, deg2).filter { it in 5f..175f }
                 val bestDeg = candidates.minByOrNull { abs(it - angleACDeg) }
                 if (bestDeg != null) {
-                    return copy(angleACDeg = bestDeg, customWallSouthMm = null)
+                    return copy(angleACDeg = bestDeg)
                         .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
                 }
             }
@@ -320,12 +321,14 @@ data class RoomSpec(
                 val candidates = listOf(-bProj + sqrtDisc, -bProj - sqrtDisc).filter { it >= 0f }
                 val bestB = candidates.minByOrNull { abs(it - wallBMm) }
                 if (bestB != null) {
-                    return copy(wallBMm = bestB, customWallSouthMm = null)
+                    return copy(wallBMm = bestB)
                         .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
                 }
             }
+            // Geometrically cannot shrink below the perpendicular distance |rx| because Pared B and its angles are locked:
+            // snap Wall B to the orthogonal projection (-bProj) where South wall reaches its exact geometric minimum, and stop there.
             val snappedB = (-bProj).coerceAtLeast(0f)
-            return copy(wallBMm = snappedB, customWallSouthMm = clampedS)
+            return copy(wallBMm = snappedB)
                 .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
         }
 
@@ -343,12 +346,12 @@ data class RoomSpec(
                 val candidates = listOf(-bProj + sqrtDisc, -bProj - sqrtDisc).filter { it >= 0f }
                 val bestC = candidates.minByOrNull { abs(it - wallCMm) }
                 if (bestC != null) {
-                    return copy(clearDepthMm = bestC, customWallSouthMm = null)
+                    return copy(clearDepthMm = bestC)
                         .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
                 }
             }
             val snappedC = (-bProj).coerceAtLeast(0f)
-            return copy(clearDepthMm = snappedC, customWallSouthMm = clampedS)
+            return copy(clearDepthMm = snappedC)
                 .applyDoorAdaptation(keepDoorCentered, previousWallLengthMm)
         }
 
@@ -363,7 +366,7 @@ data class RoomSpec(
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
         val targetSouth = wallSouthMm
-        val candidate = copy(clearWidthMm = clampedA, customWallSouthMm = null)
+        val candidate = copy(clearWidthMm = clampedA)
         return when {
             isSouthWallTotalLocked -> {
                 candidate.copy(lockWallA = true).solvePolygonForTargetSouth(targetSouth, keepDoorCentered, prevDoorWallLen)
@@ -386,7 +389,7 @@ data class RoomSpec(
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
         val targetSouth = wallSouthMm
-        val candidate = copy(wallBMm = clampedB, customWallSouthMm = null)
+        val candidate = copy(wallBMm = clampedB)
         return when {
             isSouthWallTotalLocked -> {
                 candidate.copy(lockWallB = true).solvePolygonForTargetSouth(targetSouth, keepDoorCentered, prevDoorWallLen)
@@ -413,7 +416,7 @@ data class RoomSpec(
         val oldCD = angleCDDeg
         val oldBE = angleBEDeg
         val targetSouth = wallSouthMm
-        val candidate = copy(clearDepthMm = clampedC, customWallSouthMm = null)
+        val candidate = copy(clearDepthMm = clampedC)
         return when {
             isSouthWallTotalLocked -> {
                 candidate.copy(lockWallC = true).solvePolygonForTargetSouth(targetSouth, keepDoorCentered, prevDoorWallLen)

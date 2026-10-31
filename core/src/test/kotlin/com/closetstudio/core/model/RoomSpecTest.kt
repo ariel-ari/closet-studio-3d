@@ -257,17 +257,17 @@ class RoomSpecTest {
     }
 
     @Test
-    fun `South wall and segments can shrink to 0 and grow beyond 6000 mm without artificial limits`() {
+    fun `South wall can grow beyond 6000 mm and stops at geometric minimum when opposite Wall B and top corners are locked`() {
         val room = RoomSpec(
             clearWidthMm = 3325f,
             clearDepthMm = 4177f,
             wallBMm = 3769f,
-            lockWallA = true, // Top wall locked
-            lockWallC = true, // Left wall locked
-            lockWallB = false, // Right wall unlocked
-            lockAngleAC = true,
-            lockAngleAB = true,
-            door = DoorSpec(widthMm = 660f, offsetMm = 1345f, lockWidth = false),
+            lockWallA = true, // Top wall (Pared B) locked at 3325 mm
+            lockWallC = true, // Left wall (Pared A) locked at 4177 mm
+            lockWallB = false, // Right wall (Pared C) unlocked
+            lockAngleAC = true, // Top-left 90° locked
+            lockAngleAB = true, // Top-right 90° locked
+            door = DoorSpec(widthMm = 660f, offsetMm = 1345f, lockWidth = true),
         )
         // Can grow far beyond 6000 mm (e.g., 12000 mm)
         val grown = room.withWallSouth(12000f)
@@ -275,10 +275,15 @@ class RoomSpecTest {
         assertEquals(3325f, grown.wallAMm, 0.01f)
         assertEquals(4177f, grown.wallCMm, 0.01f)
 
-        // Can shrink below 3325 mm all the way down to 0 mm
-        val shrunk = room.withWallSouth(0f)
-        assertEquals(0f, shrunk.wallSouthMm, 0.01f)
-        assertEquals(0f, shrunk.segmentDMm, 0.01f)
-        assertEquals(0f, shrunk.segmentEMm, 0.01f)
+        // When attempting to shrink below 3325 mm while Pared B (3325 mm) and both 90° top angles are locked,
+        // it snaps Pared C to 4177 mm and stops at the exact geometric minimum (3325 mm) so the door does not inflate!
+        val shrunk = room.withWallSouth(1925f)
+        assertEquals(3325f, shrunk.wallSouthMm, 0.5f)
+        assertEquals(4177f, shrunk.wallBMm, 0.5f)
+        assertEquals(660f, shrunk.door.widthMm, 0.01f)
+
+        // When Pared B is unlocked, South wall can shrink all the way down to 0 mm
+        val unlockedTop = room.copy(lockWallA = false, door = room.door.copy(lockWidth = false)).withWallSouth(0f)
+        assertEquals(0f, unlockedTop.wallSouthMm, 0.5f)
     }
 }
