@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -100,10 +102,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.closetstudio.app.data.ProjectStorage
 import com.closetstudio.app.render.MM_TO_M
@@ -752,6 +759,12 @@ fun RoomScreen() {
                     if (!showDimensionsSheet) {
                         val activeContainer = room.containers.firstOrNull { it.id == selectedContainerId }
                             ?: room.containers.lastOrNull()
+                        var isDraggingUnit by remember { mutableStateOf(false) }
+                        var dragScreenOffset by remember { mutableStateOf(Offset.Zero) }
+                        var viewportOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+                        var viewportWidthPx by remember { mutableStateOf(1f) }
+                        var panelOriginInRootX by remember { mutableStateOf(Float.MAX_VALUE) }
+
                         LaunchedEffect(room.containers, selectedContainerId) {
                             if (selectedContainerId != null && room.containers.none { it.id == selectedContainerId }) {
                                 selectedContainerId = room.containers.lastOrNull()?.id
@@ -764,7 +777,14 @@ fun RoomScreen() {
                         }
 
                         // Normal 3D Mode: Fullscreen RoomScene + navigation arrows + centrar
-                        Box(modifier = Modifier.fillMaxSize()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .onGloballyPositioned { coords ->
+                                    viewportOriginInRoot = coords.positionInRoot()
+                                    viewportWidthPx = coords.size.width.toFloat().coerceAtLeast(1f)
+                                },
+                        ) {
                             RoomViewport(
                                 room = room,
                                 targetX = targetXAnim.value,
@@ -1045,10 +1065,19 @@ fun RoomScreen() {
                                             switchWall(targetStep)
                                         }
                                     },
-                                    onAddContainerOnCurrentWall = {
+                                    onAddContainerOnCurrentWall = { dropFractionX ->
                                         val targetWall = wallIndexFromStep(wallStep.intValue)
                                         val newId = "container_${System.currentTimeMillis()}_${room.containers.size + 1}"
-                                        val updatedRoom = room.withAddedContainer(wall = targetWall, id = newId)
+                                        val added = room.withAddedContainer(wall = targetWall, id = newId)
+                                        val updatedRoom = if (dropFractionX != null) {
+                                            val wallLen = added.wallLengthMm(targetWall).coerceAtLeast(0f)
+                                            added.withUpdatedContainer(newId) { item ->
+                                                val maxOff = (wallLen - item.widthMm).coerceAtLeast(0f)
+                                                item.copy(offsetMm = (dropFractionX.coerceIn(0f, 1f) * maxOff))
+                                            }
+                                        } else {
+                                            added
+                                        }
                                         updateRoom(updatedRoom)
                                         selectedContainerId = newId
                                         coroutineScope.launch {
@@ -1056,6 +1085,42 @@ fun RoomScreen() {
                                                 "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
                                             )
                                         }
+                                    },
+                                    onDragUnitStart = { startRootPos ->
+                                        isDraggingUnit = true
+                                        dragScreenOffset = startRootPos - viewportOriginInRoot
+                                    },
+                                    onDragUnitMove = { delta ->
+                                        dragScreenOffset += delta
+                                    },
+                                    onDragUnitEnd = {
+                                        if (isDraggingUnit) {
+                                            val dropRootX = dragScreenOffset.x + viewportOriginInRoot.x
+                                            // Drop if dragged outside the right panel into the 3D room view
+                                            if (dropRootX < panelOriginInRootX + 30f) {
+                                                val visible3dWidth = (panelOriginInRootX - viewportOriginInRoot.x).coerceAtLeast(120f)
+                                                val fractionX = (dragScreenOffset.x / visible3dWidth).coerceIn(0f, 1f)
+                                                val targetWall = wallIndexFromStep(wallStep.intValue)
+                                                val newId = "container_${System.currentTimeMillis()}_${room.containers.size + 1}"
+                                                val added = room.withAddedContainer(wall = targetWall, id = newId)
+                                                val wallLen = added.wallLengthMm(targetWall).coerceAtLeast(0f)
+                                                val updatedRoom = added.withUpdatedContainer(newId) { item ->
+                                                    val maxOff = (wallLen - item.widthMm).coerceAtLeast(0f)
+                                                    item.copy(offsetMm = fractionX * maxOff)
+                                                }
+                                                updateRoom(updatedRoom)
+                                                selectedContainerId = newId
+                                                coroutineScope.launch {
+                                                    snackbarHostState.showSnackbar(
+                                                        "${s.containerAddedToast} ${wallDisplayName(targetWall, appLanguage)}",
+                                                    )
+                                                }
+                                            }
+                                            isDraggingUnit = false
+                                        }
+                                    },
+                                    onDragUnitCancel = {
+                                        isDraggingUnit = false
                                     },
                                     onUpdateContainer = { id, transform ->
                                         val updatedRoom = room.withUpdatedContainer(id, transform)
@@ -1079,8 +1144,30 @@ fun RoomScreen() {
                                     onClose = { showUnitsColumn = false },
                                     modifier = Modifier
                                         .width(unitsColumnWidth)
-                                        .fillMaxHeight(),
+                                        .fillMaxHeight()
+                                        .onGloballyPositioned { coords ->
+                                            panelOriginInRootX = coords.positionInRoot().x
+                                        },
                                 )
+                            }
+
+                            // Floating 3D Unit Preview while dragging from "Add Unit" onto the wall
+                            if (isDraggingUnit) {
+                                Box(
+                                    modifier = Modifier
+                                        .offset {
+                                            IntOffset(
+                                                x = (dragScreenOffset.x - 85f).roundToInt(),
+                                                y = (dragScreenOffset.y - 85f).roundToInt(),
+                                            )
+                                        }
+                                        .size(170.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    ClosetContainer3DGraphic(
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -1579,7 +1666,11 @@ private fun RightSideUnitsAndInspectorColumn(
     isEditingContainer: Boolean,
     onToggleEditMode: (Boolean) -> Unit,
     onSelectContainer: (ClosetContainerSpec) -> Unit,
-    onAddContainerOnCurrentWall: () -> Unit,
+    onAddContainerOnCurrentWall: (dropFractionX: Float?) -> Unit,
+    onDragUnitStart: (startRootPos: Offset) -> Unit,
+    onDragUnitMove: (delta: Offset) -> Unit,
+    onDragUnitEnd: () -> Unit,
+    onDragUnitCancel: () -> Unit,
     onUpdateContainer: (String, (ClosetContainerSpec) -> ClosetContainerSpec) -> Unit,
     onDuplicateContainer: (String) -> Unit,
     onDeleteContainer: (String) -> Unit,
@@ -1588,68 +1679,61 @@ private fun RightSideUnitsAndInspectorColumn(
 ) {
     Surface(
         modifier = modifier,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        tonalElevation = 6.dp,
-        shadowElevation = 12.dp,
-        shape = RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
+        color = Color.White,
+        tonalElevation = 0.dp,
+        shadowElevation = 14.dp,
+        shape = RoundedCornerShape(0.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .navigationBarsPadding(),
         ) {
-            // Header
+            // Minimalist "Add Unit    ✕" Header matching reference screenshot
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (isEditingContainer && activeContainer != null) {
-                            s.editContainerTitle
-                        } else {
-                            s.unitsPanelTitle
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2C55B5),
-                    )
-                    Text(
-                        text = if (isEditingContainer && activeContainer != null) {
-                            s.editContainerSubtitle
-                        } else {
-                            s.unitsPanelSubtitle
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = if (isEditingContainer && activeContainer != null) {
+                        s.editContainerTitle
+                    } else {
+                        s.unitsPanelTitle
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF1A1A1A),
+                )
 
-                if (isEditingContainer && activeContainer != null) {
-                    TextButton(onClick = { onToggleEditMode(false) }) {
-                        Text(
-                            text = s.backToCatalogButton,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isEditingContainer && activeContainer != null) {
+                        TextButton(onClick = { onToggleEditMode(false) }) {
+                            Text(
+                                text = s.backToCatalogButton,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2C55B5),
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onClose,
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = s.closeButton,
+                            tint = Color(0xFF1A1A1A),
                         )
                     }
                 }
-
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = s.closeButton,
-                    )
-                }
             }
 
-            HorizontalDivider()
+            HorizontalDivider(color = Color(0xFFE5E5E5), thickness = 1.dp)
 
             if (isEditingContainer && activeContainer != null) {
                 // --- CONTAINER SIZE & POSITION EDITOR PANEL ---
@@ -1663,7 +1747,8 @@ private fun RightSideUnitsAndInspectorColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .verticalScroll(rememberScrollState()),
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     // Wall Selector Chips (A, B, C, E-D)
@@ -1809,169 +1894,54 @@ private fun RightSideUnitsAndInspectorColumn(
                     }
                 }
             } else {
-                // --- CATALOG VIEW: 1. CLOSET CONTAINER (CASCO / CAJÓN BASE) ---
-                val currentWall = wallIndexFromStep(currentWallStep)
+                // --- SIMPLE VISUAL CATALOG VIEW (Clean white column, pure 3D illustration, drag or tap to place) ---
+                var itemRootOffset by remember { mutableStateOf(Offset.Zero) }
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(28.dp),
                 ) {
-                    Card(
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                        ),
-                        border = BorderStroke(1.5.dp, Color(0xFF2C55B5).copy(alpha = 0.35f)),
-                        onClick = onAddContainerOnCurrentWall,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                // Custom 2D/3D Vector Preview of the Closet Container (Carcass)
-                                ClosetContainerPreviewIcon(
-                                    modifier = Modifier.size(64.dp),
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = s.containerUnitTitle,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                    )
-                                    Text(
-                                        text = s.containerUnitSubtitle,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
+                    // 1st Unit: Closet Container (Carcass) — pure 3D graphic without text clutter
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .height(175.dp)
+                            .onGloballyPositioned { coords ->
+                                itemRootOffset = coords.positionInRoot()
                             }
-
-                            Button(
-                                onClick = onAddContainerOnCurrentWall,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2C55B5)),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "${s.addContainerButton} (${wallDisplayName(currentWall, appLanguage)})",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
+                            .clickable {
+                                onAddContainerOnCurrentWall(null)
                             }
-                        }
-                    }
-
-                    // List of already placed containers in the room
-                    if (room.containers.isNotEmpty()) {
-                        HorizontalDivider()
-                        Text(
-                            text = "${s.placedContainersSection} (${room.containers.size})",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2C55B5),
-                        )
-
-                        room.containers.forEachIndexed { idx, item ->
-                            val isSelected = activeContainer?.id == item.id
-                            Card(
-                                shape = RoundedCornerShape(10.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) {
-                                        Color(0xFF2C55B5).copy(alpha = 0.14f)
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f)
+                            .pointerInput(Unit) {
+                                detectDragGestures(
+                                    onDragStart = { localOffset ->
+                                        onDragUnitStart(itemRootOffset + localOffset)
                                     },
-                                ),
-                                border = if (isSelected) BorderStroke(1.5.dp, Color(0xFF2C55B5)) else null,
-                                onClick = { onSelectContainer(item) },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "#${idx + 1} • ${wallDisplayName(item.wall, appLanguage)}",
-                                            style = MaterialTheme.typography.labelLarge,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) Color(0xFF2C55B5) else MaterialTheme.colorScheme.onSurface,
-                                        )
-                                        Text(
-                                            text = "${item.widthMm.roundToInt()} × ${item.heightMm.roundToInt()} × ${item.depthMm.roundToInt()} mm",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                        IconButton(
-                                            onClick = {
-                                                onSelectContainer(item)
-                                                onToggleEditMode(true)
-                                            },
-                                            modifier = Modifier.size(32.dp),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Edit,
-                                                contentDescription = s.editContainerDesc,
-                                                tint = Color(0xFF2C55B5),
-                                                modifier = Modifier.size(18.dp),
-                                            )
-                                        }
-                                        IconButton(
-                                            onClick = { onDuplicateContainer(item.id) },
-                                            modifier = Modifier.size(32.dp),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.ContentCopy,
-                                                contentDescription = s.duplicateContainerDesc,
-                                                tint = Color(0xFF2C55B5),
-                                                modifier = Modifier.size(18.dp),
-                                            )
-                                        }
-                                        IconButton(
-                                            onClick = { onDeleteContainer(item.id) },
-                                            modifier = Modifier.size(32.dp),
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.DeleteOutline,
-                                                contentDescription = s.deleteContainerDesc,
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(18.dp),
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                text = s.unitsPanelEmptyHint,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(14.dp),
-                            )
-                        }
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        onDragUnitMove(dragAmount)
+                                    },
+                                    onDragEnd = {
+                                        onDragUnitEnd()
+                                    },
+                                    onDragCancel = {
+                                        onDragUnitCancel()
+                                    },
+                                )
+                            },
+                    ) {
+                        ClosetContainer3DGraphic(
+                            modifier = Modifier
+                                .fillMaxWidth(0.86f)
+                                .height(160.dp),
+                        )
                     }
                 }
             }
@@ -2054,41 +2024,132 @@ private fun ContainerDimensionControlCard(
 }
 
 @Composable
-private fun ClosetContainerPreviewIcon(modifier: Modifier = Modifier) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = Color(0xFFEDE6DC),
-        border = BorderStroke(1.dp, Color(0xFFC19668)),
-        modifier = modifier,
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
-            val w = size.width
-            val h = size.height
-            val frameT = w * 0.11f
-            val plinthH = h * 0.12f
+private fun ClosetContainer3DGraphic(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
 
-            // Back panel (cream)
-            drawRect(
-                color = Color(0xFFF5ECD8),
-                topLeft = Offset(frameT, frameT),
-                size = androidx.compose.ui.geometry.Size(w - frameT * 2f, h - frameT - plinthH),
-            )
-            // Outer frame (left, right, top, bottom floor, plinth)
-            val wood = Color(0xFFC19668)
-            val woodDark = Color(0xFF9C7348)
-            // Left panel
-            drawRect(color = wood, topLeft = Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(frameT, h))
-            // Right panel
-            drawRect(color = wood, topLeft = Offset(w - frameT, 0f), size = androidx.compose.ui.geometry.Size(frameT, h))
-            // Top panel
-            drawRect(color = wood, topLeft = Offset(frameT, 0f), size = androidx.compose.ui.geometry.Size(w - frameT * 2f, frameT))
-            // Plinth + bottom shelf
-            drawRect(
-                color = woodDark,
-                topLeft = Offset(frameT, h - plinthH - frameT * 0.7f),
-                size = androidx.compose.ui.geometry.Size(w - frameT * 2f, plinthH + frameT * 0.7f),
-            )
+        // Perspective closet carcass matching the user's reference image:
+        // Front outer rectangle + recessed inner back panel with 3D perspective depth + bottom plinth
+        val outerLeft = w * 0.08f
+        val outerRight = w * 0.92f
+        val outerTop = h * 0.06f
+        val outerBottom = h * 0.94f
+
+        val frameT = (outerRight - outerLeft) * 0.045f
+        val plinthH = (outerBottom - outerTop) * 0.075f
+        val depthInsetX = (outerRight - outerLeft) * 0.095f
+        val depthInsetTopY = (outerBottom - outerTop) * 0.065f
+        val depthInsetBottomY = (outerBottom - outerTop) * 0.055f
+
+        val innerFrontLeft = outerLeft + frameT
+        val innerFrontRight = outerRight - frameT
+        val innerFrontTop = outerTop + frameT
+        val innerFrontBottom = outerBottom - plinthH - frameT * 0.7f
+
+        val backLeft = innerFrontLeft + depthInsetX
+        val backRight = innerFrontRight - depthInsetX
+        val backTop = innerFrontTop + depthInsetTopY
+        val backBottom = innerFrontBottom - depthInsetBottomY
+
+        val faceEdgeWood = Color(0xFFD6B28A)
+        val sideInnerWood = Color(0xFFBC9368)
+        val topCeilingWood = Color(0xFFAA8157)
+        val bottomShelfWood = Color(0xFFC59B70)
+        val backCreamWood = Color(0xFFF3EAD8)
+        val plinthWood = Color(0xFFCCA377)
+        val lineStroke = Color(0xFF8C6742).copy(alpha = 0.45f)
+
+        // 1. Cream Back Panel
+        drawRect(
+            color = backCreamWood,
+            topLeft = Offset(backLeft, backTop),
+            size = androidx.compose.ui.geometry.Size(backRight - backLeft, backBottom - backTop),
+        )
+
+        // 2. Left Interior Depth Wall (trapezoid from innerFrontLeft to backLeft)
+        val leftWallPath = Path().apply {
+            moveTo(innerFrontLeft, innerFrontTop)
+            lineTo(backLeft, backTop)
+            lineTo(backLeft, backBottom)
+            lineTo(innerFrontLeft, innerFrontBottom)
+            close()
         }
+        drawPath(leftWallPath, color = sideInnerWood)
+
+        // 3. Right Interior Depth Wall (trapezoid from innerFrontRight to backRight)
+        val rightWallPath = Path().apply {
+            moveTo(innerFrontRight, innerFrontTop)
+            lineTo(backRight, backTop)
+            lineTo(backRight, backBottom)
+            lineTo(innerFrontRight, innerFrontBottom)
+            close()
+        }
+        drawPath(rightWallPath, color = sideInnerWood)
+
+        // 4. Top Interior Ceiling (trapezoid from innerFrontTop to backTop)
+        val topCeilingPath = Path().apply {
+            moveTo(innerFrontLeft, innerFrontTop)
+            lineTo(innerFrontRight, innerFrontTop)
+            lineTo(backRight, backTop)
+            lineTo(backLeft, backTop)
+            close()
+        }
+        drawPath(topCeilingPath, color = topCeilingWood)
+
+        // 5. Bottom Interior Shelf Floor (trapezoid from innerFrontBottom to backBottom)
+        val bottomShelfPath = Path().apply {
+            moveTo(innerFrontLeft, innerFrontBottom)
+            lineTo(innerFrontRight, innerFrontBottom)
+            lineTo(backRight, backBottom)
+            lineTo(backLeft, backBottom)
+            close()
+        }
+        drawPath(bottomShelfPath, color = bottomShelfWood)
+
+        // 6. Front Plinth / Toe-Kick (bottom strip between left and right vertical panels)
+        drawRect(
+            color = plinthWood,
+            topLeft = Offset(innerFrontLeft, innerFrontBottom),
+            size = androidx.compose.ui.geometry.Size(
+                innerFrontRight - innerFrontLeft,
+                outerBottom - innerFrontBottom,
+            ),
+        )
+
+        // 7. Front Thickness Edges (Left, Right, Top, Bottom shelf lip)
+        drawRect(
+            color = faceEdgeWood,
+            topLeft = Offset(outerLeft, outerTop),
+            size = androidx.compose.ui.geometry.Size(frameT, outerBottom - outerTop),
+        )
+        drawRect(
+            color = faceEdgeWood,
+            topLeft = Offset(innerFrontRight, outerTop),
+            size = androidx.compose.ui.geometry.Size(frameT, outerBottom - outerTop),
+        )
+        drawRect(
+            color = faceEdgeWood,
+            topLeft = Offset(innerFrontLeft, outerTop),
+            size = androidx.compose.ui.geometry.Size(innerFrontRight - innerFrontLeft, frameT),
+        )
+        drawRect(
+            color = faceEdgeWood,
+            topLeft = Offset(innerFrontLeft, innerFrontBottom),
+            size = androidx.compose.ui.geometry.Size(innerFrontRight - innerFrontLeft, frameT * 0.7f),
+        )
+
+        // Subtle crisp architectural contour lines
+        drawPath(leftWallPath, color = lineStroke, style = Stroke(width = 1.2f))
+        drawPath(rightWallPath, color = lineStroke, style = Stroke(width = 1.2f))
+        drawPath(topCeilingPath, color = lineStroke, style = Stroke(width = 1.2f))
+        drawPath(bottomShelfPath, color = lineStroke, style = Stroke(width = 1.2f))
+        drawRect(
+            color = lineStroke,
+            topLeft = Offset(outerLeft, outerTop),
+            size = androidx.compose.ui.geometry.Size(outerRight - outerLeft, outerBottom - outerTop),
+            style = Stroke(width = 1.4f),
+        )
     }
 }
 
