@@ -187,16 +187,21 @@ private fun wallDisplayName(wall: WallIndex, lang: AppLanguage): String = when (
 
 /**
  * Multi-touch gesture recognizer:
- * - 1 Finger: Orbit (horizontal yaw and vertical pitch)
+ * - Single tap: Raycast 3D selection (`onTap(pos, viewportWidth, viewportHeight)`)
+ * - 1 Finger drag: Orbit (horizontal yaw and vertical pitch)
  * - 2 Fingers: Pan (translate focal target and camera) & Pinch (zoom distance)
  */
 private suspend fun PointerInputScope.detectRoomInspectionGestures(
     onOrbit: (deltaX: Float, deltaY: Float) -> Unit,
     onPan: (panX: Float, panY: Float) -> Unit,
     onZoom: (zoomFactor: Float) -> Unit,
+    onTap: (tapPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Unit = { _, _, _ -> },
 ) {
     awaitEachGesture {
-        awaitFirstDown(requireUnconsumed = false)
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val downPos = down.position
+        var lastSinglePos = downPos
+        var totalMoveDistance = 0f
         var prevCentroid = Offset.Zero
         var prevDistance = 0f
         var wasMultiTouch = false
@@ -207,18 +212,23 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
 
             if (activePointers.size == 1) {
                 val pointer = activePointers[0]
+                lastSinglePos = pointer.position
                 if (wasMultiTouch) {
                     wasMultiTouch = false
                     prevDistance = 0f
                 } else {
                     val delta = pointer.position - pointer.previousPosition
                     if (delta != Offset.Zero) {
-                        onOrbit(delta.x, delta.y)
-                        pointer.consume()
+                        totalMoveDistance += delta.getDistance()
+                        if (totalMoveDistance > 8f) {
+                            onOrbit(delta.x, delta.y)
+                            pointer.consume()
+                        }
                     }
                 }
             } else if (activePointers.size >= 2) {
                 wasMultiTouch = true
+                totalMoveDistance += 100f
                 val p1 = activePointers[0].position
                 val p2 = activePointers[1].position
                 val centroid = (p1 + p2) / 2f
@@ -241,7 +251,90 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
                 activePointers.forEach { it.consume() }
             }
         } while (event.changes.any { it.pressed })
+
+        if (!wasMultiTouch && totalMoveDistance <= 14f) {
+            onTap(
+                lastSinglePos,
+                size.width.toFloat().coerceAtLeast(1f),
+                size.height.toFloat().coerceAtLeast(1f),
+            )
+        }
     }
+}
+
+/**
+ * Unprojects a 2D viewport tap coordinate into a 3D world-space ray (in millimetres)
+ * matching [RoomScene]'s camera projection and tests intersection against placed containers.
+ */
+private fun pickContainerAtScreenTap(
+    room: RoomSpec,
+    tapPos: Offset,
+    viewportWidthPx: Float,
+    viewportHeightPx: Float,
+    targetX: Float,
+    targetY: Float,
+    targetZ: Float,
+    yawDeg: Float,
+    pitchDeg: Float,
+    distanceM: Float,
+): String? {
+    val yawRad = Math.toRadians(yawDeg.toDouble()).toFloat()
+    val pitchRad = Math.toRadians(pitchDeg.toDouble()).toFloat()
+
+    // Forward unit vector (from eye toward target)
+    val fwdX = sin(yawRad) * cos(pitchRad)
+    val fwdY = sin(pitchRad)
+    val fwdZ = -cos(yawRad) * cos(pitchRad)
+
+    // Eye position in metres, converted to millimetres
+    val eyeXM = targetX - fwdX * distanceM
+    val eyeYM = (targetY - fwdY * distanceM).coerceAtLeast(0.10f)
+    val eyeZM = targetZ - fwdZ * distanceM
+
+    // Actual forward vector from clamped eye to target
+    val rawDx = targetX - eyeXM
+    val rawDy = targetY - eyeYM
+    val rawDz = targetZ - eyeZM
+    val fwdLen = sqrt(rawDx * rawDx + rawDy * rawDy + rawDz * rawDz).coerceAtLeast(1e-5f)
+    val fx = rawDx / fwdLen
+    val fy = rawDy / fwdLen
+    val fz = rawDz / fwdLen
+
+    // Right = normalize(cross(forward, worldUp(0,1,0))) = normalize((-fz, 0, fx))
+    val rLen = sqrt(fz * fz + fx * fx).coerceAtLeast(1e-5f)
+    val rx = -fz / rLen
+    val ry = 0f
+    val rz = fx / rLen
+
+    // Up = cross(right, forward)
+    val ux = ry * fz - rz * fy
+    val uy = rz * fx - rx * fz
+    val uz = rx * fy - ry * fx
+
+    val aspect = viewportWidthPx / viewportHeightPx.coerceAtLeast(1f)
+    val (halfTanX, halfTanY) = if (aspect >= 1f) {
+        val tanV = kotlin.math.tan(Math.toRadians(24.0)).toFloat() // 48° vertical FOV / 2
+        (tanV * aspect) to tanV
+    } else {
+        val tanH = kotlin.math.tan(Math.toRadians(29.0)).toFloat() // 58° horizontal FOV / 2
+        tanH to (tanH / aspect.coerceAtLeast(0.1f))
+    }
+
+    val ndcX = (2f * tapPos.x / viewportWidthPx) - 1f
+    val ndcY = 1f - (2f * tapPos.y / viewportHeightPx)
+
+    val dirX = fx + ndcX * halfTanX * rx + ndcY * halfTanY * ux
+    val dirY = fy + ndcX * halfTanX * ry + ndcY * halfTanY * uy
+    val dirZ = fz + ndcX * halfTanX * rz + ndcY * halfTanY * uz
+
+    return room.pickContainerByRayMm(
+        rayOriginX = eyeXM * 1000f,
+        rayOriginY = eyeYM * 1000f,
+        rayOriginZ = eyeZM * 1000f,
+        rayDirX = dirX,
+        rayDirY = dirY,
+        rayDirZ = dirZ,
+    )
 }
 
 @Composable
@@ -758,7 +851,6 @@ fun RoomScreen() {
                     // 2. Interactive Body Area
                     if (!showDimensionsSheet) {
                         val activeContainer = room.containers.firstOrNull { it.id == selectedContainerId }
-                            ?: room.containers.lastOrNull()
                         var isDraggingUnit by remember { mutableStateOf(false) }
                         var dragScreenOffset by remember { mutableStateOf(Offset.Zero) }
                         var viewportOriginInRoot by remember { mutableStateOf(Offset.Zero) }
@@ -767,12 +859,8 @@ fun RoomScreen() {
 
                         LaunchedEffect(room.containers, selectedContainerId) {
                             if (selectedContainerId != null && room.containers.none { it.id == selectedContainerId }) {
-                                selectedContainerId = room.containers.lastOrNull()?.id
-                                if (selectedContainerId == null) {
-                                    isEditingContainerInPanel = false
-                                }
-                            } else if (selectedContainerId == null && room.containers.isNotEmpty()) {
-                                selectedContainerId = room.containers.last().id
+                                selectedContainerId = null
+                                isEditingContainerInPanel = false
                             }
                         }
 
@@ -827,6 +915,25 @@ fun RoomScreen() {
                                     coroutineScope.launch {
                                         val newDist = (distanceAnim.value / zoomFactor).coerceIn(0.8f, 10.0f)
                                         distanceAnim.snapTo(newDist)
+                                    }
+                                },
+                                onTap = { tapPos, vw, vh ->
+                                    val hitId = pickContainerAtScreenTap(
+                                        room = room,
+                                        tapPos = tapPos,
+                                        viewportWidthPx = vw,
+                                        viewportHeightPx = vh,
+                                        targetX = targetXAnim.value,
+                                        targetY = targetYAnim.value,
+                                        targetZ = targetZAnim.value,
+                                        yawDeg = yawAnim.value,
+                                        pitchDeg = pitchAnim.value,
+                                        distanceM = distanceAnim.value,
+                                    )
+                                    selectedContainerId = hitId
+                                    if (hitId == null && isEditingContainerInPanel) {
+                                        isEditingContainerInPanel = false
+                                        showUnitsColumn = false
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize(),
@@ -1633,6 +1740,7 @@ private fun RoomViewport(
     onOrbit: (Float, Float) -> Unit,
     onPan: (Float, Float) -> Unit,
     onZoom: (Float) -> Unit,
+    onTap: (Offset, Float, Float) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1642,6 +1750,7 @@ private fun RoomViewport(
                     onOrbit = onOrbit,
                     onPan = onPan,
                     onZoom = onZoom,
+                    onTap = onTap,
                 )
             },
     ) {

@@ -14,8 +14,10 @@ enum class RoomSurface {
     DOOR_LEAF,
     DOOR_HANDLE,
     CONTAINER_BODY,
+    CONTAINER_SIDE_PANEL,
+    CONTAINER_FRONT_EDGE,
     CONTAINER_BACK,
-    CONTAINER_SELECTED,
+    CONTAINER_SELECTED_OUTLINE,
 }
 
 data class RoomPart(
@@ -217,37 +219,45 @@ object RoomGeometryBuilder {
         parts += RoomPart(RoomSurface.DOOR_HANDLE, handleBuilder.build())
 
         if (room.containers.isNotEmpty()) {
-            val containerBodyBuilder = MeshBuilder(uvScaleMm)
-            val containerSelectedBuilder = MeshBuilder(uvScaleMm)
+            val horizPanelsBuilder = MeshBuilder(uvScaleMm)
+            val vertPanelsBuilder = MeshBuilder(uvScaleMm)
+            val frontEdgesBuilder = MeshBuilder(uvScaleMm)
             val containerBackBuilder = MeshBuilder(uvScaleMm)
+            val selectedOutlineBuilder = MeshBuilder(uvScaleMm)
 
             for (rawContainer in room.containers) {
                 val container = room.clampContainer(rawContainer)
                 if (container.widthMm < 40f || container.heightMm < 40f || container.depthMm < 40f) continue
-                val bodyTarget = if (container.id == selectedContainerId) {
-                    containerSelectedBuilder
-                } else {
-                    containerBodyBuilder
-                }
                 addContainerToBuilders(
                     room = room,
                     container = container,
-                    bodyBuilder = bodyTarget,
+                    horizPanelsBuilder = horizPanelsBuilder,
+                    vertPanelsBuilder = vertPanelsBuilder,
+                    frontEdgesBuilder = frontEdgesBuilder,
                     backBuilder = containerBackBuilder,
+                    selectedOutlineBuilder = if (container.id == selectedContainerId) selectedOutlineBuilder else null,
                 )
             }
 
-            val bodyMesh = containerBodyBuilder.build()
-            if (bodyMesh.vertexCount > 0) {
-                parts += RoomPart(RoomSurface.CONTAINER_BODY, bodyMesh)
+            val horizMesh = horizPanelsBuilder.build()
+            if (horizMesh.vertexCount > 0) {
+                parts += RoomPart(RoomSurface.CONTAINER_BODY, horizMesh)
             }
-            val selectedMesh = containerSelectedBuilder.build()
-            if (selectedMesh.vertexCount > 0) {
-                parts += RoomPart(RoomSurface.CONTAINER_SELECTED, selectedMesh)
+            val vertMesh = vertPanelsBuilder.build()
+            if (vertMesh.vertexCount > 0) {
+                parts += RoomPart(RoomSurface.CONTAINER_SIDE_PANEL, vertMesh)
+            }
+            val frontEdgeMesh = frontEdgesBuilder.build()
+            if (frontEdgeMesh.vertexCount > 0) {
+                parts += RoomPart(RoomSurface.CONTAINER_FRONT_EDGE, frontEdgeMesh)
             }
             val backMesh = containerBackBuilder.build()
             if (backMesh.vertexCount > 0) {
                 parts += RoomPart(RoomSurface.CONTAINER_BACK, backMesh)
+            }
+            val outlineMesh = selectedOutlineBuilder.build()
+            if (outlineMesh.vertexCount > 0) {
+                parts += RoomPart(RoomSurface.CONTAINER_SELECTED_OUTLINE, outlineMesh)
             }
         }
 
@@ -259,6 +269,10 @@ object RoomGeometryBuilder {
      * - `s0..s1`: distance along the wall from its start vertex (`pStart` -> `pEnd`)
      * - `y0..y1`: vertical height from floor (`0`) to ceiling
      * - `d0..d1`: depth protruding inward from the wall along `inwardNormal`
+     *
+     * If [frontEdgeBuilder] is supplied, the front face (`d = d1`, facing the room) is emitted into
+     * [frontEdgeBuilder] so the 28mm board thickness edge (`canto frontal`) has a crisp distinct
+     * contrast against the deep interior side walls.
      */
     private fun addWallAlignedBox(
         builder: MeshBuilder,
@@ -273,6 +287,7 @@ object RoomGeometryBuilder {
         y1: Float,
         d0: Float,
         d1: Float,
+        frontEdgeBuilder: MeshBuilder? = null,
     ) {
         if (s1 <= s0 || y1 <= y0 || d1 <= d0) return
 
@@ -288,7 +303,7 @@ object RoomGeometryBuilder {
         val nLeft = Vec3(-ux, 0f, -uz)
 
         // Front face (d = d1, facing into room)
-        builder.addQuad(
+        (frontEdgeBuilder ?: builder).addQuad(
             a = pt(s1, y0, d1),
             b = pt(s0, y0, d1),
             c = pt(s0, y1, d1),
@@ -340,8 +355,11 @@ object RoomGeometryBuilder {
     private fun addContainerToBuilders(
         room: RoomSpec,
         container: ClosetContainerSpec,
-        bodyBuilder: MeshBuilder,
+        horizPanelsBuilder: MeshBuilder,
+        vertPanelsBuilder: MeshBuilder,
+        frontEdgesBuilder: MeshBuilder,
         backBuilder: MeshBuilder,
+        selectedOutlineBuilder: MeshBuilder?,
     ) {
         val nw = room.vertexNW
         val ne = room.vertexNE
@@ -369,59 +387,64 @@ object RoomGeometryBuilder {
         val s0 = container.offsetMm
         val s1 = s0 + container.widthMm
         val totalH = container.heightMm
-        val totalD = container.depthMm
-        val t = container.panelThicknessMm.coerceIn(10f, (container.widthMm * 0.2f).coerceAtLeast(12f))
-        val plinthH = container.plinthHeightMm.coerceIn(0f, (totalH * 0.25f).coerceAtLeast(0f))
-        val backT = container.backThicknessMm.coerceIn(3f, 18f)
+        val totalD = container.depthMm.coerceAtLeast(350f)
+        // Visible architectural carcass board thickness (28mm min so edges read clearly in 3D)
+        val t = container.panelThicknessMm.coerceAtLeast(28f).coerceAtMost((container.widthMm * 0.2f).coerceAtLeast(28f))
+        val plinthH = container.plinthHeightMm.coerceAtLeast(90f).coerceAtMost((totalH * 0.25f).coerceAtLeast(90f))
+        val backT = container.backThicknessMm.coerceIn(8f, 18f)
 
-        val wallGap = 2f // 2mm offset from wall surface to prevent Z-fighting
+        val wallGap = 4f // 4mm offset from wall surface to prevent Z-fighting
 
-        // 1. Left Side Panel (full height 0..totalH, full depth)
+        // 1. Left Side Panel (full height 0..totalH, full depth d0..d1)
         addWallAlignedBox(
-            builder = bodyBuilder,
+            builder = vertPanelsBuilder,
             pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
             s0 = s0, s1 = s0 + t,
             y0 = 0f, y1 = totalH,
             d0 = wallGap, d1 = wallGap + totalD,
+            frontEdgeBuilder = frontEdgesBuilder,
         )
 
-        // 2. Right Side Panel (full height 0..totalH, full depth)
+        // 2. Right Side Panel (full height 0..totalH, full depth d0..d1)
         addWallAlignedBox(
-            builder = bodyBuilder,
+            builder = vertPanelsBuilder,
             pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
             s0 = s1 - t, s1 = s1,
             y0 = 0f, y1 = totalH,
             d0 = wallGap, d1 = wallGap + totalD,
+            frontEdgeBuilder = frontEdgesBuilder,
         )
 
         // 3. Top Roof Panel (between side panels, y = totalH - t .. totalH)
         if (s1 - t > s0 + t && totalH > t) {
             addWallAlignedBox(
-                builder = bodyBuilder,
+                builder = horizPanelsBuilder,
                 pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
                 s0 = s0 + t, s1 = s1 - t,
                 y0 = totalH - t, y1 = totalH,
                 d0 = wallGap + backT, d1 = wallGap + totalD,
+                frontEdgeBuilder = frontEdgesBuilder,
             )
         }
 
         // 4. Bottom Floor Panel (elevated above plinth, y = plinthH .. plinthH + t)
         if (s1 - t > s0 + t && totalH > plinthH + t * 2f) {
             addWallAlignedBox(
-                builder = bodyBuilder,
+                builder = horizPanelsBuilder,
                 pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
                 s0 = s0 + t, s1 = s1 - t,
                 y0 = plinthH, y1 = plinthH + t,
                 d0 = wallGap + backT, d1 = wallGap + totalD,
+                frontEdgeBuilder = frontEdgesBuilder,
             )
         }
 
-        // 5. Front Plinth / Toe-Kick (zocalo inferior at front edge, y = 0 .. plinthH)
+        // 5. Front Plinth / Toe-Kick (zocalo inferior recessed 15mm from front edge, y = 0 .. plinthH)
         if (s1 - t > s0 + t && plinthH > 2f) {
-            val plinthSetback = 12f
+            val plinthSetback = 16f
             val dFront = (wallGap + totalD - plinthSetback).coerceAtLeast(wallGap + t)
             addWallAlignedBox(
-                builder = bodyBuilder,
+                builder = vertPanelsBuilder,
                 pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
                 s0 = s0 + t, s1 = s1 - t,
                 y0 = 0f, y1 = plinthH,
@@ -429,7 +452,7 @@ object RoomGeometryBuilder {
             )
         }
 
-        // 6. Back Panel (espaldar claro contrastado dentro del contenedor)
+        // 6. Back Panel (espaldar claro recessed at the back of the 600mm deep cavity)
         if (s1 - t > s0 + t && totalH > plinthH + t) {
             addWallAlignedBox(
                 builder = backBuilder,
@@ -437,6 +460,45 @@ object RoomGeometryBuilder {
                 s0 = s0 + t, s1 = s1 - t,
                 y0 = plinthH, y1 = totalH - t,
                 d0 = wallGap, d1 = wallGap + backT,
+            )
+        }
+
+        // 7. Selection Highlight Outline around the front rim when selected
+        if (selectedOutlineBuilder != null) {
+            val rim = 6f
+            val dOut0 = wallGap + totalD - 2f
+            val dOut1 = wallGap + totalD + 6f
+            // Left vertical highlight
+            addWallAlignedBox(
+                builder = selectedOutlineBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s0 - rim, s1 = s0 + rim,
+                y0 = 0f, y1 = totalH + rim,
+                d0 = dOut0, d1 = dOut1,
+            )
+            // Right vertical highlight
+            addWallAlignedBox(
+                builder = selectedOutlineBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s1 - rim, s1 = s1 + rim,
+                y0 = 0f, y1 = totalH + rim,
+                d0 = dOut0, d1 = dOut1,
+            )
+            // Top horizontal highlight
+            addWallAlignedBox(
+                builder = selectedOutlineBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s0 - rim, s1 = s1 + rim,
+                y0 = totalH - rim, y1 = totalH + rim,
+                d0 = dOut0, d1 = dOut1,
+            )
+            // Bottom horizontal highlight
+            addWallAlignedBox(
+                builder = selectedOutlineBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = s0 - rim, s1 = s1 + rim,
+                y0 = 0f, y1 = rim * 2f,
+                d0 = dOut0, d1 = dOut1,
             )
         }
     }

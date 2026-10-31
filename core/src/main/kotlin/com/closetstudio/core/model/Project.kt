@@ -938,4 +938,96 @@ data class RoomSpec(
     fun withRemovedContainer(id: String): RoomSpec {
         return copy(containers = containers.filterNot { it.id == id })
     }
+
+    /**
+     * Performs a 3D ray-box intersection test (in millimetres) against all placed [containers],
+     * returning the `id` of the closest hit container, or `null` if the ray hits empty room space.
+     */
+    fun pickContainerByRayMm(
+        rayOriginX: Float,
+        rayOriginY: Float,
+        rayOriginZ: Float,
+        rayDirX: Float,
+        rayDirY: Float,
+        rayDirZ: Float,
+    ): String? {
+        if (containers.isEmpty()) return null
+        val nw = vertexNW
+        val ne = vertexNE
+        val se = vertexSE
+        val sw = vertexSW
+
+        var bestId: String? = null
+        var bestT = Float.MAX_VALUE
+
+        for (raw in containers) {
+            val c = clampContainer(raw)
+            val (pStart, pEnd) = when (c.wall) {
+                WallIndex.NORTH -> nw to ne
+                WallIndex.EAST -> ne to se
+                WallIndex.SOUTH -> se to sw
+                WallIndex.WEST -> sw to nw
+            }
+            val dx = pEnd.x - pStart.x
+            val dz = pEnd.z - pStart.z
+            val wallLen = sqrt(dx * dx + dz * dz)
+            if (wallLen < 10f) continue
+
+            val ux = dx / wallLen
+            val uz = dz / wallLen
+            val nx = -uz
+            val nz = ux
+
+            // Transform ray into container's wall-aligned local coordinate system (s, y, d)
+            val relX = rayOriginX - pStart.x
+            val relZ = rayOriginZ - pStart.z
+            val origS = relX * ux + relZ * uz
+            val origY = rayOriginY
+            val origD = relX * nx + relZ * nz
+
+            val dirS = rayDirX * ux + rayDirZ * uz
+            val dirY = rayDirY
+            val dirD = rayDirX * nx + rayDirZ * nz
+
+            val minS = c.offsetMm
+            val maxS = c.offsetMm + c.widthMm
+            val minY = 0f
+            val maxY = c.heightMm
+            val minD = 0f
+            val maxD = c.depthMm.coerceAtLeast(350f) + 12f
+
+            var tMin = 0f
+            var tMax = Float.MAX_VALUE
+
+            fun clipSlab(orig: Float, dir: Float, bMin: Float, bMax: Float): Boolean {
+                if (abs(dir) < 1e-6f) {
+                    return orig in bMin..bMax
+                }
+                val inv = 1f / dir
+                var t1 = (bMin - orig) * inv
+                var t2 = (bMax - orig) * inv
+                if (t1 > t2) {
+                    val tmp = t1
+                    t1 = t2
+                    t2 = tmp
+                }
+                if (t1 > tMin) tMin = t1
+                if (t2 < tMax) tMax = t2
+                return tMin <= tMax
+            }
+
+            if (clipSlab(origS, dirS, minS, maxS) &&
+                clipSlab(origY, dirY, minY, maxY) &&
+                clipSlab(origD, dirD, minD, maxD)
+            ) {
+                val hitT = if (tMin >= 0f) tMin else tMax
+                if (hitT >= 0f && hitT < bestT) {
+                    bestT = hitT
+                    bestId = c.id
+                }
+            }
+        }
+
+        return bestId
+    }
 }

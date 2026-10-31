@@ -69,7 +69,10 @@ class RoomGeometryTest {
         assertMm(0f, placed.offsetMm)
 
         val parts = RoomGeometryBuilder.build(room, selectedContainerId = "c1")
-        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SELECTED })
+        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_BODY })
+        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SIDE_PANEL })
+        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_FRONT_EDGE })
+        assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SELECTED_OUTLINE })
         assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_BACK })
     }
 }

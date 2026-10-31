@@ -191,19 +191,31 @@ fun RoomScene(
                                 reflectance = 0.95f,
                             )
                             RoomSurface.CONTAINER_BODY -> materialLoader.createColorInstance(
-                                color = Color(0xFFC19668), // Warm unicolor oak/beech carcass frame (distinct from walls)
+                                color = Color(0xFFD2A679), // Warm oak horizontal shelf/roof surface
                                 metallic = 0.04f,
-                                roughness = 0.42f,
-                                reflectance = 0.52f,
+                                roughness = 0.38f,
+                                reflectance = 0.55f,
                             )
-                            RoomSurface.CONTAINER_SELECTED -> materialLoader.createColorInstance(
-                                color = Color(0xFFB58350), // Warm highlighted carcass when selected
-                                metallic = 0.08f,
-                                roughness = 0.36f,
+                            RoomSurface.CONTAINER_SIDE_PANEL -> materialLoader.createColorInstance(
+                                color = Color(0xFFAA7C50), // Deeper warm wood for vertical side depth walls & plinth
+                                metallic = 0.04f,
+                                roughness = 0.45f,
+                                reflectance = 0.48f,
+                            )
+                            RoomSurface.CONTAINER_FRONT_EDGE -> materialLoader.createColorInstance(
+                                color = Color(0xFFE6C299), // Bright crisp front board thickness edge (canto frontal)
+                                metallic = 0.06f,
+                                roughness = 0.32f,
                                 reflectance = 0.62f,
                             )
+                            RoomSurface.CONTAINER_SELECTED_OUTLINE -> materialLoader.createColorInstance(
+                                color = Color(0xFF3D5AFE), // Royal blue selection rim when the container is selected
+                                metallic = 0.15f,
+                                roughness = 0.25f,
+                                reflectance = 0.80f,
+                            )
                             RoomSurface.CONTAINER_BACK -> materialLoader.createColorInstance(
-                                color = Color(0xFFF2E8D5), // Warm cream interior backing board (distinct from wall & frame)
+                                color = Color(0xFFF3EAD8), // Warm cream interior backing board recessed 600mm deep
                                 metallic = 0.02f,
                                 roughness = 0.55f,
                                 reflectance = 0.45f,
