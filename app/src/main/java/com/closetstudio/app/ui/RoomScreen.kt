@@ -20,11 +20,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,14 +36,20 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DoorFront
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,11 +62,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,14 +84,19 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.closetstudio.app.data.ProjectStorage
 import com.closetstudio.app.render.MM_TO_M
 import com.closetstudio.core.model.DoorSpec
 import com.closetstudio.core.model.RoomSpec
+import com.closetstudio.core.model.SavedProject
 import com.closetstudio.core.model.WallIndex
 import dev.romainguy.kotlin.math.Float3
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -178,9 +196,21 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
 
 @Composable
 fun RoomScreen() {
+    val context = LocalContext.current
+    val projectStorage = remember(context) { ProjectStorage(context) }
+    var savedProjects by remember { mutableStateOf(projectStorage.loadAllProjects()) }
+    var currentProjectId by remember {
+        mutableStateOf(projectStorage.getActiveProjectId() ?: savedProjects.firstOrNull()?.id)
+    }
+    var currentProjectName by remember {
+        val active = savedProjects.firstOrNull { it.id == currentProjectId } ?: savedProjects.firstOrNull()
+        mutableStateOf(active?.name ?: "Proyecto 1")
+    }
+
     var room by remember {
+        val active = savedProjects.firstOrNull { it.id == currentProjectId } ?: savedProjects.firstOrNull()
         mutableStateOf(
-            RoomSpec(
+            active?.room ?: RoomSpec(
                 clearWidthMm = 3600f,
                 clearHeightMm = 2600f,
                 clearDepthMm = 3600f,
@@ -190,16 +220,20 @@ fun RoomScreen() {
                     widthMm = 900f,
                     heightMm = 2100f,
                 ),
-            )
+            ),
         )
     }
 
     val coroutineScope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var showDimensionsSheet by remember { mutableStateOf(false) }
     var selectedFloorplanElement by remember { mutableStateOf<FloorplanElement>(FloorplanElement.WallA) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showSaveDialog by remember { mutableStateOf(false) }
+    var showCreateNewDialog by remember { mutableStateOf(false) }
+    var showMyProjectsDialog by remember { mutableStateOf(false) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("Contenido") }
@@ -297,23 +331,91 @@ fun RoomScreen() {
             ModalDrawerSheet(
                 modifier = Modifier.width(300.dp),
             ) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 Text(
                     text = "Closet Studio 3D",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF2C55B5),
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
                 )
                 Text(
-                    text = "Arquitectura y Modulación",
+                    text = "Proyecto activo: $currentProjectName",
                     style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp),
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider()
                 Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider()
+
+                // --- Mis Proyectos Section (matching reference screenshot) ---
+                Text(
+                    text = "Mis Proyectos",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 6.dp),
+                )
+
+                NavigationDrawerItem(
+                    label = { Text("Guardar Proyecto") },
+                    icon = { Icon(Icons.Default.Save, contentDescription = null) },
+                    selected = false,
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        showSaveDialog = true
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+
+                NavigationDrawerItem(
+                    label = { Text("Crear nuevo") },
+                    icon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null) },
+                    selected = false,
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        showCreateNewDialog = true
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+
+                NavigationDrawerItem(
+                    label = {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Mis Proyectos")
+                            if (savedProjects.isNotEmpty()) {
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFF2C55B5).copy(alpha = 0.14f),
+                                ) {
+                                    Text(
+                                        text = "${savedProjects.size}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2C55B5),
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    icon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                    selected = false,
+                    onClick = {
+                        coroutineScope.launch { drawerState.close() }
+                        savedProjects = projectStorage.loadAllProjects()
+                        showMyProjectsDialog = true
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
 
                 NavigationDrawerItem(
                     label = { Text("Dimensiones de la Habitación") },
@@ -716,10 +818,11 @@ fun RoomScreen() {
                     title = { Text("Datos del Ambiente") },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("• Proyecto: $currentProjectName")
                             Text("• Pared A: ${room.wallCMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallCMm / 1000f)} m)")
                             Text("• Pared B: ${room.wallAMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallAMm / 1000f)} m)")
                             Text("• Pared C: ${room.wallBMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.wallBMm / 1000f)} m)")
-                            Text("• Pared E-D (Total): ${room.wallSouthMm.toInt()} mm (E:${room.segmentDMm.toInt()} + 🚪${room.door.widthMm.toInt()} + D:${room.segmentEMm.toInt()})")
+                            Text("• Pared E-D (Total): ${room.wallSouthMm.toInt()} mm (E:${room.segmentDMm.toInt()} + Puerta:${room.door.widthMm.toInt()} + D:${room.segmentEMm.toInt()})")
                             Text("• Ángulos: A-B=${String.format(Locale.US, "%.1f°", room.angleACDeg)}, B-C=${String.format(Locale.US, "%.1f°", room.angleABDeg)}, C-D=${String.format(Locale.US, "%.1f°", room.angleBEDeg)}, A-E=${String.format(Locale.US, "%.1f°", room.angleCDDeg)}")
                             Text("• Altura (Y): ${room.clearHeightMm.toInt()} mm (${String.format(Locale.US, "%.2f", room.clearHeightMm / 1000f)} m)")
                             Text("• Vista actual: ${getWallName(wallStep.intValue)}")
@@ -732,6 +835,276 @@ fun RoomScreen() {
                     },
                 )
             }
+
+            // Save Project Dialog (💾 Guardar Proyecto)
+            if (showSaveDialog) {
+                var nameDraft by remember(currentProjectName) { mutableStateOf(currentProjectName) }
+                AlertDialog(
+                    onDismissRequest = { showSaveDialog = false },
+                    icon = { Icon(Icons.Default.Save, contentDescription = null, tint = Color(0xFF2C55B5)) },
+                    title = { Text("Guardar Proyecto") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "Se guardarán todas las medidas de paredes (A, B, C, E-D), puerta, ángulos y candados de la configuración actual.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            OutlinedTextField(
+                                value = nameDraft,
+                                onValueChange = { nameDraft = it },
+                                singleLine = true,
+                                label = { Text("Nombre del proyecto") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    text = "A: ${room.wallCMm.roundToInt()} • B: ${room.wallAMm.roundToInt()} • C: ${room.wallBMm.roundToInt()} • E-D: ${room.wallSouthMm.roundToInt()} mm",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF2C55B5),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        if (currentProjectId != null) {
+                            TextButton(
+                                onClick = {
+                                    val saved = projectStorage.saveProject(
+                                        id = null,
+                                        name = nameDraft.trim().ifEmpty { "Copia de $currentProjectName" },
+                                        room = room,
+                                    )
+                                    savedProjects = projectStorage.loadAllProjects()
+                                    currentProjectId = saved.id
+                                    currentProjectName = saved.name
+                                    showSaveDialog = false
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar("Guardado como nuevo: ${saved.name}")
+                                    }
+                                },
+                            ) {
+                                Text("Guardar como copia")
+                            }
+                        } else {
+                            TextButton(onClick = { showSaveDialog = false }) {
+                                Text("Cancelar")
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val saved = projectStorage.saveProject(
+                                    id = currentProjectId,
+                                    name = nameDraft,
+                                    room = room,
+                                )
+                                savedProjects = projectStorage.loadAllProjects()
+                                currentProjectId = saved.id
+                                currentProjectName = saved.name
+                                showSaveDialog = false
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Proyecto guardado: ${saved.name}")
+                                }
+                            },
+                        ) {
+                            Text("Guardar", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                )
+            }
+
+            // Create New Project Dialog (📁+ Crear nuevo)
+            if (showCreateNewDialog) {
+                val nextIndex = savedProjects.size + 1
+                var newNameDraft by remember(nextIndex) { mutableStateOf("Proyecto $nextIndex") }
+                AlertDialog(
+                    onDismissRequest = { showCreateNewDialog = false },
+                    icon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null, tint = Color(0xFF2C55B5)) },
+                    title = { Text("Crear nuevo proyecto") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "Iniciará una habitación nueva en escuadra (3600 × 3600 mm, altura 2600 mm, puerta de 900 mm).",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            OutlinedTextField(
+                                value = newNameDraft,
+                                onValueChange = { newNameDraft = it },
+                                singleLine = true,
+                                label = { Text("Nombre del nuevo proyecto") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCreateNewDialog = false }) {
+                            Text("Cancelar")
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val freshRoom = RoomSpec()
+                                val created = projectStorage.saveProject(
+                                    id = null,
+                                    name = newNameDraft.trim().ifEmpty { "Proyecto $nextIndex" },
+                                    room = freshRoom,
+                                )
+                                savedProjects = projectStorage.loadAllProjects()
+                                currentProjectId = created.id
+                                currentProjectName = created.name
+                                updateRoom(freshRoom)
+                                showCreateNewDialog = false
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar("Nuevo proyecto creado: ${created.name}")
+                                }
+                            },
+                        ) {
+                            Text("Crear", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                )
+            }
+
+            // My Projects Dialog (📂 Mis Proyectos)
+            if (showMyProjectsDialog) {
+                val dateFormatter = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
+                AlertDialog(
+                    onDismissRequest = { showMyProjectsDialog = false },
+                    icon = { Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color(0xFF2C55B5)) },
+                    title = { Text("Mis Proyectos (${savedProjects.size})") },
+                    text = {
+                        if (savedProjects.isEmpty()) {
+                            Text(
+                                text = "Todavía no tenés proyectos guardados. Usá 'Guardar Proyecto' en el menú para guardar tus medidas.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            LazyColumn(
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 360.dp),
+                            ) {
+                                items(savedProjects, key = { it.id }) { proj ->
+                                    val isCurrent = proj.id == currentProjectId
+                                    val r = proj.room
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (isCurrent) {
+                                                Color(0xFF2C55B5).copy(alpha = 0.12f)
+                                            } else {
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                            },
+                                        ),
+                                        onClick = {
+                                            currentProjectId = proj.id
+                                            currentProjectName = proj.name
+                                            projectStorage.setActiveProjectId(proj.id)
+                                            updateRoom(proj.room)
+                                            showMyProjectsDialog = false
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar("Proyecto abierto: ${proj.name}")
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.weight(1f),
+                                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                ) {
+                                                    Text(
+                                                        text = proj.name,
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isCurrent) Color(0xFF2C55B5) else MaterialTheme.colorScheme.onSurface,
+                                                    )
+                                                    if (isCurrent) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(6.dp),
+                                                            color = Color(0xFF2C55B5),
+                                                        ) {
+                                                            Text(
+                                                                text = "Activo",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = Color.White,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                Text(
+                                                    text = "A:${r.wallCMm.roundToInt()} • B:${r.wallAMm.roundToInt()} • C:${r.wallBMm.roundToInt()} • E-D:${r.wallSouthMm.roundToInt()} mm",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                                Text(
+                                                    text = "Puerta:${r.door.widthMm.roundToInt()} (E:${r.segmentDMm.roundToInt()}, D:${r.segmentEMm.roundToInt()}) • ${dateFormatter.format(Date(proj.updatedAtEpochMs))}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                            }
+
+                                            IconButton(
+                                                onClick = {
+                                                    savedProjects = projectStorage.deleteProject(proj.id)
+                                                    if (currentProjectId == proj.id) {
+                                                        val fallback = savedProjects.firstOrNull()
+                                                        currentProjectId = fallback?.id
+                                                        currentProjectName = fallback?.name ?: "Proyecto 1"
+                                                    }
+                                                },
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.DeleteOutline,
+                                                    contentDescription = "Eliminar proyecto",
+                                                    tint = MaterialTheme.colorScheme.error,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showMyProjectsDialog = false }) {
+                            Text("Cerrar")
+                        }
+                    },
+                )
+            }
+
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 12.dp),
+            )
         }
     }
 }

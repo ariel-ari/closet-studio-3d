@@ -8,6 +8,14 @@ import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+@Serializable
+data class SavedProject(
+    val id: String,
+    val name: String,
+    val updatedAtEpochMs: Long,
+    val room: RoomSpec = RoomSpec(),
+)
+
 enum class WallIndex(val degrees: Float, val label: String) {
     NORTH(0f, "Pared B"),
     EAST(90f, "Pared C"),
