@@ -520,6 +520,51 @@ object RoomGeometryBuilder {
         }
     }
 
+    private fun addVerticalCylinder(
+        builder: MeshBuilder,
+        pStart: Vec2Mm,
+        ux: Float,
+        uz: Float,
+        nx: Float,
+        nz: Float,
+        y0: Float,
+        y1: Float,
+        centerS: Float,
+        centerD: Float,
+        radiusMm: Float,
+        segments: Int = 12,
+    ) {
+        if (y1 <= y0 || radiusMm <= 0f) return
+        fun pt(s: Float, y: Float, d: Float): Vec3 = Vec3(
+            x = pStart.x + s * ux + d * nx,
+            y = y,
+            z = pStart.z + s * uz + d * nz,
+        )
+
+        val angleStep = (2.0 * Math.PI / segments).toFloat()
+        for (i in 0 until segments) {
+            val a0 = i * angleStep
+            val a1 = (i + 1) * angleStep
+            val s0 = centerS + radiusMm * kotlin.math.sin(a0)
+            val d0 = centerD + radiusMm * kotlin.math.cos(a0)
+            val s1 = centerS + radiusMm * kotlin.math.sin(a1)
+            val d1 = centerD + radiusMm * kotlin.math.cos(a1)
+
+            val midA = (a0 + a1) * 0.5f
+            val nS = kotlin.math.sin(midA)
+            val nD = kotlin.math.cos(midA)
+            val norm = Vec3(nS * ux + nD * nx, 0f, nS * uz + nD * nz)
+
+            builder.addQuad(
+                a = pt(s0, y0, d0),
+                b = pt(s1, y0, d1),
+                c = pt(s1, y1, d1),
+                d = pt(s0, y1, d0),
+                normal = norm,
+            )
+        }
+    }
+
     private fun addContainerToBuilders(
         room: RoomSpec,
         container: ClosetContainerSpec,
@@ -1124,6 +1169,89 @@ object RoomGeometryBuilder {
                         y1 = (railY + radius + pRim).coerceAtMost(interiorTopY),
                         d0 = railD - radius - pRim,
                         d1 = railD + radius + pRim,
+                    )
+                }
+            }
+        }
+
+        // 7e. Vertical Poles / Posts (Polished chrome tube with top and bottom mounting brackets)
+        for (pole in container.verticalPoles) {
+            val bay = bays.getOrElse(pole.bayIndex) { bays.last() }
+            val poleX = pole.effectiveX(bay.startXMm, bay.endXMm)
+            val poleS = s0Inner + poleX
+            val (compY0, compY1) = pole.effectiveYRange(0f, container.interiorHeightMm)
+            val poleY0 = interiorBottomY + compY0
+            val poleY1 = (interiorBottomY + compY1).coerceAtMost(interiorTopY)
+            val poleDepth = pole.effectiveDepth(container.interiorDepthMm)
+            val poleD = wallGap + backT + poleDepth
+            val radius = pole.diameterMm * 0.5f
+
+            if (poleY1 > poleY0 + 20f && handleBuilder != null) {
+                val bracketR = (radius * 1.6f).coerceIn(18f, 26f)
+                val bracketThick = 8f
+
+                // 1. Bottom mounting flange bracket on floor or lower shelf
+                addVerticalCylinder(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    y0 = poleY0, y1 = poleY0 + bracketThick,
+                    centerS = poleS, centerD = poleD,
+                    radiusMm = bracketR,
+                    segments = 12,
+                )
+                // Bottom bracket cap facing +Y
+                addWallAlignedBox(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = poleS - bracketR, s1 = poleS + bracketR,
+                    y0 = poleY0 + bracketThick - 1f, y1 = poleY0 + bracketThick,
+                    d0 = poleD - bracketR, d1 = poleD + bracketR,
+                )
+
+                // 2. Top mounting flange bracket against underside of roof or upper shelf
+                addVerticalCylinder(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    y0 = poleY1 - bracketThick, y1 = poleY1,
+                    centerS = poleS, centerD = poleD,
+                    radiusMm = bracketR,
+                    segments = 12,
+                )
+                // Top bracket cap facing -Y
+                addWallAlignedBox(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = poleS - bracketR, s1 = poleS + bracketR,
+                    y0 = poleY1 - bracketThick, y1 = poleY1 - bracketThick + 1f,
+                    d0 = poleD - bracketR, d1 = poleD + bracketR,
+                )
+
+                // 3. Central chrome post spanning between brackets
+                addVerticalCylinder(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    y0 = poleY0 + bracketThick - 2f, y1 = poleY1 - bracketThick + 2f,
+                    centerS = poleS, centerD = poleD,
+                    radiusMm = radius,
+                    segments = 12,
+                )
+
+                // 4. Selection Highlight Outline (Crisp Purple Box)
+                val selectedPole = if (selectedPartitionId != null) container.verticalPoles.firstOrNull { it.id == selectedPartitionId } else null
+                val isPoleSelected = pole.id == selectedPartitionId
+                val isPoleAligned = selectedPole != null && pole.id != selectedPole.id && kotlin.math.abs(poleX - selectedPole.effectiveX(bay.startXMm, bay.endXMm)) < 1.0f
+
+                if ((isPoleSelected || isPoleAligned) && partitionOutlineBuilder != null) {
+                    val pRim = 3f
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = (poleS - radius - pRim).coerceAtLeast(interiorLeftS),
+                        s1 = (poleS + radius + pRim).coerceAtMost(interiorRightS),
+                        y0 = (poleY0 - pRim).coerceAtLeast(interiorBottomY),
+                        y1 = (poleY1 + pRim).coerceAtMost(interiorTopY),
+                        d0 = poleD - radius - pRim,
+                        d1 = poleD + radius + pRim,
                     )
                 }
             }

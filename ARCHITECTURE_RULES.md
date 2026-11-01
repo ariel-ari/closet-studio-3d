@@ -140,6 +140,35 @@ The clothes rail (tubo o fierro colgador) replicates wardrobe hanging rods for g
    - Dropping finalizes placement, auto-closes the catalog popup, leaves the rail selected with purple highlight, and **does not open the inspector modal automatically**.
    - Standard 3 floating action buttons: ✏️ Edit (inspect dimensions, diameter, elevation, and depth offset), ❐ Duplicate, 🗑️ Delete.
 
+---
+
+## 10. Vertical Pole & Support Post Protocol (Regla de Oro de Tubos Verticales)
+The vertical pole / post (tubo vertical o columna/poste de soporte metálico) replicates structural vertical chrome poles spanning floor-to-shelf, shelf-to-shelf, or floor-to-roof:
+
+1. **Default Placement & Compartment Containment:**
+   - **Horizontal Center:** When added to a closet compartment or bay, horizontal position $X$ defaults to the center of the target bay:
+     $$X = \frac{\text{bay.startXMm} + \text{bay.endXMm}}{2}$$
+   - **Vertical Span:** Spans between compartment vertical bounds:
+     $$Y \in [\text{comp}Y_0, \text{comp}Y_1]$$
+     If placed in an undivided bay, it spans floor-to-roof; if placed above or below a shelf, it automatically bounds between the shelf and floor/roof.
+   - **Depth Center:** Centered along the interior depth:
+     $$Z = D_{\text{inner}} \times 0.5$$
+
+2. **Structural Anatomy & Realistic Hardware:**
+   - **Chrome Cylinder Extrusion:** Smooth 12-sided vertical cylinder extrusion along the $Y$-axis with polished chrome reflection (`RoomSurface.DOOR_HANDLE`).
+   - **Mounting Flange Brackets:** Top and bottom circular flange brackets ($8\text{ mm}$ thick) with circular extrusion and flat caps, flush against the melamina surface.
+   - **Configurable Diameter:** Default wardrobe standard $25\text{ mm}$, adjustable in the inspector from $15\text{ mm}$ to $50\text{ mm}$.
+
+3. **Zero Penetration & Lateral Movement:**
+   - Position $X$ is clamped strictly within bay bounds $[X_{\min} + r, X_{\max} - r]$ where $r = \frac{\text{diameter}}{2}$.
+   - **Horizontal Sliding:** Dragging horizontally shifts position within its bay or transfers into adjacent bays.
+   - **Smart Magnetic Snapping:** Snaps to bay center, bay thirds, and aligns with other vertical poles or dividers.
+
+4. **Unified Interaction Contract:**
+   - Dragging from catalog into the closet cavity displays live 3D insertion feedback under the finger.
+   - Dropping finalizes placement, auto-closes catalog, leaves pole selected with purple highlight, and **never opens inspector automatically**.
+   - Standard 3 floating action buttons: ✏️ Edit (inspect bay width, height, diameter, depth, left/right clearances), ❐ Duplicate, 🗑️ Delete.
+
 
 
 

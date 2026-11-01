@@ -160,6 +160,56 @@ data class ClothesRailSpec(
 }
 
 @Serializable
+data class VerticalPoleSpec(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val bayIndex: Int = 0,
+    val offsetXMm: Float? = null,
+    val depthOffsetMm: Float? = null,
+    val diameterMm: Float = 25f,
+    val bottomElevationYMm: Float? = null,
+    val topElevationYMm: Float? = null,
+) {
+    init {
+        require(bayIndex >= 0) { "pole bayIndex must be non-negative" }
+        require(diameterMm > 0f) { "pole diameter must be positive" }
+        if (offsetXMm != null) {
+            require(offsetXMm >= 0f) { "pole offsetXMm must be non-negative" }
+        }
+        if (depthOffsetMm != null) {
+            require(depthOffsetMm > 0f) { "pole depthOffset must be positive" }
+        }
+    }
+
+    fun effectiveX(bayStartXMm: Float, bayEndXMm: Float): Float {
+        val radius = diameterMm * 0.5f
+        val minX = bayStartXMm + radius
+        val maxX = (bayEndXMm - radius).coerceAtLeast(minX)
+        return (offsetXMm ?: ((bayStartXMm + bayEndXMm) * 0.5f)).coerceIn(minX, maxX)
+    }
+
+    fun effectiveX(container: ClosetContainerSpec): Float {
+        val bays = container.getBays()
+        val bay = bays.getOrElse(bayIndex) { bays.last() }
+        return effectiveX(bay.startXMm, bay.endXMm)
+    }
+
+    fun effectiveDepth(interiorDepthMm: Float): Float =
+        (depthOffsetMm ?: (interiorDepthMm * 0.5f)).coerceIn(50f, (interiorDepthMm - 50f).coerceAtLeast(50f))
+
+    fun effectiveYRange(compY0: Float, compY1: Float): Pair<Float, Float> {
+        val y0 = bottomElevationYMm ?: compY0
+        val y1 = (topElevationYMm ?: compY1).coerceAtLeast(y0 + 50f)
+        return y0 to y1
+    }
+
+    fun effectiveYRange(container: ClosetContainerSpec): Pair<Float, Float> {
+        val y0 = bottomElevationYMm ?: 0f
+        val y1 = (topElevationYMm ?: container.interiorHeightMm).coerceAtLeast(y0 + 50f)
+        return y0 to y1
+    }
+}
+
+@Serializable
 data class ClosetContainerSpec(
     val id: String,
     val wall: WallIndex = WallIndex.NORTH,
@@ -176,6 +226,7 @@ data class ClosetContainerSpec(
     val shelves: List<HorizontalShelfSpec> = emptyList(),
     val drawers: List<DrawerSpec> = emptyList(),
     val clothesRails: List<ClothesRailSpec> = emptyList(),
+    val verticalPoles: List<VerticalPoleSpec> = emptyList(),
 ) {
     init {
         require(widthMm >= 0f) { "container width must be non-negative" }
@@ -274,41 +325,56 @@ data class ClosetContainerSpec(
         if (snapThresholdMm <= 0f) return rawElevationYMm
         val innerH = interiorHeightMm
 
-        // Priority 1: Match existing shelves and drawers across the entire container
+        // Priority 1: Match existing elements across the entire container
         val existingTargets = mutableListOf<Float>()
-        for (other in shelves) {
-            if (other.id != currentShelfId) {
-                // Coplanar shelf alignment across bays
-                existingTargets.add(other.elevationYMm)
-                if (other.thicknessMm != shelfThicknessMm) {
-                    existingTargets.add(other.elevationYMm + other.thicknessMm - shelfThicknessMm)
-                }
-                // Stacking directly on top of a shelf in the same bay
-                if (targetBayIndex == null || other.bayIndex == targetBayIndex) {
-                    existingTargets.add(other.elevationYMm + other.thicknessMm)
+        val isRail = clothesRails.any { it.id == currentShelfId }
+
+        if (isRail) {
+            // Clothes rail Priority 1: Coplanar alignment with other rails across bays
+            for (r in clothesRails) {
+                if (r.id != currentShelfId) {
+                    existingTargets.add(r.elevationYMm)
                 }
             }
-        }
-        for (d in drawers) {
-            if (d.id != currentShelfId) {
-                // Coplanar alignment
-                existingTargets.add(d.elevationYMm)
-                // Stacking directly on top or underneath a drawer in the same bay
-                if (targetBayIndex == null || d.bayIndex == targetBayIndex) {
-                    existingTargets.add(d.elevationYMm + d.heightMm)
-                    val under = d.elevationYMm - shelfThicknessMm
-                    if (under >= 0f) existingTargets.add(under)
+            // Clothes rail Priority 2: Snaps to the vertical center of the compartment in target bay
+            val targetBay = targetBayIndex ?: clothesRails.firstOrNull { it.id == currentShelfId }?.bayIndex ?: 0
+            val (compY0, compY1) = findVerticalCompartmentRange(targetBay, rawElevationYMm)
+            existingTargets.add((compY0 + compY1) * 0.5f)
+        } else {
+            for (other in shelves) {
+                if (other.id != currentShelfId) {
+                    // Coplanar shelf alignment across bays
+                    existingTargets.add(other.elevationYMm)
+                    if (other.thicknessMm != shelfThicknessMm) {
+                        existingTargets.add(other.elevationYMm + other.thicknessMm - shelfThicknessMm)
+                    }
+                    // Stacking directly on top of a shelf in the same bay
+                    if (targetBayIndex == null || other.bayIndex == targetBayIndex) {
+                        existingTargets.add(other.elevationYMm + other.thicknessMm)
+                    }
                 }
             }
-        }
-        for (r in clothesRails) {
-            if (r.id != currentShelfId) {
-                // Coplanar clothes rail alignment across bays
-                existingTargets.add(r.elevationYMm)
+            for (d in drawers) {
+                if (d.id != currentShelfId) {
+                    // Coplanar alignment
+                    existingTargets.add(d.elevationYMm)
+                    // Stacking directly on top or underneath a drawer in the same bay
+                    if (targetBayIndex == null || d.bayIndex == targetBayIndex) {
+                        existingTargets.add(d.elevationYMm + d.heightMm)
+                        val under = d.elevationYMm - shelfThicknessMm
+                        if (under >= 0f) existingTargets.add(under)
+                    }
+                }
             }
+            for (r in clothesRails) {
+                if (r.id != currentShelfId) {
+                    // Coplanar clothes rail alignment across bays
+                    existingTargets.add(r.elevationYMm)
+                }
+            }
+            // Flush on bottom floor panel
+            existingTargets.add(0f)
         }
-        // Flush on bottom floor panel
-        existingTargets.add(0f)
 
         var bestMatch: Float? = null
         var bestDist = Float.MAX_VALUE
@@ -748,11 +814,137 @@ data class ClosetContainerSpec(
         return copy(clothesRails = clothesRails.map { if (it.id == id) transform(it) else it })
     }
 
+    fun findSnapPoleOffset(
+        currentPoleId: String?,
+        rawOffsetXMm: Float,
+        targetBayIndex: Int? = null,
+        snapThresholdMm: Float = 28f,
+    ): Float {
+        if (snapThresholdMm <= 0f) return rawOffsetXMm
+        val bays = getBays()
+        val targetBay = bays.getOrElse(targetBayIndex ?: 0) { bays.last() }
+        val existingTargets = mutableListOf<Float>()
+
+        // Priority 1: Snap to center of target bay
+        existingTargets.add((targetBay.startXMm + targetBay.endXMm) * 0.5f)
+
+        // Priority 2: Other vertical poles in other bays/compartments
+        for (other in verticalPoles) {
+            if (other.id != currentPoleId) {
+                val otherBay = bays.getOrElse(other.bayIndex) { bays.last() }
+                existingTargets.add(other.effectiveX(otherBay.startXMm, otherBay.endXMm))
+            }
+        }
+
+        // Priority 3: Equal thirds of the bay
+        val bayW = targetBay.widthMm
+        if (bayW > 150f) {
+            existingTargets.add(targetBay.startXMm + bayW / 3f)
+            existingTargets.add(targetBay.startXMm + bayW * 2f / 3f)
+        }
+
+        var bestMatch: Float? = null
+        var bestDist = Float.MAX_VALUE
+
+        for (target in existingTargets) {
+            val dist = kotlin.math.abs(rawOffsetXMm - target)
+            if (dist <= snapThresholdMm && dist < bestDist) {
+                bestDist = dist
+                bestMatch = target
+            }
+        }
+        return bestMatch ?: rawOffsetXMm
+    }
+
+    fun withAddedVerticalPole(
+        bayIndex: Int? = null,
+        offsetXMm: Float? = null,
+        targetYMm: Float? = null,
+        diameterMm: Float = 25f,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
+        val innerH = interiorHeightMm
+        val bays = getBays()
+        val targetBay = if (offsetXMm != null) findBayAtX(offsetXMm) else bays.getOrElse(bayIndex ?: 0) { bays.last() }
+        val radius = diameterMm * 0.5f
+        val (compY0, compY1) = findVerticalCompartmentRange(targetBay.index, targetYMm ?: (innerH * 0.5f))
+        val defaultX = (targetBay.startXMm + targetBay.endXMm) * 0.5f
+        val rawX = (offsetXMm ?: defaultX).coerceIn(
+            targetBay.startXMm + radius + 10f,
+            (targetBay.endXMm - radius - 10f).coerceAtLeast(targetBay.startXMm + radius + 10f)
+        )
+        val snappedX = if (offsetXMm != null && snapThresholdMm > 0f) {
+            findSnapPoleOffset(
+                currentPoleId = null,
+                rawOffsetXMm = rawX,
+                targetBayIndex = targetBay.index,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            rawX
+        }
+        val newPole = VerticalPoleSpec(
+            id = "pole_${System.currentTimeMillis()}_${verticalPoles.size + 1}",
+            bayIndex = targetBay.index,
+            offsetXMm = snappedX,
+            diameterMm = diameterMm,
+            bottomElevationYMm = compY0,
+            topElevationYMm = compY1,
+        )
+        return copy(verticalPoles = verticalPoles + newPole)
+    }
+
+    fun withMovedVerticalPole(
+        id: String,
+        newOffsetXMm: Float,
+        targetYMm: Float? = null,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
+        val pole = verticalPoles.firstOrNull { it.id == id } ?: return this
+        val bays = getBays()
+        val targetBay = findBayAtX(newOffsetXMm)
+        val radius = pole.diameterMm * 0.5f
+        val clampedX = newOffsetXMm.coerceIn(
+            targetBay.startXMm + radius + 10f,
+            (targetBay.endXMm - radius - 10f).coerceAtLeast(targetBay.startXMm + radius + 10f)
+        )
+        val snappedX = if (snapThresholdMm > 0f) {
+            findSnapPoleOffset(
+                currentPoleId = id,
+                rawOffsetXMm = clampedX,
+                targetBayIndex = targetBay.index,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            clampedX
+        }
+
+        val (newY0, newY1) = if (targetYMm != null) {
+            findVerticalCompartmentRange(targetBay.index, targetYMm)
+        } else {
+            (pole.bottomElevationYMm ?: 0f) to (pole.topElevationYMm ?: interiorHeightMm)
+        }
+
+        return withUpdatedVerticalPole(id) {
+            it.copy(
+                bayIndex = targetBay.index,
+                offsetXMm = snappedX,
+                bottomElevationYMm = newY0,
+                topElevationYMm = newY1,
+            )
+        }
+    }
+
+    fun withUpdatedVerticalPole(id: String, transform: (VerticalPoleSpec) -> VerticalPoleSpec): ClosetContainerSpec {
+        return copy(verticalPoles = verticalPoles.map { if (it.id == id) transform(it) else it })
+    }
+
     fun withRemovedPartition(id: String): ClosetContainerSpec {
         val remainingDividers = dividers.filterNot { it.id == id }
         val remainingShelves = shelves.filterNot { it.id == id }
         val remainingDrawers = drawers.filterNot { it.id == id }
         val remainingRails = clothesRails.filterNot { it.id == id }
+        val remainingPoles = verticalPoles.filterNot { it.id == id }
         val maxBayIdx = remainingDividers.size
         val reclampedShelves = remainingShelves.map {
             if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
@@ -763,11 +955,15 @@ data class ClosetContainerSpec(
         val reclampedRails = remainingRails.map {
             if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
         }
+        val reclampedPoles = remainingPoles.map {
+            if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
+        }
         return copy(
             dividers = remainingDividers,
             shelves = reclampedShelves,
             drawers = reclampedDrawers,
             clothesRails = reclampedRails,
+            verticalPoles = reclampedPoles,
         )
     }
 }
@@ -1625,6 +1821,22 @@ data class RoomSpec(
                 elevationYMm = rail.elevationYMm.coerceIn(0f, maxElev),
             )
         }
+        val clampedPoles = container.verticalPoles.map { pole ->
+            val radius = pole.diameterMm * 0.5f
+            val clampedBay = pole.bayIndex.coerceIn(0, maxBayIdx)
+            val bay = container.getBays().getOrElse(clampedBay) { container.getBays().last() }
+            val minX = bay.startXMm + radius
+            val maxX = (bay.endXMm - radius).coerceAtLeast(minX)
+            val clampedX = pole.offsetXMm?.coerceIn(minX, maxX)
+            val clampedY0 = pole.bottomElevationYMm?.coerceIn(0f, (innerH - 50f).coerceAtLeast(0f))
+            val clampedY1 = pole.topElevationYMm?.coerceIn((clampedY0 ?: 0f) + 50f, innerH)
+            pole.copy(
+                bayIndex = clampedBay,
+                offsetXMm = clampedX,
+                bottomElevationYMm = clampedY0,
+                topElevationYMm = clampedY1,
+            )
+        }
 
         return container.copy(
             widthMm = clampedW,
@@ -1635,6 +1847,7 @@ data class RoomSpec(
             shelves = clampedShelves,
             drawers = clampedDrawers,
             clothesRails = clampedRails,
+            verticalPoles = clampedPoles,
         )
     }
 
@@ -1950,7 +2163,7 @@ data class RoomSpec(
 
         for (raw in containers) {
             val c = clampContainer(raw)
-            if (c.dividers.isEmpty() && c.shelves.isEmpty() && c.drawers.isEmpty() && c.clothesRails.isEmpty()) continue
+            if (c.dividers.isEmpty() && c.shelves.isEmpty() && c.drawers.isEmpty() && c.clothesRails.isEmpty() && c.verticalPoles.isEmpty()) continue
 
             val (pStart, pEnd) = when (c.wall) {
                 WallIndex.NORTH -> nw to ne
@@ -2068,21 +2281,41 @@ data class RoomSpec(
                 }
             }
 
-            // Test clothes rails (expanded by 35mm in Y and D for easy touch picking)
+            // Test clothes rails (expanded in Y and D for easy touch picking)
             for (rail in c.clothesRails) {
                 val bay = bays.getOrElse(rail.bayIndex) { bays.last() }
-                val railS0 = s0Inner + bay.startXMm - 20f
-                val railS1 = s0Inner + bay.endXMm + 20f
-                val railY0 = plinthH + t + rail.elevationYMm - 35f
-                val railY1 = plinthH + t + rail.elevationYMm + 35f
+                val railS0 = s0Inner + bay.startXMm - 30f
+                val railS1 = s0Inner + bay.endXMm + 30f
+                val railY0 = plinthH + t + rail.elevationYMm - 60f
+                val railY1 = plinthH + t + rail.elevationYMm + 60f
                 val railDepth = rail.effectiveDepth(c.interiorDepthMm)
-                val railD0 = (wallGap + backT + railDepth - 45f).coerceAtLeast(0f)
-                val railD1 = wallGap + backT + railDepth + 45f
+                val railD0 = (wallGap + backT + railDepth - 100f).coerceAtLeast(0f)
+                val railD1 = wallGap + backT + railDepth + 100f
 
                 val hitT = intersectAABB(railS0, railS1, railY0, railY1, railD0, railD1)
                 if (hitT != null && hitT < bestT) {
                     bestT = hitT
                     bestHit = PartitionHit(c.id, rail.id, isVertical = false, hitDistance = hitT)
+                }
+            }
+
+            // Test vertical poles (expanded in S and D for easy touch picking)
+            for (pole in c.verticalPoles) {
+                val bay = bays.getOrElse(pole.bayIndex) { bays.last() }
+                val poleX = pole.effectiveX(bay.startXMm, bay.endXMm)
+                val (compY0, compY1) = pole.effectiveYRange(0f, c.interiorHeightMm)
+                val poleS0 = s0Inner + poleX - 45f
+                val poleS1 = s0Inner + poleX + 45f
+                val poleY0 = plinthH + t + compY0 - 15f
+                val poleY1 = plinthH + t + compY1 + 15f
+                val poleDepth = pole.effectiveDepth(c.interiorDepthMm)
+                val poleD0 = (wallGap + backT + poleDepth - 100f).coerceAtLeast(0f)
+                val poleD1 = wallGap + backT + poleDepth + 100f
+
+                val hitT = intersectAABB(poleS0, poleS1, poleY0, poleY1, poleD0, poleD1)
+                if (hitT != null && hitT < bestT) {
+                    bestT = hitT
+                    bestHit = PartitionHit(c.id, pole.id, isVertical = true, hitDistance = hitT)
                 }
             }
         }

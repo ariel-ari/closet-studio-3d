@@ -155,6 +155,7 @@ enum class DraggedUnitType {
     DRAWER,
     DRAWER_NOTCH,
     CLOTHES_RAIL,
+    VERTICAL_POLE,
 }
 
 /**
@@ -1783,7 +1784,8 @@ fun RoomScreen() {
                                 val exists = activeContainer.dividers.any { it.id == selectedPartitionId } ||
                                         activeContainer.shelves.any { it.id == selectedPartitionId } ||
                                         activeContainer.drawers.any { it.id == selectedPartitionId } ||
-                                        activeContainer.clothesRails.any { it.id == selectedPartitionId }
+                                        activeContainer.clothesRails.any { it.id == selectedPartitionId } ||
+                                        activeContainer.verticalPoles.any { it.id == selectedPartitionId }
                                 if (!exists) {
                                     selectedPartitionId = null
                                 }
@@ -1902,12 +1904,30 @@ fun RoomScreen() {
                                     }
                                 },
                                 canDragPartitionAt = { downPos, vw, vh ->
-                                    if (selectedPartitionId == null || activeContainer == null) {
-                                        false
-                                    } else {
-                                        val hit = pickPartitionAtScreenTap(
+                                    val hit = pickPartitionAtScreenTap(
+                                        room = room,
+                                        tapPos = downPos,
+                                        viewportWidthPx = vw,
+                                        viewportHeightPx = vh,
+                                        targetX = targetXAnim.value,
+                                        targetY = targetYAnim.value,
+                                        targetZ = targetZAnim.value,
+                                        yawDeg = yawAnim.value,
+                                        pitchDeg = pitchAnim.value,
+                                        distanceM = distanceAnim.value,
+                                        isOrtho = isOrthoMode,
+                                        orthoSize = orthoSizeAnim.value,
+                                    )
+                                    if (hit != null) {
+                                        selectedContainerId = hit.containerId
+                                        selectedPartitionId = hit.partitionId
+                                        selectedPartitionIsVertical = hit.isVertical
+                                        true
+                                    } else if (selectedPartitionId != null && activeContainer != null) {
+                                        val interiorPt = projectScreenToContainerInterior(
                                             room = room,
-                                            tapPos = downPos,
+                                            container = activeContainer,
+                                            screenPos = downPos,
                                             viewportWidthPx = vw,
                                             viewportHeightPx = vh,
                                             targetX = targetXAnim.value,
@@ -1919,7 +1939,28 @@ fun RoomScreen() {
                                             isOrtho = isOrthoMode,
                                             orthoSize = orthoSizeAnim.value,
                                         )
-                                        hit?.partitionId == selectedPartitionId
+                                        if (interiorPt != null) {
+                                            val (tapX, tapY) = interiorPt
+                                            val rail = activeContainer.clothesRails.firstOrNull { it.id == selectedPartitionId }
+                                            val pole = if (rail == null) activeContainer.verticalPoles.firstOrNull { it.id == selectedPartitionId } else null
+                                            if (rail != null) {
+                                                val bay = activeContainer.getBays().getOrElse(rail.bayIndex) { activeContainer.getBays().last() }
+                                                tapX in (bay.startXMm - 60f)..(bay.endXMm + 60f) &&
+                                                    kotlin.math.abs(tapY - rail.elevationYMm) <= 220f
+                                            } else if (pole != null) {
+                                                val bay = activeContainer.getBays().getOrElse(pole.bayIndex) { activeContainer.getBays().last() }
+                                                val (compY0, compY1) = pole.effectiveYRange(activeContainer)
+                                                val poleX = pole.effectiveX(activeContainer)
+                                                tapY in (compY0 - 60f)..(compY1 + 60f) &&
+                                                    kotlin.math.abs(tapX - poleX) <= 120f
+                                            } else {
+                                                false
+                                            }
+                                        } else {
+                                            false
+                                        }
+                                    } else {
+                                        false
                                     }
                                 },
                                 onDragPartition = { pointerPos, vw, vh ->
@@ -1944,10 +1985,14 @@ fun RoomScreen() {
                                         if (interiorPt != null) {
                                             val (dragXMm, dragYMm) = interiorPt
                                             val updatedRoom = room.withUpdatedContainer(c.id) { currentC ->
-                                                if (selectedPartitionIsVertical) {
+                                                if (currentC.verticalPoles.any { it.id == partId }) {
+                                                    currentC.withMovedVerticalPole(partId, newOffsetXMm = dragXMm, targetYMm = dragYMm)
+                                                } else if (selectedPartitionIsVertical) {
                                                     currentC.withMovedDivider(partId, newOffsetXMm = dragXMm, targetYMm = dragYMm)
                                                 } else if (currentC.drawers.any { it.id == partId }) {
                                                     currentC.withMovedDrawer(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
+                                                } else if (currentC.clothesRails.any { it.id == partId }) {
+                                                    currentC.withMovedClothesRail(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 } else {
                                                     currentC.withMovedShelf(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 }
@@ -2162,7 +2207,8 @@ fun RoomScreen() {
                                     ) {
                                         val baseLetter = containerWallLetter(activeContainer, room, splitDoorWall)
                                         val badgeText = if (hasSelectedPartition) {
-                                            if (selectedPartitionIsVertical) "$baseLetter • DIV"
+                                            if (activeContainer.verticalPoles.any { it.id == selectedPartitionId }) "$baseLetter • POS"
+                                            else if (selectedPartitionIsVertical) "$baseLetter • DIV"
                                             else if (activeContainer.drawers.any { it.id == selectedPartitionId }) "$baseLetter • CAJ"
                                             else if (activeContainer.clothesRails.any { it.id == selectedPartitionId }) "$baseLetter • TUB"
                                             else "$baseLetter • EST"
@@ -2222,7 +2268,18 @@ fun RoomScreen() {
                                             if (hasSelectedPartition && selectedPartitionId != null) {
                                                 var createdId: String? = null
                                                 val updatedRoom = room.withUpdatedContainer(activeContainer.id) { container ->
-                                                    if (selectedPartitionIsVertical) {
+                                                    if (container.verticalPoles.any { it.id == selectedPartitionId }) {
+                                                        val source = container.verticalPoles.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
+                                                        val bay = container.getBays().getOrElse(source.bayIndex) { container.getBays().last() }
+                                                        val curX = source.effectiveX(container)
+                                                        val newX = (curX + 120f).coerceAtMost(bay.endXMm - source.diameterMm * 0.5f)
+                                                        val newPole = source.copy(
+                                                            id = "pole_${System.currentTimeMillis()}_${container.verticalPoles.size + 1}",
+                                                            offsetXMm = newX,
+                                                        )
+                                                        createdId = newPole.id
+                                                        container.copy(verticalPoles = container.verticalPoles + newPole)
+                                                    } else if (selectedPartitionIsVertical) {
                                                         val source = container.dividers.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
                                                         val newOff = (source.offsetXMm + source.thicknessMm + 80f).coerceAtMost((container.interiorWidthMm - source.thicknessMm).coerceAtLeast(0f))
                                                         val newDiv = source.copy(
@@ -2742,6 +2799,25 @@ fun RoomScreen() {
                                             }
                                         }
                                     },
+                                    onAddVerticalPole = { dropFracX, dropFracY ->
+                                        val target = activeContainer ?: room.containers.firstOrNull()
+                                        if (target != null) {
+                                            val dropX = if (dropFracX != null) dropFracX * target.interiorWidthMm else target.interiorWidthMm * 0.5f
+                                            val bay = target.findBayAtX(dropX)
+                                            val dropY = if (dropFracY != null) dropFracY * target.interiorHeightMm else target.interiorHeightMm * 0.5f
+                                            val updated = target.withAddedVerticalPole(bayIndex = bay.index, offsetXMm = dropX, targetYMm = dropY)
+                                            val newPole = updated.verticalPoles.lastOrNull()
+                                            val updatedRoom = room.withUpdatedContainer(target.id) { updated }
+                                            updateRoom(updatedRoom)
+                                            selectedContainerId = target.id
+                                            selectedPartitionId = newPole?.id
+                                            selectedPartitionIsVertical = true
+                                            showUnitsColumn = false
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar(s.partitionAddedToast)
+                                            }
+                                        }
+                                    },
                                     onDragUnitStart = { type, startRootPos ->
                                         draggedUnitType = type
                                         isDraggingUnit = true
@@ -2756,7 +2832,7 @@ fun RoomScreen() {
                                             ?: room.containers.firstOrNull { it.wall == currentWall }
                                             ?: room.containers.firstOrNull()
 
-                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH || draggedUnitType == DraggedUnitType.CLOTHES_RAIL)) {
+                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH || draggedUnitType == DraggedUnitType.CLOTHES_RAIL || draggedUnitType == DraggedUnitType.VERTICAL_POLE)) {
                                             val interiorPt = projectScreenToContainerInterior(
                                                 room = room,
                                                 container = target,
@@ -2866,6 +2942,27 @@ fun RoomScreen() {
                                                         }
                                                         updateRoom(updatedRoom)
                                                     }
+                                                } else if (draggedUnitType == DraggedUnitType.VERTICAL_POLE) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        if (isInsideCloset) {
+                                                            val bay = target.findBayAtX(clampedX)
+                                                            val updated = target.withAddedVerticalPole(bayIndex = bay.index, offsetXMm = clampedX, targetYMm = clampedY)
+                                                            val newPole = updated.verticalPoles.lastOrNull()
+                                                            if (newPole != null) {
+                                                                activeDragPartitionId = newPole.id
+                                                                selectedContainerId = target.id
+                                                                selectedPartitionId = newPole.id
+                                                                selectedPartitionIsVertical = true
+                                                                updateRoom(room.withUpdatedContainer(target.id) { updated })
+                                                            }
+                                                        }
+                                                    } else {
+                                                        val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                            currentC.withMovedVerticalPole(partId, newOffsetXMm = clampedX, targetYMm = clampedY)
+                                                        }
+                                                        updateRoom(updatedRoom)
+                                                    }
                                                 }
                                             }
                                         }
@@ -2916,12 +3013,12 @@ fun RoomScreen() {
                                                         )
                                                     }
                                                 }
-                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH, DraggedUnitType.CLOTHES_RAIL -> {
+                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH, DraggedUnitType.CLOTHES_RAIL, DraggedUnitType.VERTICAL_POLE -> {
                                                     val partId = activeDragPartitionId
                                                     if (partId != null && target != null) {
                                                         selectedContainerId = target.id
                                                         selectedPartitionId = partId
-                                                        selectedPartitionIsVertical = (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER)
+                                                        selectedPartitionIsVertical = (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.VERTICAL_POLE)
                                                         coroutineScope.launch {
                                                             messageHostState.showSnackbar(s.partitionAddedToast)
                                                         }
@@ -2976,7 +3073,17 @@ fun RoomScreen() {
                                     },
                                     onDuplicatePartition = { containerId, partitionId, isVertical ->
                                         updateRoom(room.withUpdatedContainer(containerId) { container ->
-                                            if (isVertical) {
+                                            if (container.verticalPoles.any { it.id == partitionId }) {
+                                                val source = container.verticalPoles.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
+                                                val bay = container.getBays().getOrElse(source.bayIndex) { container.getBays().last() }
+                                                val curX = source.effectiveX(container)
+                                                val newX = (curX + 120f).coerceAtMost(bay.endXMm - source.diameterMm * 0.5f)
+                                                val newPole = source.copy(
+                                                    id = "pole_${System.currentTimeMillis()}_${container.verticalPoles.size + 1}",
+                                                    offsetXMm = newX,
+                                                )
+                                                container.copy(verticalPoles = container.verticalPoles + newPole)
+                                            } else if (isVertical) {
                                                 val source = container.dividers.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
                                                 val newOff = (source.offsetXMm + source.thicknessMm + 80f).coerceAtMost((container.interiorWidthMm - source.thicknessMm).coerceAtLeast(0f))
                                                 val newDiv = source.copy(
@@ -2992,6 +3099,14 @@ fun RoomScreen() {
                                                     elevationYMm = newElev,
                                                 )
                                                 container.copy(drawers = container.drawers + newDrawer)
+                                            } else if (container.clothesRails.any { it.id == partitionId }) {
+                                                val source = container.clothesRails.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
+                                                val newElev = (source.elevationYMm + 120f).coerceAtMost((container.interiorHeightMm - source.diameterMm).coerceAtLeast(0f))
+                                                val newRail = source.copy(
+                                                    id = "rail_${System.currentTimeMillis()}_${container.clothesRails.size + 1}",
+                                                    elevationYMm = newElev,
+                                                )
+                                                container.copy(clothesRails = container.clothesRails + newRail)
                                             } else {
                                                 val source = container.shelves.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
                                                 val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
@@ -3056,6 +3171,7 @@ fun RoomScreen() {
                                         DraggedUnitType.DRAWER -> Drawer3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.DRAWER_NOTCH -> DrawerNotch3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.CLOTHES_RAIL -> ClothesRail3DGraphic(modifier = Modifier.fillMaxSize())
+                                        DraggedUnitType.VERTICAL_POLE -> VerticalPole3DGraphic(modifier = Modifier.fillMaxSize())
                                     }
                                 }
                             }
@@ -3683,6 +3799,7 @@ private fun RightSideUnitsAndInspectorColumn(
     onAddShelf: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onAddDrawer: (dropFractionX: Float?, dropFractionY: Float?, frontType: DrawerFrontType) -> Unit = { _, _, _ -> },
     onAddClothesRail: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
+    onAddVerticalPole: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onDragUnitStart: (DraggedUnitType, startRootPos: Offset) -> Unit,
     onDragUnitMove: (delta: Offset) -> Unit,
     onDragUnitEnd: () -> Unit,
@@ -3943,6 +4060,7 @@ private fun RightSideUnitsAndInspectorColumn(
                 var drawerRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var drawerNotchRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var clothesRailRootOffset by remember { mutableStateOf(Offset.Zero) }
+                var verticalPoleRootOffset by remember { mutableStateOf(Offset.Zero) }
 
                 Column(
                     modifier = Modifier
@@ -4146,6 +4264,39 @@ private fun RightSideUnitsAndInspectorColumn(
                             modifier = Modifier
                                 .fillMaxWidth(0.85f)
                                 .height(80.dp),
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(horizontal = 24.dp))
+
+                    // 7th Unit: Vertical Pole / Post ("Tubo vertical", matching screenshot media_1793543136114_789256b4.png)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .height(130.dp)
+                            .onGloballyPositioned { coordinates ->
+                                verticalPoleRootOffset = coordinates.positionInRoot()
+                            }
+                            .pointerInput(Unit) {
+                                detectCatalogUnitDragGestures(
+                                    onDragStart = { localOffset ->
+                                        onDragUnitStart(DraggedUnitType.VERTICAL_POLE, verticalPoleRootOffset + localOffset)
+                                    },
+                                    onDrag = { dragAmount ->
+                                        onDragUnitMove(dragAmount)
+                                    },
+                                    onDragEnd = { onDragUnitEnd() },
+                                    onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddVerticalPole(null, null) },
+                                )
+                            },
+                    ) {
+                        VerticalPole3DGraphic(
+                            modifier = Modifier
+                                .fillMaxWidth(0.5f)
+                                .height(120.dp),
                         )
                     }
                 }
@@ -4763,6 +4914,93 @@ private fun ClothesRail3DGraphic(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun VerticalPole3DGraphic(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        val chromeBase = Color(0xFFC4C4C4)
+        val chromeHighlight = Color(0xFFFFFFFF)
+        val chromeShadow = Color(0xFF757575)
+        val bracketColor = Color(0xFF8E8E8E)
+        val lineStroke = Color(0xFF555555)
+
+        val poleH = h * 0.88f
+        val y0 = (h - poleH) * 0.5f
+        val y1 = y0 + poleH
+        val xCenter = w * 0.5f
+
+        val poleRadiusX = (w * 0.045f).coerceIn(4f, 8f)
+        val bracketRadiusX = poleRadiusX * 2.2f
+        val bracketH = 8f
+
+        // 1. Top Mounting Flange Bracket
+        val topBracketPath = Path().apply {
+            addOval(
+                Rect(
+                    left = xCenter - bracketRadiusX,
+                    top = y0,
+                    right = xCenter + bracketRadiusX,
+                    bottom = y0 + bracketH,
+                )
+            )
+        }
+        drawPath(topBracketPath, color = bracketColor)
+        drawPath(topBracketPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 2. Bottom Mounting Flange Bracket
+        val bottomBracketPath = Path().apply {
+            addOval(
+                Rect(
+                    left = xCenter - bracketRadiusX,
+                    top = y1 - bracketH,
+                    right = xCenter + bracketRadiusX,
+                    bottom = y1,
+                )
+            )
+        }
+        drawPath(bottomBracketPath, color = bracketColor)
+        drawPath(bottomBracketPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 3. Central Chrome Pole Body (horizontal gradient shading from shadow to highlight to shadow)
+        val poleRect = Rect(
+            left = xCenter - poleRadiusX,
+            top = y0 + bracketH * 0.6f,
+            right = xCenter + poleRadiusX,
+            bottom = y1 - bracketH * 0.6f,
+        )
+        drawRect(
+            brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                colors = listOf(
+                    chromeShadow,
+                    chromeHighlight,
+                    chromeBase,
+                    chromeShadow,
+                ),
+                startX = poleRect.left,
+                endX = poleRect.right,
+            ),
+            topLeft = Offset(poleRect.left, poleRect.top),
+            size = Size(poleRect.width, poleRect.height),
+        )
+        // Outer stroke
+        drawRect(
+            color = lineStroke.copy(alpha = 0.7f),
+            topLeft = Offset(poleRect.left, poleRect.top),
+            size = Size(poleRect.width, poleRect.height),
+            style = Stroke(width = 1f),
+        )
+        // Specular highlight vertical line along left-center
+        drawLine(
+            color = Color.White.copy(alpha = 0.85f),
+            start = Offset(xCenter - poleRadiusX * 0.35f, poleRect.top + 2f),
+            end = Offset(xCenter - poleRadiusX * 0.35f, poleRect.bottom - 2f),
+            strokeWidth = 1.8f,
+        )
+    }
+}
+
+@Composable
 private fun ModuleDimensionRow(
     label: String,
     valueMm: Float,
@@ -4855,9 +5093,119 @@ private fun ModuleInspectorContent(
             color = Color(0xFF1A1A1A),
         )
 
-        if (selectedPartitionIsVertical) {
-            val div = activeContainer.dividers.firstOrNull { it.id == selectedPartitionId }
-            if (div != null) {
+        val pole = activeContainer.verticalPoles.firstOrNull { it.id == selectedPartitionId }
+        val div = if (pole == null && selectedPartitionIsVertical) activeContainer.dividers.firstOrNull { it.id == selectedPartitionId } else null
+
+        if (pole != null) {
+            val bays = activeContainer.getBays()
+            val bay = bays.getOrElse(pole.bayIndex) { bays.last() }
+            val (compY0, compY1) = pole.effectiveYRange(activeContainer)
+            val compHeight = (compY1 - compY0).coerceAtLeast(0f)
+
+            // Width (bay span, read-only)
+            ModuleDimensionRow(
+                label = s.partitionWidthLabel,
+                valueMm = bay.widthMm,
+                unitSystem = unitSystem,
+                enabled = false,
+            ) {}
+
+            // Height / Length (read-only)
+            ModuleDimensionRow(
+                label = s.partitionHeightLabel,
+                valueMm = compHeight,
+                unitSystem = unitSystem,
+                enabled = false,
+            ) {}
+
+            // Diameter (editable: 15-50mm)
+            ModuleDimensionRow(
+                label = s.partitionDiameterLabel,
+                valueMm = pole.diameterMm,
+                unitSystem = unitSystem,
+                stepMm = 1f,
+                minMm = 15f,
+                maxMm = 50f,
+                enabled = true,
+            ) { newDiameter ->
+                onUpdateContainer(activeContainer.id) { c ->
+                    c.withUpdatedVerticalPole(pole.id) { it.copy(diameterMm = newDiameter) }
+                }
+            }
+
+            // Depth (editable, distance from back panel)
+            val currentDepth = pole.effectiveDepth(activeContainer.interiorDepthMm)
+            ModuleDimensionRow(
+                label = s.partitionDepthLabel,
+                valueMm = currentDepth,
+                unitSystem = unitSystem,
+                stepMm = step,
+                minMm = 50f,
+                maxMm = (activeContainer.interiorDepthMm - 50f).coerceAtLeast(50f),
+                enabled = true,
+            ) { newDepth ->
+                onUpdateContainer(activeContainer.id) { c ->
+                    c.withUpdatedVerticalPole(pole.id) { it.copy(depthOffsetMm = newDepth) }
+                }
+            }
+
+            // Position header with lock icon
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = s.partitionPositionTitle,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1A1A1A),
+                )
+            }
+
+            val currentX = pole.effectiveX(activeContainer)
+            val leftBound = bay.startXMm
+            val rightBound = bay.endXMm
+            val radius = pole.diameterMm * 0.5f
+
+            val leftDist = (currentX - leftBound - radius).coerceAtLeast(0f)
+            val rightDist = (rightBound - currentX - radius).coerceAtLeast(0f)
+            val maxClearance = (bay.widthMm - pole.diameterMm).coerceAtLeast(0f)
+
+            // Right distance
+            ModuleDimensionRow(
+                label = s.partitionRightLabel,
+                valueMm = rightDist,
+                unitSystem = unitSystem,
+                stepMm = step,
+                minMm = 0f,
+                maxMm = maxClearance,
+                enabled = true,
+            ) { newRight ->
+                val targetX = (rightBound - radius - newRight).coerceIn(leftBound + radius, rightBound - radius)
+                onUpdateContainer(activeContainer.id) { c ->
+                    c.withUpdatedVerticalPole(pole.id) { it.copy(offsetXMm = targetX) }
+                }
+            }
+
+            // Left distance
+            ModuleDimensionRow(
+                label = s.partitionLeftLabel,
+                valueMm = leftDist,
+                unitSystem = unitSystem,
+                stepMm = step,
+                minMm = 0f,
+                maxMm = maxClearance,
+                enabled = true,
+            ) { newLeft ->
+                val targetX = (leftBound + radius + newLeft).coerceIn(leftBound + radius, rightBound - radius)
+                onUpdateContainer(activeContainer.id) { c ->
+                    c.withUpdatedVerticalPole(pole.id) { it.copy(offsetXMm = targetX) }
+                }
+            }
+        } else if (div != null) {
                 // Width (thickness)
                 ModuleDimensionRow(
                     label = s.partitionWidthLabel,
@@ -4965,8 +5313,7 @@ private fun ModuleInspectorContent(
                         c.withUpdatedDivider(div.id) { it.copy(offsetXMm = newOffset) }
                     }
                 }
-            }
-        } else {
+            } else {
             val shelf = activeContainer.shelves.firstOrNull { it.id == selectedPartitionId }
             val drawer = if (shelf == null) activeContainer.drawers.firstOrNull { it.id == selectedPartitionId } else null
             val rail = if (shelf == null && drawer == null) activeContainer.clothesRails.firstOrNull { it.id == selectedPartitionId } else null

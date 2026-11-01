@@ -533,5 +533,85 @@ class ClosetPartitionTest {
         assertEquals("c1", hit.containerId)
         assertEquals(rail.id, hit.partitionId)
         assertTrue(!hit.isVertical)
+
+        // 5. Moving clothes rail vertically and across bays
+        val movedContainer = container.withMovedClothesRail(
+            id = rail.id,
+            newElevationYMm = 1400f,
+            targetXMm = 1200f, // Points into Bay 1 (offsetXMm 880 to 1800)
+            snapThresholdMm = 0f,
+        )
+        val movedRail = movedContainer.clothesRails.first { it.id == rail.id }
+        assertMm(1400f, movedRail.elevationYMm)
+        assertEquals(1, movedRail.bayIndex)
+    }
+
+    @Test
+    fun `vertical pole defaults to bay center, spans compartment height, snaps, builds geometry and raycasts`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 1800f,
+            heightMm = 2200f,
+            depthMm = 600f,
+            panelThicknessMm = 18f,
+            plinthHeightMm = 80f,
+        )
+
+        val innerW = container.interiorWidthMm
+        val innerH = container.interiorHeightMm
+        val innerD = container.interiorDepthMm
+
+        // 1. Add vertical pole at default position
+        container = container.withAddedVerticalPole(bayIndex = 0)
+        assertEquals(1, container.verticalPoles.size)
+        val pole = container.verticalPoles.single()
+
+        assertEquals(0, pole.bayIndex)
+        assertMm(innerW * 0.5f, pole.effectiveX(container))
+        assertMm(innerD * 0.5f, pole.effectiveDepth(innerD))
+        assertEquals(25f, pole.diameterMm)
+        val (y0, y1) = pole.effectiveYRange(container)
+        assertMm(0f, y0)
+        assertMm(innerH, y1)
+
+        // 2. Build geometry: produces DOOR_HANDLE mesh for chrome pole & flange brackets, and purple selection outline
+        val room = RoomSpec(containers = listOf(container))
+        val parts = RoomGeometryBuilder.build(room, selectedContainerId = "c1", selectedPartitionId = pole.id)
+        assertTrue(parts.any { it.surface == RoomSurface.DOOR_HANDLE })
+        assertTrue(parts.any { it.surface == RoomSurface.PARTITION_SELECTED_OUTLINE })
+
+        // 3. Raycast picking hits the pole with isVertical = true
+        val s0Inner = container.offsetMm + container.effectivePanelThicknessMm
+        val poleWorldX = s0Inner + pole.effectiveX(container)
+        val poleMidY = container.effectivePlinthHeightMm + container.effectivePanelThicknessMm + (innerH * 0.5f)
+
+        val hit = room.pickPartitionByRayMm(
+            rayOriginX = poleWorldX,
+            rayOriginY = poleMidY,
+            rayOriginZ = -200f,
+            rayDirX = 0f,
+            rayDirY = 0f,
+            rayDirZ = 1f,
+        )
+        assertNotNull(hit)
+        assertEquals("c1", hit.containerId)
+        assertEquals(pole.id, hit.partitionId)
+        assertTrue(hit.isVertical)
+
+        // 4. Add divider to create bay 0 and bay 1
+        container = container.withAddedDivider(offsetXMm = 1400f)
+        assertEquals(2, container.getBays().size)
+
+        // 5. Moving vertical pole horizontally across into Bay 1
+        val movedContainer = container.withMovedVerticalPole(
+            id = pole.id,
+            newOffsetXMm = 1550f, // Points into Bay 1 (offsetXMm 1400+18 to 1800)
+            targetYMm = 1000f,
+            snapThresholdMm = 0f,
+        )
+        val movedPole = movedContainer.verticalPoles.first { it.id == pole.id }
+        assertMm(1550f, movedPole.effectiveX(movedContainer))
+        assertEquals(1, movedPole.bayIndex)
     }
 }
