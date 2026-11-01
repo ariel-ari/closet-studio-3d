@@ -870,4 +870,68 @@ class ClosetPartitionTest {
         assertMm(1418f, comps3[2].bottomYMm)
         assertMm(container3Comp.interiorHeightMm, comps3[2].topYMm)
     }
+
+    @Test
+    fun `closet container dimension callouts calculate overall exterior dimensions bay clear widths and compartment heights`() {
+        // Cabinet matching reference image specifications:
+        // Width 2500 mm, Height 2000 mm, Depth 600 mm, Plinth 100 mm, Panel 20 mm -> InnerH = 1860 mm.
+        // Central divider at 1328 mm -> Bay 0 width 1328 mm, Bay 1 width 1112 mm.
+        // Shoe rack in Bay 0 at 286 mm (thickness 18 mm) -> Comp 0 height 286 mm, Comp 1 height 1556 mm.
+        var container = ClosetContainerSpec(
+            id = "c_dims",
+            wall = WallIndex.NORTH,
+            offsetMm = 200f,
+            widthMm = 2500f,
+            heightMm = 2000f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+            plinthHeightMm = 100f,
+        )
+        // Add vertical divider at 1328 mm
+        container = container.withAddedDivider(offsetXMm = 1328f, snapThresholdMm = 0f)
+        // Add shoe rack at elevation 286 mm in Bay 0
+        container = container.withAddedShoeRack(bayIndex = 0, elevationYMm = 286f)
+
+        val callouts = container.getDimensionCallouts()
+
+        // 1. Overall Width
+        val wCallout = callouts.first { it.type == ClosetDimensionType.OVERALL_WIDTH }
+        assertMm(2500f, wCallout.valueMm)
+        assertMm(0f, wCallout.startXLocalMm)
+        assertMm(2500f, wCallout.endXLocalMm)
+        assertMm(2000f, wCallout.startYLocalMm)
+
+        // 2. Overall Height
+        val hCallout = callouts.first { it.type == ClosetDimensionType.OVERALL_HEIGHT }
+        assertMm(2000f, hCallout.valueMm)
+        assertMm(2500f, hCallout.startXLocalMm)
+        assertMm(0f, hCallout.startYLocalMm)
+        assertMm(2000f, hCallout.endYLocalMm)
+
+        // 3. Central Divider Height (1860 mm)
+        val divCallout = callouts.first { it.type == ClosetDimensionType.DIVIDER_HEIGHT }
+        assertMm(1860f, divCallout.valueMm)
+        assertMm(120f, divCallout.startYLocalMm) // plinth (100) + panel (20)
+        assertMm(1980f, divCallout.endYLocalMm)   // 2000 - panel (20)
+
+        // 4. Bay Widths
+        val bay0Callout = callouts.first { it.type == ClosetDimensionType.BAY_WIDTH && it.bayIndex == 0 }
+        assertMm(1328f, bay0Callout.valueMm)
+
+        val bay1Callout = callouts.first { it.type == ClosetDimensionType.BAY_WIDTH && it.bayIndex == 1 }
+        assertMm(1112f, bay1Callout.valueMm)
+
+        // 5. Compartment Heights in Bay 0
+        val compCallouts = callouts.filter { it.type == ClosetDimensionType.COMPARTMENT_HEIGHT && it.bayIndex == 0 }
+        assertEquals(2, compCallouts.size)
+        assertMm(286f, compCallouts[0].valueMm)
+        assertMm(1860f - 286f - 18f, compCallouts[1].valueMm) // 1556 mm
+
+        // 6. 3D World Transformation test
+        val room = RoomSpec(containers = listOf(container))
+        val worldOrigin = room.containerLocalToWorldMm(container, 0f, 0f, 600f)
+        assertMm(container.offsetMm, worldOrigin.x)
+        assertMm(0f, worldOrigin.y)
+        assertMm(container.depthMm + 4f, worldOrigin.z)
+    }
 }

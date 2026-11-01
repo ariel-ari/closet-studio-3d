@@ -240,6 +240,30 @@ Cabinet doors (`CabinetDoorsSpec`) provide front enclosure for closet bays, conf
      - When dropped at bay center or selected via `[Todo el vano]` in the inspector, it covers all compartments from the floor (or drawer top) to the ceiling.
      - Contextual chips in the inspector provide instantaneous 1-click toggling between `[Todo el vano]`, `[Superior]`, `[Inferior]`, `[Medio]`, and combined spans.
 
+---
+
+## 13. Closet Dimensions Overlay Protocol (Regla de Oro de Medidas y Acotaciones)
+Closet dimensions overlay displays comprehensive architectural CAD dimension lines and measurement callouts across all structural components of the closet/cabinet in both 3D perspective and 2D Front projection:
+
+1. **Top Bar & Menu Toggle Control:**
+   - **Dedicated Ruler Button:** Accessible via `Icons.Default.Straighten` in the TopAppBar (right next to `DoorFront`) and in the overflow options menu (⋮).
+   - **Visual State:** Tinted with vibrant purple `Color(0xFFB388FF)` when active and muted white when inactive.
+   - **Instant Feedback:** Displays localized toast message (`"Medidas del mueble visibles"` / `"Medidas del mueble ocultas"`).
+   - **Zero-Latency Canvas Overlay:** Rendered directly over the 3D viewport using a lightweight Compose `Canvas` with hardware acceleration. Orbit, pan, zoom, partition selection, and drag gestures pass through without any touch interception or frame drops.
+
+2. **Dimension Geometry & Segmentation (`getDimensionCallouts`):**
+   - **Overall Exterior Width (`OVERALL_WIDTH`):** Horizontal dimension line across the top front edge of the cabinet from $X = 0$ to $X = W_{\text{exterior}}$.
+   - **Overall Exterior Height (`OVERALL_HEIGHT`):** Vertical dimension line along the right exterior front edge from $Y = 0$ to $Y = H_{\text{exterior}}$.
+   - **Dividers Clear Height (`DIVIDER_HEIGHT`):** Vertical dimension line along each vertical divider from bottom floor shelf ($H_{\text{plinth}} + T$) to top ceiling panel ($H - T$), indicating interior clear height ($H_{\text{inner}}$).
+   - **Bay Clear Widths (`BAY_WIDTH`):** Horizontal dimension line spanning the interior bottom shelf of each bay from bay start to bay end ($W_{\text{bay}}$).
+   - **Compartment Clear Heights (`COMPARTMENT_HEIGHT`):** For bays divided by shelves, drawers, or shoe racks, vertical dimension lines measure each clear compartment height individually.
+
+3. **Visual Aesthetics & Architectural Styling:**
+   - **CAD Purple Accent:** High-contrast vibrant purple lines (`#7038FF`, stroke width $2\text{ dp}$).
+   - **Perpendicular End Ticks:** Ticks of length $6\text{ dp}$ on both sides of each dimension endpoint, dynamically projected perpendicular to the screen direction vector.
+   - **Legible Dual-Pass Typography:** Numbers are drawn in bold with a $3.5\text{ dp}$ white stroke outline behind black fill, guaranteeing 100% legibility over any wood textures, dark finishes, or room walls.
+   - **Unit Awareness:** Formats integers without suffix under millimeter mode (`2500`, `2000`, `1860`, `1328`, `1112`, `1474`, `286`) and compact format under other units (`3.60m`, `11' 10\"`).
+
 
 
 

@@ -119,6 +119,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -137,6 +138,8 @@ import com.closetstudio.core.model.DrawerFrontType
 import com.closetstudio.core.model.PartitionHit
 import com.closetstudio.core.model.RoomSpec
 import com.closetstudio.core.model.WallIndex
+import com.closetstudio.core.model.containerLocalToWorldMm
+import com.closetstudio.core.model.getDimensionCallouts
 
 import dev.romainguy.kotlin.math.Float3
 import kotlinx.coroutines.launch
@@ -1001,6 +1004,7 @@ fun RoomScreen() {
     var currentViewMode by remember { mutableStateOf(RoomViewMode.PERSPECTIVE_3D) }
     var showWallLabels by remember { mutableStateOf(true) }
     var showClosetDoors by remember { mutableStateOf(true) }
+    var showClosetDimensions by remember { mutableStateOf(false) }
     var splitDoorWall by remember { mutableStateOf(false) }
     var viewportWidthPx by remember { mutableFloatStateOf(1f) }
     var viewportHeightPx by remember { mutableFloatStateOf(1f) }
@@ -1625,6 +1629,24 @@ fun RoomScreen() {
                                 )
                             }
 
+                            // Toggle Closet Dimensions Visibility
+                            IconButton(
+                                onClick = {
+                                    showClosetDimensions = !showClosetDimensions
+                                    coroutineScope.launch {
+                                        messageHostState.showSnackbar(
+                                            if (showClosetDimensions) s.closetDimensionsShownToast else s.closetDimensionsHiddenToast
+                                        )
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Straighten,
+                                    contentDescription = s.toggleClosetDimensions,
+                                    tint = if (showClosetDimensions) Color(0xFFB388FF) else Color.White.copy(alpha = 0.55f),
+                                )
+                            }
+
                             // Info (ⓘ)
                             IconButton(
                                 onClick = { showInfoDialog = true },
@@ -1748,6 +1770,35 @@ fun RoomScreen() {
                                         onClick = {
                                             showOverflowMenu = false
                                             showClosetDoors = !showClosetDoors
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(s.toggleClosetDimensions)
+                                                if (showClosetDimensions) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Straighten,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            showClosetDimensions = !showClosetDimensions
                                         },
                                     )
                                     DropdownMenuItem(
@@ -2074,6 +2125,177 @@ fun RoomScreen() {
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )
+
+                            // Closet Dimension Callouts Overlay (CAD measurements in purple with ticks & white-outlined text)
+                            if (showClosetDimensions && !showDimensionsSheet) {
+                                val currentFocusedWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
+                                val currentWallContainers = room.containers.filter { it.wall == currentFocusedWall }
+                                val containersToDimension = if (activeContainer != null) {
+                                    listOf(activeContainer)
+                                } else if (currentWallContainers.isNotEmpty()) {
+                                    currentWallContainers
+                                } else {
+                                    room.containers
+                                }
+
+                                val purpleColor = Color(0xFF7038FF)
+                                val strokeWidthPx = with(LocalDensity.current) { 2.dp.toPx() }
+                                val tickLengthPx = with(LocalDensity.current) { 6.dp.toPx() }
+                                val strokeOutlinePx = with(LocalDensity.current) { 3.5.dp.toPx() }
+                                val textOffsetHorizPx = with(LocalDensity.current) { 13.dp.toPx() }
+                                val textOffsetVertPx = with(LocalDensity.current) { 17.dp.toPx() }
+
+                                val strokePaint = remember {
+                                    android.graphics.Paint().apply {
+                                        isAntiAlias = true
+                                        textSize = 34f
+                                        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                                        style = android.graphics.Paint.Style.STROKE
+                                        strokeWidth = strokeOutlinePx
+                                        color = android.graphics.Color.WHITE
+                                        textAlign = android.graphics.Paint.Align.CENTER
+                                    }
+                                }
+                                val fillPaint = remember {
+                                    android.graphics.Paint().apply {
+                                        isAntiAlias = true
+                                        textSize = 34f
+                                        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                                        style = android.graphics.Paint.Style.FILL
+                                        color = android.graphics.Color.BLACK
+                                        textAlign = android.graphics.Paint.Align.CENTER
+                                    }
+                                }
+
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val yawDeg = yawAnim.value
+                                    val pitchDeg = pitchAnim.value
+                                    val distM = distanceAnim.value
+                                    val orthoSz = orthoSizeAnim.value
+                                    val targetX = targetXAnim.value
+                                    val targetY = targetYAnim.value
+                                    val targetZ = targetZAnim.value
+                                    val vw = size.width
+                                    val vh = size.height
+                                    val isOrtho = currentViewMode == RoomViewMode.FRONT_2D || currentViewMode == RoomViewMode.TOP_DOWN
+
+                                    for (c in containersToDimension) {
+                                        val callouts = c.getDimensionCallouts()
+                                        for (callout in callouts) {
+                                            val startPt = room.containerLocalToWorldMm(
+                                                container = c,
+                                                xLocalMm = callout.startXLocalMm,
+                                                yLocalMm = callout.startYLocalMm,
+                                                zLocalMm = callout.startZLocalMm,
+                                            )
+                                            val endPt = room.containerLocalToWorldMm(
+                                                container = c,
+                                                xLocalMm = callout.endXLocalMm,
+                                                yLocalMm = callout.endYLocalMm,
+                                                zLocalMm = callout.endZLocalMm,
+                                            )
+
+                                            val pStart = project3DToScreen(
+                                                point = Float3(startPt.x * MM_TO_M, startPt.y * MM_TO_M, startPt.z * MM_TO_M),
+                                                targetX = targetX,
+                                                targetY = targetY,
+                                                targetZ = targetZ,
+                                                yawDeg = yawDeg,
+                                                pitchDeg = pitchDeg,
+                                                distanceM = distM,
+                                                isOrtho = isOrtho,
+                                                orthoSize = orthoSz,
+                                                viewportWidth = vw,
+                                                viewportHeight = vh,
+                                            )
+                                            val pEnd = project3DToScreen(
+                                                point = Float3(endPt.x * MM_TO_M, endPt.y * MM_TO_M, endPt.z * MM_TO_M),
+                                                targetX = targetX,
+                                                targetY = targetY,
+                                                targetZ = targetZ,
+                                                yawDeg = yawDeg,
+                                                pitchDeg = pitchDeg,
+                                                distanceM = distM,
+                                                isOrtho = isOrtho,
+                                                orthoSize = orthoSz,
+                                                viewportWidth = vw,
+                                                viewportHeight = vh,
+                                            )
+
+                                            if (pStart != null && pEnd != null) {
+                                                val dx = pEnd.x - pStart.x
+                                                val dy = pEnd.y - pStart.y
+                                                val len = sqrt(dx * dx + dy * dy)
+                                                if (len > 12f) {
+                                                    // Main purple line
+                                                    drawLine(
+                                                        color = purpleColor,
+                                                        start = pStart,
+                                                        end = pEnd,
+                                                        strokeWidth = strokeWidthPx,
+                                                        cap = StrokeCap.Round,
+                                                    )
+
+                                                    // Perpendicular tick marks
+                                                    val ux = dx / len
+                                                    val uy = dy / len
+                                                    val nx = -uy
+                                                    val ny = ux
+
+                                                    drawLine(
+                                                        color = purpleColor,
+                                                        start = Offset(pStart.x - nx * tickLengthPx, pStart.y - ny * tickLengthPx),
+                                                        end = Offset(pStart.x + nx * tickLengthPx, pStart.y + ny * tickLengthPx),
+                                                        strokeWidth = strokeWidthPx,
+                                                        cap = StrokeCap.Round,
+                                                    )
+                                                    drawLine(
+                                                        color = purpleColor,
+                                                        start = Offset(pEnd.x - nx * tickLengthPx, pEnd.y - ny * tickLengthPx),
+                                                        end = Offset(pEnd.x + nx * tickLengthPx, pEnd.y + ny * tickLengthPx),
+                                                        strokeWidth = strokeWidthPx,
+                                                        cap = StrokeCap.Round,
+                                                    )
+
+                                                    // Midpoint and text label
+                                                    val midX = (pStart.x + pEnd.x) * 0.5f
+                                                    val midY = (pStart.y + pEnd.y) * 0.5f
+
+                                                    val isHorizontal = kotlin.math.abs(dx) >= kotlin.math.abs(dy)
+                                                    val textPos = if (isHorizontal) {
+                                                        var normX = nx
+                                                        var normY = ny
+                                                        if (normY > 0) {
+                                                            normX = -normX
+                                                            normY = -normY
+                                                        }
+                                                        Offset(midX + normX * textOffsetHorizPx, midY + normY * textOffsetHorizPx)
+                                                    } else {
+                                                        var normX = nx
+                                                        var normY = ny
+                                                        if (normX < 0) {
+                                                            normX = -normX
+                                                            normY = -normY
+                                                        }
+                                                        Offset(midX + normX * textOffsetVertPx, midY + normY * textOffsetVertPx)
+                                                    }
+
+                                                    val displayText = when (appUnitSystem) {
+                                                        AppUnitSystem.MM -> "${callout.valueMm.roundToInt()}"
+                                                        else -> appUnitSystem.formatCompact(callout.valueMm)
+                                                    }
+
+                                                    val fontMetrics = fillPaint.fontMetrics
+                                                    val textCenterY = textPos.y - (fontMetrics.descent + fontMetrics.ascent) * 0.5f
+
+                                                    drawContext.canvas.nativeCanvas.drawText(displayText, textPos.x, textCenterY, strokePaint)
+                                                    drawContext.canvas.nativeCanvas.drawText(displayText, textPos.x, textCenterY, fillPaint)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             // Floating Wall Labels (A, B, C, D)
                             if (showWallLabels && !showDimensionsSheet) {

@@ -33,6 +33,13 @@ data class Vec2Mm(
 )
 
 @Serializable
+data class Vec3Mm(
+    val x: Float,
+    val y: Float,
+    val z: Float,
+)
+
+@Serializable
 enum class RoomCorner(
     val incomingWall: WallIndex,
     val outgoingWall: WallIndex,
@@ -387,13 +394,14 @@ data class ClosetContainerSpec(
      * Returns the vertical compartments (usable vertical sections) within [bayIndex].
      * Takes into account:
      * - Bottom drawers (elevationYMm <= 50mm): doors sit on top of consecutive bottom drawers.
-     * - Dividing shelves: each shelf separates the bay into upper and lower compartments.
+     * - Dividing shelves and shoe racks: each separates the bay into upper and lower compartments.
      * - Internal elevated drawers: act as solid dividers.
      */
     fun getBayCompartments(bayIndex: Int): List<BayCompartment> {
         val innerH = interiorHeightMm
         val bayDrawers = drawers.filter { it.bayIndex == bayIndex }.sortedBy { it.elevationYMm }
         val bayShelves = shelves.filter { it.bayIndex == bayIndex }.sortedBy { it.elevationYMm }
+        val bayShoeRacks = shoeRacks.filter { it.bayIndex == bayIndex }.sortedBy { it.elevationYMm }
 
         var baseFloorY = 0f
         for (d in bayDrawers) {
@@ -403,14 +411,16 @@ data class ClosetContainerSpec(
         }
 
         val dividingShelves = bayShelves.filter { it.elevationYMm >= (baseFloorY - 5f) && (it.elevationYMm + it.thicknessMm) <= innerH }
+        val dividingShoeRacks = bayShoeRacks.filter { it.elevationYMm >= (baseFloorY - 5f) && (it.elevationYMm + it.thicknessMm) <= innerH }
         val elevatedDrawers = bayDrawers.filter { it.elevationYMm > (baseFloorY + 10f) && (it.elevationYMm + it.heightMm) <= innerH }
 
-        if (dividingShelves.isEmpty() && elevatedDrawers.isEmpty()) {
+        if (dividingShelves.isEmpty() && dividingShoeRacks.isEmpty() && elevatedDrawers.isEmpty()) {
             return listOf(BayCompartment(0, baseFloorY, innerH))
         }
 
         data class DividerBlock(val bottomY: Float, val topY: Float)
         val blocks = (dividingShelves.map { DividerBlock(it.elevationYMm, it.elevationYMm + it.thicknessMm) } +
+            dividingShoeRacks.map { DividerBlock(it.elevationYMm, it.elevationYMm + it.thicknessMm) } +
             elevatedDrawers.map { DividerBlock(it.elevationYMm, it.elevationYMm + it.heightMm) })
             .sortedBy { it.bottomY }
 
@@ -554,6 +564,12 @@ data class ClosetContainerSpec(
             for (d in drawers) {
                 if (targetBayIndex == null || d.bayIndex == targetBayIndex) {
                     existingTargets.add(d.elevationYMm + d.heightMm)
+                }
+            }
+            for (sr in shoeRacks) {
+                if (targetBayIndex == null || sr.bayIndex == targetBayIndex) {
+                    existingTargets.add(sr.elevationYMm + sr.thicknessMm)
+                    existingTargets.add(sr.elevationYMm)
                 }
             }
         } else {
@@ -2811,3 +2827,181 @@ data class PartitionHit(
     val isVertical: Boolean,
     val hitDistance: Float,
 )
+
+@Serializable
+enum class ClosetDimensionType {
+    OVERALL_WIDTH,
+    OVERALL_HEIGHT,
+    BAY_WIDTH,
+    DIVIDER_HEIGHT,
+    COMPARTMENT_HEIGHT,
+}
+
+@Serializable
+data class ClosetDimensionCallout(
+    val type: ClosetDimensionType,
+    val valueMm: Float,
+    val startXLocalMm: Float,
+    val startYLocalMm: Float,
+    val startZLocalMm: Float,
+    val endXLocalMm: Float,
+    val endYLocalMm: Float,
+    val endZLocalMm: Float,
+    val bayIndex: Int? = null,
+)
+
+/**
+ * Computes all dimension callout segments for [this] container in its local coordinates.
+ * Segments correspond to:
+ * - Overall exterior width (top front edge)
+ * - Overall exterior height (right front edge)
+ * - Clear height of vertical dividers
+ * - Clear width of each bay (bottom shelf)
+ * - Clear vertical height of each compartment within divided bays
+ */
+fun ClosetContainerSpec.getDimensionCallouts(): List<ClosetDimensionCallout> {
+    val callouts = mutableListOf<ClosetDimensionCallout>()
+    val t = effectivePanelThicknessMm
+    val plinth = effectivePlinthHeightMm
+    val w = widthMm
+    val h = heightMm
+    val d = depthMm
+
+    if (w <= 10f || h <= 10f) return emptyList()
+
+    // 1. Overall Width (top front edge)
+    callouts.add(
+        ClosetDimensionCallout(
+            type = ClosetDimensionType.OVERALL_WIDTH,
+            valueMm = w,
+            startXLocalMm = 0f,
+            startYLocalMm = h,
+            startZLocalMm = d,
+            endXLocalMm = w,
+            endYLocalMm = h,
+            endZLocalMm = d,
+        )
+    )
+
+    // 2. Overall Height (right front edge)
+    callouts.add(
+        ClosetDimensionCallout(
+            type = ClosetDimensionType.OVERALL_HEIGHT,
+            valueMm = h,
+            startXLocalMm = w,
+            startYLocalMm = 0f,
+            startZLocalMm = d,
+            endXLocalMm = w,
+            endYLocalMm = h,
+            endZLocalMm = d,
+        )
+    )
+
+    // 3. Dividers Height
+    val sortedDividers = dividers.sortedBy { it.offsetXMm }
+    val dividerFloorY = plinth + t
+    val dividerTopY = h - t
+    val dividerHeight = (dividerTopY - dividerFloorY).coerceAtLeast(0f)
+    for (div in sortedDividers) {
+        val divCenterX = t + div.offsetXMm + div.thicknessMm * 0.5f
+        callouts.add(
+            ClosetDimensionCallout(
+                type = ClosetDimensionType.DIVIDER_HEIGHT,
+                valueMm = dividerHeight,
+                startXLocalMm = divCenterX,
+                startYLocalMm = dividerFloorY,
+                startZLocalMm = d,
+                endXLocalMm = divCenterX,
+                endYLocalMm = dividerTopY,
+                endZLocalMm = d,
+            )
+        )
+    }
+
+    // 4. Bay Clear Widths and Compartment Heights
+    val bays = getBays()
+    for (bay in bays) {
+        val bayStartX = t + bay.startXMm
+        val bayEndX = t + bay.endXMm
+        val floorY = plinth + t
+
+        // Clear bay width along bottom shelf
+        if (bay.widthMm > 10f) {
+            callouts.add(
+                ClosetDimensionCallout(
+                    type = ClosetDimensionType.BAY_WIDTH,
+                    valueMm = bay.widthMm,
+                    startXLocalMm = bayStartX,
+                    startYLocalMm = floorY,
+                    startZLocalMm = d,
+                    endXLocalMm = bayEndX,
+                    endYLocalMm = floorY,
+                    endZLocalMm = d,
+                    bayIndex = bay.index,
+                )
+            )
+        }
+
+        // Vertical compartments within this bay
+        val compartments = getBayCompartments(bay.index)
+        if (compartments.size > 1) {
+            val calloutX = bayStartX + 20f.coerceAtMost(bay.widthMm * 0.15f)
+            for (comp in compartments) {
+                val compBottomY = floorY + comp.bottomYMm
+                val compTopY = floorY + comp.topYMm
+                val compHeight = comp.topYMm - comp.bottomYMm
+                if (compHeight > 10f) {
+                    callouts.add(
+                        ClosetDimensionCallout(
+                            type = ClosetDimensionType.COMPARTMENT_HEIGHT,
+                            valueMm = compHeight,
+                            startXLocalMm = calloutX,
+                            startYLocalMm = compBottomY,
+                            startZLocalMm = d,
+                            endXLocalMm = calloutX,
+                            endYLocalMm = compTopY,
+                            endZLocalMm = d,
+                            bayIndex = bay.index,
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    return callouts
+}
+
+/**
+ * Transforms a local container point (xLocalMm, yLocalMm, zLocalMm) into room world coordinates (Vec3Mm).
+ */
+fun RoomSpec.containerLocalToWorldMm(
+    container: ClosetContainerSpec,
+    xLocalMm: Float,
+    yLocalMm: Float,
+    zLocalMm: Float = container.depthMm,
+): Vec3Mm {
+    val (pStart, pEnd) = when (container.wall) {
+        WallIndex.NORTH -> vertexNW to vertexNE
+        WallIndex.EAST -> vertexNE to vertexSE
+        WallIndex.SOUTH -> vertexSE to vertexSW
+        WallIndex.WEST -> vertexSW to vertexNW
+    }
+    val dx = pEnd.x - pStart.x
+    val dz = pEnd.z - pStart.z
+    val wallLen = kotlin.math.sqrt(dx * dx + dz * dz).coerceAtLeast(10f)
+    val ux = dx / wallLen
+    val uz = dz / wallLen
+    val nx = -uz
+    val nz = ux
+
+    val wallGap = 4f
+    val s = container.offsetMm + xLocalMm
+    val d = wallGap + zLocalMm
+
+    val worldXMm = pStart.x + s * ux + d * nx
+    val worldYMm = yLocalMm
+    val worldZMm = pStart.z + s * uz + d * nz
+
+    return Vec3Mm(worldXMm, worldYMm, worldZMm)
+}
