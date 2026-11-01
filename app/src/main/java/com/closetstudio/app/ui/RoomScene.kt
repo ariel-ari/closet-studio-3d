@@ -202,7 +202,7 @@ fun RoomScene(
                         }
 
                         val texturedMaterial = if (loadedTexture != null) {
-                            when (surface) {
+                            val instance = when (surface) {
                                 RoomSurface.FLOOR -> materialLoader.createTextureInstance(
                                     texture = loadedTexture,
                                     isOpaque = true,
@@ -234,6 +234,14 @@ fun RoomScene(
                                     reflectance = 0.55f,
                                 )
                                 else -> null
+                            }
+                            instance?.apply {
+                                val sampler = com.google.android.filament.TextureSampler(
+                                    com.google.android.filament.TextureSampler.MinFilter.LINEAR_MIPMAP_LINEAR,
+                                    com.google.android.filament.TextureSampler.MagFilter.LINEAR,
+                                    com.google.android.filament.TextureSampler.WrapMode.MIRRORED_REPEAT,
+                                )
+                                setParameter("texture", loadedTexture, sampler)
                             }
                         } else null
 

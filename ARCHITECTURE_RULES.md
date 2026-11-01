@@ -283,8 +283,12 @@ The texture system allows applying photorealistic PBR finishes to closet furnitu
    - Containers inherit `defaultMelamineTextureId` and `defaultGrainHorizontal` when created or when "Aplicar a todos los muebles" is chosen.
 
 3. **Filament PBR Shader Texture Mapping (`RoomScene.kt` & `MeshBuilder.kt`):**
-   - **Physical Tiling:** `MeshBuilder` calculates planar UV coordinates scaled by physical world dimensions ($600\text{ mm}$ melamine tile, $1200\text{ mm}$ wall tile, $800\text{ mm}$ floor tile).
-   - **Wood Grain Orientation Control (`rotateUv90`):** By default, wood grain runs vertically (`(u, v)`). When horizontal grain is selected, UV coordinates are swapped: $(u, v) \to (v, u)$, seamlessly rotating textures $90^\circ$ across all 3D faces without stretching or vertex distortion.
+   - **Architectural Scale per Category:** `MeshBuilder` applies physical world-space scale tailored to the material type to eliminate visible tiling seams:
+     - Furniture Melamines (`containerScaleMm = 2400f`): Standard commercial MDF board scale ($2.44\text{ m} \times 1.83\text{ m}$) ensuring doors and side panels span continuously from top to bottom with zero tiling grid.
+     - Walls (`wallScaleMm = 2600f`): Matches residential clear height so wall textures (stuccos, paneling, wallpapers) cover floor-to-ceiling in a single continuous pass.
+     - Floors (`floorScaleMm = 1400f`): Realistic scale for wide wood parquet planks and large-format porcelain slabs.
+   - **Seamless Mirrored Repeat (`MIRRORED_REPEAT`):** Binds Filament `TextureSampler` with `WrapMode.MIRRORED_REPEAT` on all textured surfaces, ensuring that boundary pixels reflect identically, completely eliminating hard edge lines and checkerboard seams on photos with edge lighting falloff.
+   - **Wood Grain Orientation Control (`rotateUv90`):** Swaps UV coordinates $(u, v) \to (v, u)$ to rotate textures $90^\circ$ across all 3D faces without stretching.
    - **PBR Material Instances:** Dynamically binds Filament `ImageTexture` to `opaque_textured.filamat` with physical metallic, roughness, and reflectance parameters tailored per surface:
      - Furniture: Metallic $0.04$, Roughness $0.40$, Reflectance $0.55$.
      - Floor: Metallic $0.05$, Roughness $0.35$, Reflectance $0.50$.

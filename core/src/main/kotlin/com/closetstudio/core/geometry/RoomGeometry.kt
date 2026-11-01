@@ -62,7 +62,8 @@ object RoomGeometryBuilder {
         val parts = mutableListOf<RoomPart>()
 
         // 1. Floor (Polygonal quad matching exact room vertices)
-        val floorBuilder = MeshBuilder(uvScaleMm)
+        val floorScaleMm = 1400f
+        val floorBuilder = MeshBuilder(floorScaleMm)
         floorBuilder.addQuad(
             a = Vec3(nw.x, 0f, nw.z),
             b = Vec3(sw.x, 0f, sw.z),
@@ -92,7 +93,8 @@ object RoomGeometryBuilder {
         parts += RoomPart(RoomSurface.CEILING, ceilingBuilder.build())
 
         // 3. Walls (Inward-facing quads following exact vertices and angles)
-        val wallBuilder = MeshBuilder(uvScaleMm)
+        val wallScaleMm = 2600f
+        val wallBuilder = MeshBuilder(wallScaleMm)
         val frameBuilder = MeshBuilder(uvScaleMm)
         val leafBuilder = MeshBuilder(uvScaleMm)
         val handleBuilder = MeshBuilder(uvScaleMm)
@@ -241,10 +243,11 @@ object RoomGeometryBuilder {
                 }
                 val grainRotated = container.isGrainHorizontal
 
-                val cHorizPanelsBuilder = MeshBuilder(uvScaleMm, rotateUv90 = grainRotated)
-                val cVertPanelsBuilder = MeshBuilder(uvScaleMm, rotateUv90 = grainRotated)
-                val cFrontEdgesBuilder = MeshBuilder(uvScaleMm, rotateUv90 = grainRotated)
-                val cBackBuilder = MeshBuilder(uvScaleMm, rotateUv90 = grainRotated)
+                val containerScaleMm = 2400f
+                val cHorizPanelsBuilder = MeshBuilder(containerScaleMm, rotateUv90 = grainRotated)
+                val cVertPanelsBuilder = MeshBuilder(containerScaleMm, rotateUv90 = grainRotated)
+                val cFrontEdgesBuilder = MeshBuilder(containerScaleMm, rotateUv90 = grainRotated)
+                val cBackBuilder = MeshBuilder(containerScaleMm, rotateUv90 = grainRotated)
 
                 addContainerToBuilders(
                     room = room,
