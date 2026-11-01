@@ -705,4 +705,88 @@ class ClosetPartitionTest {
         val movedRack = movedContainer.shoeRacks.first { it.id == rack.id }
         assertEquals(1, movedRack.bayIndex)
     }
+
+    @Test
+    fun `cabinet doors default to 2 leaves, support 1 leaf toggle, global visibility hiding, and raycast picking`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 1800f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 18f,
+            plinthHeightMm = 80f,
+        )
+
+        // 1. Add shelf at 1200mm to create compartments
+        container = container.withAddedShelf(elevationYMm = 1200f)
+        val shelf = container.shelves.first()
+
+        // 2. Add Cabinet Doors with default 2 leaves
+        container = container.withAddedCabinetDoors(
+            bayIndex = 0,
+            targetYMm = 600f,
+        )
+        assertEquals(1, container.cabinetDoors.size)
+        val doors = container.cabinetDoors.first()
+        assertEquals(2, doors.doorCount)
+        assertTrue(doors.hasHandles)
+        assertMm(18f, doors.thicknessMm)
+
+        // 3. 3D Geometry with showDoors = true produces panels and cabinet door handles
+        var room = RoomSpec(containers = listOf(container))
+        val partsVisible = RoomGeometryBuilder.build(room, showDoors = true)
+        val handleVertsVisible = partsVisible.filter { it.surface == RoomSurface.DOOR_HANDLE }.sumOf { it.mesh.vertexCount }
+
+        // 4. 3D Geometry with showDoors = false hides cabinet doors and their handles
+        val partsHidden = RoomGeometryBuilder.build(room, showDoors = false)
+        val handleVertsHidden = partsHidden.filter { it.surface == RoomSurface.DOOR_HANDLE }.sumOf { it.mesh.vertexCount }
+        assertTrue(handleVertsVisible > handleVertsHidden, "Cabinet door handles must be removed when showDoors is false")
+
+        // 5. Raycasting: when includeDoors is true, raycast hits cabinet doors
+        val doorMidX = container.offsetMm + container.panelThicknessMm + 400f
+        val doorMidY = container.plinthHeightMm + container.panelThicknessMm + doors.elevationYMm + doors.heightMm * 0.5f
+        val hitDoors = room.pickPartitionByRayMm(
+            rayOriginX = doorMidX,
+            rayOriginY = doorMidY,
+            rayOriginZ = -200f,
+            rayDirX = 0f,
+            rayDirY = 0f,
+            rayDirZ = 1f,
+            includeDoors = true,
+        )
+        assertNotNull(hitDoors)
+        assertEquals("c1", hitDoors.containerId)
+        assertEquals(doors.id, hitDoors.partitionId)
+
+        // 6. Raycasting: when includeDoors is false, raycast passes through doors to interior elements
+        val shelfFrontY = container.plinthHeightMm + container.panelThicknessMm + shelf.elevationYMm + shelf.thicknessMm * 0.5f
+        val hitInterior = room.pickPartitionByRayMm(
+            rayOriginX = doorMidX,
+            rayOriginY = shelfFrontY,
+            rayOriginZ = -200f,
+            rayDirX = 0f,
+            rayDirY = 0f,
+            rayDirZ = 1f,
+            includeDoors = false,
+        )
+        assertNotNull(hitInterior)
+        assertEquals("c1", hitInterior.containerId)
+        assertEquals(shelf.id, hitInterior.partitionId)
+
+        // 7. Toggle to 1 door leaf configuration
+        val withOneDoor = container.withUpdatedCabinetDoors(doors.id) { it.copy(doorCount = 1) }
+        assertEquals(1, withOneDoor.cabinetDoors.first().doorCount)
+
+        // 8. Magnetic snapping across bays
+        container = container.withAddedDivider(offsetXMm = 900f)
+        val snappedElev = container.findSnapElevation(
+            currentShelfId = "doors_test",
+            rawElevationYMm = doors.elevationYMm + 15f,
+            targetBayIndex = 1,
+            shelfThicknessMm = doors.heightMm,
+            snapThresholdMm = 28f,
+        )
+        assertMm(doors.elevationYMm, snappedElev)
+    }
 }

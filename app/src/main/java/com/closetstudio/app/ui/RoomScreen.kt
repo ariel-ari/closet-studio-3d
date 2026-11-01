@@ -157,6 +157,7 @@ enum class DraggedUnitType {
     CLOTHES_RAIL,
     VERTICAL_POLE,
     SHOE_RACK,
+    CABINET_DOORS,
 }
 
 /**
@@ -838,6 +839,7 @@ private fun pickPartitionAtScreenTap(
     distanceM: Float,
     isOrtho: Boolean = false,
     orthoSize: Float = 3.0f,
+    includeDoors: Boolean = true,
 ): PartitionHit? {
     val (orig, dir) = computeTapRayMm(
         tapPos = tapPos,
@@ -859,6 +861,7 @@ private fun pickPartitionAtScreenTap(
         rayDirX = dir[0],
         rayDirY = dir[1],
         rayDirZ = dir[2],
+        includeDoors = includeDoors,
     )
 }
 
@@ -997,6 +1000,7 @@ fun RoomScreen() {
     // View Mode (3D Perspective, Top-Down, Front 2D)
     var currentViewMode by remember { mutableStateOf(RoomViewMode.PERSPECTIVE_3D) }
     var showWallLabels by remember { mutableStateOf(true) }
+    var showClosetDoors by remember { mutableStateOf(true) }
     var splitDoorWall by remember { mutableStateOf(false) }
     var viewportWidthPx by remember { mutableFloatStateOf(1f) }
     var viewportHeightPx by remember { mutableFloatStateOf(1f) }
@@ -1603,6 +1607,24 @@ fun RoomScreen() {
                                 )
                             }
 
+                            // Toggle Closet Doors Visibility
+                            IconButton(
+                                onClick = {
+                                    showClosetDoors = !showClosetDoors
+                                    coroutineScope.launch {
+                                        messageHostState.showSnackbar(
+                                            if (showClosetDoors) s.doorsShownToast else s.doorsHiddenToast
+                                        )
+                                    }
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DoorFront,
+                                    contentDescription = s.toggleDoorsVisibility,
+                                    tint = if (showClosetDoors) Color.White else Color.White.copy(alpha = 0.55f),
+                                )
+                            }
+
                             // Info (ⓘ)
                             IconButton(
                                 onClick = { showInfoDialog = true },
@@ -1706,6 +1728,35 @@ fun RoomScreen() {
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 modifier = Modifier.fillMaxWidth(),
                                             ) {
+                                                Text(s.toggleDoorsVisibility)
+                                                if (showClosetDoors) {
+                                                     Icon(
+                                                         imageVector = Icons.Default.Check,
+                                                         contentDescription = null,
+                                                         tint = MaterialTheme.colorScheme.primary,
+                                                         modifier = Modifier.size(18.dp),
+                                                     )
+                                                }
+                                            }
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.DoorFront,
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            showClosetDoors = !showClosetDoors
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
                                                 Text(if (splitDoorWall) s.unifyDoorWallButton else s.splitDoorWallButton)
                                                 if (splitDoorWall) {
                                                     Icon(
@@ -1787,7 +1838,8 @@ fun RoomScreen() {
                                         activeContainer.drawers.any { it.id == selectedPartitionId } ||
                                         activeContainer.clothesRails.any { it.id == selectedPartitionId } ||
                                         activeContainer.verticalPoles.any { it.id == selectedPartitionId } ||
-                                        activeContainer.shoeRacks.any { it.id == selectedPartitionId }
+                                        activeContainer.shoeRacks.any { it.id == selectedPartitionId } ||
+                                        activeContainer.cabinetDoors.any { it.id == selectedPartitionId }
                                 if (!exists) {
                                     selectedPartitionId = null
                                 }
@@ -1817,6 +1869,7 @@ fun RoomScreen() {
                                 orthoSize = orthoSizeAnim.value,
                                 selectedContainerId = activeContainer?.id,
                                 selectedPartitionId = selectedPartitionId,
+                                showDoors = showClosetDoors,
                                 isPanelOpen = showUnitsColumn,
                                 panelWidthPx = unitsColumnWidthPx,
                                 onOrbit = { deltaX, deltaY ->
@@ -1874,6 +1927,7 @@ fun RoomScreen() {
                                         distanceM = distanceAnim.value,
                                         isOrtho = isOrthoMode,
                                         orthoSize = orthoSizeAnim.value,
+                                        includeDoors = showClosetDoors,
                                     )
                                     if (partHit != null) {
                                         selectedContainerId = partHit.containerId
@@ -1919,6 +1973,7 @@ fun RoomScreen() {
                                         distanceM = distanceAnim.value,
                                         isOrtho = isOrthoMode,
                                         orthoSize = orthoSizeAnim.value,
+                                        includeDoors = showClosetDoors,
                                     )
                                     if (hit != null) {
                                         selectedContainerId = hit.containerId
@@ -1946,6 +2001,7 @@ fun RoomScreen() {
                                             val rail = activeContainer.clothesRails.firstOrNull { it.id == selectedPartitionId }
                                             val pole = if (rail == null) activeContainer.verticalPoles.firstOrNull { it.id == selectedPartitionId } else null
                                             val rack = if (rail == null && pole == null) activeContainer.shoeRacks.firstOrNull { it.id == selectedPartitionId } else null
+                                            val doors = if (rail == null && pole == null && rack == null) activeContainer.cabinetDoors.firstOrNull { it.id == selectedPartitionId } else null
                                             if (rail != null) {
                                                 val bay = activeContainer.getBays().getOrElse(rail.bayIndex) { activeContainer.getBays().last() }
                                                 tapX in (bay.startXMm - 60f)..(bay.endXMm + 60f) &&
@@ -1960,6 +2016,10 @@ fun RoomScreen() {
                                                 val bay = activeContainer.getBays().getOrElse(rack.bayIndex) { activeContainer.getBays().last() }
                                                 tapX in (bay.startXMm - 60f)..(bay.endXMm + 60f) &&
                                                     tapY in (rack.elevationYMm - 60f)..(rack.elevationYMm + rack.totalVerticalSpanMm(activeContainer.interiorDepthMm) + 60f)
+                                            } else if (doors != null) {
+                                                val bay = activeContainer.getBays().getOrElse(doors.bayIndex) { activeContainer.getBays().last() }
+                                                tapX in (bay.startXMm - 60f)..(bay.endXMm + 60f) &&
+                                                    tapY in (doors.elevationYMm - 60f)..(doors.elevationYMm + doors.heightMm + 60f)
                                             } else {
                                                 false
                                             }
@@ -2002,6 +2062,8 @@ fun RoomScreen() {
                                                     currentC.withMovedClothesRail(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 } else if (currentC.shoeRacks.any { it.id == partId }) {
                                                     currentC.withMovedShoeRack(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
+                                                } else if (currentC.cabinetDoors.any { it.id == partId }) {
+                                                    currentC.withMovedCabinetDoors(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 } else {
                                                     currentC.withMovedShelf(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 }
@@ -2221,6 +2283,7 @@ fun RoomScreen() {
                                             else if (activeContainer.drawers.any { it.id == selectedPartitionId }) "$baseLetter • CAJ"
                                             else if (activeContainer.clothesRails.any { it.id == selectedPartitionId }) "$baseLetter • TUB"
                                             else if (activeContainer.shoeRacks.any { it.id == selectedPartitionId }) "$baseLetter • ZAP"
+                                            else if (activeContainer.cabinetDoors.any { it.id == selectedPartitionId }) "$baseLetter • PUE"
                                             else "$baseLetter • EST"
                                         } else {
                                             baseLetter
@@ -2325,6 +2388,15 @@ fun RoomScreen() {
                                                         )
                                                         createdId = newRack.id
                                                         container.copy(shoeRacks = container.shoeRacks + newRack)
+                                                    } else if (container.cabinetDoors.any { it.id == selectedPartitionId }) {
+                                                        val source = container.cabinetDoors.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
+                                                        val targetY = source.elevationYMm + source.heightMm + 10f
+                                                        val newDoors = source.copy(
+                                                            id = "doors_${System.currentTimeMillis()}_${container.cabinetDoors.size + 1}",
+                                                            elevationYMm = targetY.coerceIn(0f, (container.interiorHeightMm - source.heightMm).coerceAtLeast(0f)),
+                                                        )
+                                                        createdId = newDoors.id
+                                                        container.copy(cabinetDoors = container.cabinetDoors + newDoors)
                                                     } else {
                                                         val source = container.shelves.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
                                                         val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
@@ -2856,6 +2928,25 @@ fun RoomScreen() {
                                             }
                                         }
                                     },
+                                    onAddCabinetDoors = { dropFracX, dropFracY ->
+                                        val target = activeContainer ?: room.containers.firstOrNull()
+                                        if (target != null) {
+                                            val dropX = if (dropFracX != null) dropFracX * target.interiorWidthMm else target.interiorWidthMm * 0.5f
+                                            val bay = target.findBayAtX(dropX)
+                                            val dropY = if (dropFracY != null) dropFracY * target.interiorHeightMm else null
+                                            val updated = target.withAddedCabinetDoors(bayIndex = bay.index, targetYMm = dropY)
+                                            val newDoors = updated.cabinetDoors.lastOrNull()
+                                            val updatedRoom = room.withUpdatedContainer(target.id) { updated }
+                                            updateRoom(updatedRoom)
+                                            selectedContainerId = target.id
+                                            selectedPartitionId = newDoors?.id
+                                            selectedPartitionIsVertical = false
+                                            showUnitsColumn = false
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar(s.partitionAddedToast)
+                                            }
+                                        }
+                                    },
                                     onDragUnitStart = { type, startRootPos ->
                                         draggedUnitType = type
                                         isDraggingUnit = true
@@ -2870,7 +2961,7 @@ fun RoomScreen() {
                                             ?: room.containers.firstOrNull { it.wall == currentWall }
                                             ?: room.containers.firstOrNull()
 
-                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH || draggedUnitType == DraggedUnitType.CLOTHES_RAIL || draggedUnitType == DraggedUnitType.VERTICAL_POLE || draggedUnitType == DraggedUnitType.SHOE_RACK)) {
+                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH || draggedUnitType == DraggedUnitType.CLOTHES_RAIL || draggedUnitType == DraggedUnitType.VERTICAL_POLE || draggedUnitType == DraggedUnitType.SHOE_RACK || draggedUnitType == DraggedUnitType.CABINET_DOORS)) {
                                             val interiorPt = projectScreenToContainerInterior(
                                                 room = room,
                                                 container = target,
@@ -3022,6 +3113,27 @@ fun RoomScreen() {
                                                         }
                                                         updateRoom(updatedRoom)
                                                     }
+                                                } else if (draggedUnitType == DraggedUnitType.CABINET_DOORS) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        if (isInsideCloset) {
+                                                            val bay = target.findBayAtX(clampedX)
+                                                            val updated = target.withAddedCabinetDoors(bayIndex = bay.index, targetYMm = clampedY)
+                                                            val newDoors = updated.cabinetDoors.lastOrNull()
+                                                            if (newDoors != null) {
+                                                                activeDragPartitionId = newDoors.id
+                                                                selectedContainerId = target.id
+                                                                selectedPartitionId = newDoors.id
+                                                                selectedPartitionIsVertical = false
+                                                                updateRoom(room.withUpdatedContainer(target.id) { updated })
+                                                            }
+                                                        }
+                                                    } else {
+                                                        val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                            currentC.withMovedCabinetDoors(partId, newElevationYMm = clampedY, targetXMm = clampedX)
+                                                        }
+                                                        updateRoom(updatedRoom)
+                                                    }
                                                 }
                                             }
                                         }
@@ -3072,7 +3184,7 @@ fun RoomScreen() {
                                                         )
                                                     }
                                                 }
-                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH, DraggedUnitType.CLOTHES_RAIL, DraggedUnitType.VERTICAL_POLE, DraggedUnitType.SHOE_RACK -> {
+                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH, DraggedUnitType.CLOTHES_RAIL, DraggedUnitType.VERTICAL_POLE, DraggedUnitType.SHOE_RACK, DraggedUnitType.CABINET_DOORS -> {
                                                     val partId = activeDragPartitionId
                                                     if (partId != null && target != null) {
                                                         selectedContainerId = target.id
@@ -3175,6 +3287,15 @@ fun RoomScreen() {
                                                     elevationYMm = newElev,
                                                 )
                                                 container.copy(shoeRacks = container.shoeRacks + newRack)
+                                            } else if (container.cabinetDoors.any { it.id == partitionId }) {
+                                                val source = container.cabinetDoors.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
+                                                val targetY = source.elevationYMm + source.heightMm + 10f
+                                                val newElev = targetY.coerceIn(0f, (container.interiorHeightMm - source.heightMm).coerceAtLeast(0f))
+                                                val newDoors = source.copy(
+                                                    id = "doors_${System.currentTimeMillis()}_${container.cabinetDoors.size + 1}",
+                                                    elevationYMm = newElev,
+                                                )
+                                                container.copy(cabinetDoors = container.cabinetDoors + newDoors)
                                             } else {
                                                 val source = container.shelves.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
                                                 val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
@@ -3241,6 +3362,7 @@ fun RoomScreen() {
                                         DraggedUnitType.CLOTHES_RAIL -> ClothesRail3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.VERTICAL_POLE -> VerticalPole3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.SHOE_RACK -> ShoeRack3DGraphic(modifier = Modifier.fillMaxSize())
+                                        DraggedUnitType.CABINET_DOORS -> CabinetDoors3DGraphic(modifier = Modifier.fillMaxSize())
                                     }
                                 }
                             }
@@ -3812,6 +3934,7 @@ private fun RoomViewport(
     modifier: Modifier = Modifier,
     selectedContainerId: String? = null,
     selectedPartitionId: String? = null,
+    showDoors: Boolean = true,
     isPanelOpen: Boolean = false,
     panelWidthPx: Float = 0f,
     onOrbit: (Float, Float) -> Unit,
@@ -3846,6 +3969,7 @@ private fun RoomViewport(
             orthoSize = orthoSize,
             selectedContainerId = selectedContainerId,
             selectedPartitionId = selectedPartitionId,
+            showDoors = showDoors,
         )
     }
 }
@@ -3870,6 +3994,7 @@ private fun RightSideUnitsAndInspectorColumn(
     onAddClothesRail: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onAddVerticalPole: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onAddShoeRack: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
+    onAddCabinetDoors: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onDragUnitStart: (DraggedUnitType, startRootPos: Offset) -> Unit,
     onDragUnitMove: (delta: Offset) -> Unit,
     onDragUnitEnd: () -> Unit,
@@ -4132,6 +4257,7 @@ private fun RightSideUnitsAndInspectorColumn(
                 var clothesRailRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var verticalPoleRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var shoeRackRootOffset by remember { mutableStateOf(Offset.Zero) }
+                var cabinetDoorsRootOffset by remember { mutableStateOf(Offset.Zero) }
 
                 Column(
                     modifier = Modifier
@@ -4401,6 +4527,39 @@ private fun RightSideUnitsAndInspectorColumn(
                             modifier = Modifier
                                 .fillMaxWidth(0.85f)
                                 .height(110.dp),
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(horizontal = 24.dp))
+
+                    // 9th Unit: Cabinet Doors ("Puertas de armario")
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .height(130.dp)
+                            .onGloballyPositioned { coordinates ->
+                                cabinetDoorsRootOffset = coordinates.positionInRoot()
+                            }
+                            .pointerInput(Unit) {
+                                detectCatalogUnitDragGestures(
+                                    onDragStart = { localOffset ->
+                                        onDragUnitStart(DraggedUnitType.CABINET_DOORS, cabinetDoorsRootOffset + localOffset)
+                                    },
+                                    onDrag = { dragAmount ->
+                                        onDragUnitMove(dragAmount)
+                                    },
+                                    onDragEnd = { onDragUnitEnd() },
+                                    onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddCabinetDoors(null, null) },
+                                )
+                            },
+                    ) {
+                        CabinetDoors3DGraphic(
+                            modifier = Modifier
+                                .fillMaxWidth(0.85f)
+                                .height(115.dp),
                         )
                     }
                 }
@@ -5189,6 +5348,132 @@ private fun ShoeRack3DGraphic(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun CabinetDoors3DGraphic(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        val woodTop = Color(0xFFE8C8A3)
+        val woodFront = Color(0xFFD6AD80)
+        val woodFrontRight = Color(0xFFCE9F70)
+        val woodSide = Color(0xFFAA8157)
+        val lineStroke = Color(0xFF8B6B4C)
+        val chromeColor = Color(0xFFE0E0E0)
+        val chromeHighlight = Color(0xFFFFFFFF)
+        val chromeShadow = Color(0xFF9E9E9E)
+
+        val fLeft = w * 0.18f
+        val fRight = w * 0.88f
+        val fTop = h * 0.15f
+        val fBottom = h * 0.88f
+        val depthX = w * 0.12f
+        val depthY = h * 0.08f
+
+        // Top depth face
+        val topPath = Path().apply {
+            moveTo(fLeft, fTop)
+            lineTo(fLeft - depthX, fTop - depthY)
+            lineTo(fRight - depthX, fTop - depthY)
+            lineTo(fRight, fTop)
+            close()
+        }
+        drawPath(topPath, color = woodTop)
+        drawPath(topPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // Left depth face
+        val leftPath = Path().apply {
+            moveTo(fLeft, fTop)
+            lineTo(fLeft - depthX, fTop - depthY)
+            lineTo(fLeft - depthX, fBottom - depthY)
+            lineTo(fLeft, fBottom)
+            close()
+        }
+        drawPath(leftPath, color = woodSide)
+        drawPath(leftPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // Center seam gap
+        val fWidth = fRight - fLeft
+        val seamX = fLeft + fWidth * 0.5f
+        val gap = 2.5f
+
+        // Left door leaf
+        val leftDoorPath = Path().apply {
+            moveTo(fLeft, fTop)
+            lineTo(seamX - gap, fTop)
+            lineTo(seamX - gap, fBottom)
+            lineTo(fLeft, fBottom)
+            close()
+        }
+        drawPath(leftDoorPath, color = woodFront)
+        drawPath(leftDoorPath, color = lineStroke, style = Stroke(width = 1.2f))
+
+        // Right door leaf
+        val rightDoorPath = Path().apply {
+            moveTo(seamX + gap, fTop)
+            lineTo(fRight, fTop)
+            lineTo(fRight, fBottom)
+            lineTo(seamX + gap, fBottom)
+            close()
+        }
+        drawPath(rightDoorPath, color = woodFrontRight)
+        drawPath(rightDoorPath, color = lineStroke, style = Stroke(width = 1.2f))
+
+        // Center shadow line between doors
+        drawLine(
+            color = Color(0x66000000),
+            start = Offset(seamX, fTop),
+            end = Offset(seamX, fBottom),
+            strokeWidth = gap * 1.5f,
+        )
+
+        // Chrome Vertical Handles in the center
+        val handleH = (fBottom - fTop) * 0.28f
+        val handleMidY = (fTop + fBottom) * 0.5f
+        val handleY0 = handleMidY - handleH * 0.5f
+        val handleY1 = handleMidY + handleH * 0.5f
+        val handleW = 4f
+
+        // Left handle (near right edge of left door)
+        val hLeftX = seamX - gap - 10f
+        drawRect(
+            color = chromeShadow,
+            topLeft = Offset(hLeftX - handleW * 0.5f + 1f, handleY0 + 1f),
+            size = Size(handleW, handleH),
+        )
+        drawRect(
+            color = chromeColor,
+            topLeft = Offset(hLeftX - handleW * 0.5f, handleY0),
+            size = Size(handleW, handleH),
+        )
+        drawLine(
+            color = chromeHighlight,
+            start = Offset(hLeftX, handleY0 + 2f),
+            end = Offset(hLeftX, handleY1 - 2f),
+            strokeWidth = 1.2f,
+        )
+
+        // Right handle (near left edge of right door)
+        val hRightX = seamX + gap + 10f
+        drawRect(
+            color = chromeShadow,
+            topLeft = Offset(hRightX - handleW * 0.5f + 1f, handleY0 + 1f),
+            size = Size(handleW, handleH),
+        )
+        drawRect(
+            color = chromeColor,
+            topLeft = Offset(hRightX - handleW * 0.5f, handleY0),
+            size = Size(handleW, handleH),
+        )
+        drawLine(
+            color = chromeHighlight,
+            start = Offset(hRightX, handleY0 + 2f),
+            end = Offset(hRightX, handleY1 - 2f),
+            strokeWidth = 1.2f,
+        )
+    }
+}
+
+@Composable
 private fun ModuleDimensionRow(
     label: String,
     valueMm: Float,
@@ -5506,6 +5791,7 @@ private fun ModuleInspectorContent(
             val drawer = if (shelf == null) activeContainer.drawers.firstOrNull { it.id == selectedPartitionId } else null
             val rail = if (shelf == null && drawer == null) activeContainer.clothesRails.firstOrNull { it.id == selectedPartitionId } else null
             val rack = if (shelf == null && drawer == null && rail == null) activeContainer.shoeRacks.firstOrNull { it.id == selectedPartitionId } else null
+            val doors = if (shelf == null && drawer == null && rail == null && rack == null) activeContainer.cabinetDoors.firstOrNull { it.id == selectedPartitionId } else null
             if (shelf != null) {
                 val bays = activeContainer.getBays()
                 val bay = bays.getOrElse(shelf.bayIndex) { bays.last() }
@@ -5922,6 +6208,140 @@ private fun ModuleInspectorContent(
                     val newElev = newBottom.coerceIn(0f, maxElev)
                     onUpdateContainer(activeContainer.id) { c ->
                         c.withUpdatedShoeRack(rack.id) { it.copy(elevationYMm = newElev) }
+                    }
+                }
+            } else if (doors != null) {
+                val bays = activeContainer.getBays()
+                val bay = bays.getOrElse(doors.bayIndex) { bays.last() }
+
+                // Door Count Selection (1 or 2 doors)
+                Text(
+                    text = s.doorsCountLabel,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1A1A1A),
+                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = doors.doorCount == 1,
+                        onClick = {
+                            onUpdateContainer(activeContainer.id) { c ->
+                                c.withUpdatedCabinetDoors(doors.id) { it.copy(doorCount = 1) }
+                            }
+                        },
+                        label = { Text(s.oneDoorLabel) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilterChip(
+                        selected = doors.doorCount == 2,
+                        onClick = {
+                            onUpdateContainer(activeContainer.id) { c ->
+                                c.withUpdatedCabinetDoors(doors.id) { it.copy(doorCount = 2) }
+                            }
+                        },
+                        label = { Text(s.twoDoorsLabel) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                // Width (bay width, read-only)
+                ModuleDimensionRow(
+                    label = s.partitionWidthLabel,
+                    valueMm = bay.widthMm,
+                    unitSystem = unitSystem,
+                    enabled = false,
+                ) {}
+
+                // Height
+                ModuleDimensionRow(
+                    label = s.partitionHeightLabel,
+                    valueMm = doors.heightMm,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 150f,
+                    maxMm = activeContainer.interiorHeightMm,
+                    enabled = true,
+                ) { newHeight ->
+                    val clampedH = newHeight.coerceIn(150f, activeContainer.interiorHeightMm)
+                    val maxElev = (activeContainer.interiorHeightMm - clampedH).coerceAtLeast(0f)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedCabinetDoors(doors.id) {
+                            it.copy(
+                                heightMm = clampedH,
+                                elevationYMm = it.elevationYMm.coerceIn(0f, maxElev),
+                            )
+                        }
+                    }
+                }
+
+                // Thickness
+                ModuleDimensionRow(
+                    label = s.partitionDepthLabel,
+                    valueMm = doors.thicknessMm,
+                    unitSystem = unitSystem,
+                    stepMm = 1f,
+                    minMm = 12f,
+                    maxMm = 30f,
+                    enabled = true,
+                ) { newThick ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedCabinetDoors(doors.id) { it.copy(thicknessMm = newThick) }
+                    }
+                }
+
+                // Position header with lock icon
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = s.partitionPositionTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1A1A1A),
+                    )
+                }
+
+                val maxElev = (activeContainer.interiorHeightMm - doors.heightMm).coerceAtLeast(0f)
+                val bottomDist = doors.elevationYMm
+                val topDist = (activeContainer.interiorHeightMm - (doors.elevationYMm + doors.heightMm)).coerceAtLeast(0f)
+
+                // Top distance (clearance to roof)
+                ModuleDimensionRow(
+                    label = s.partitionTopLabel,
+                    valueMm = topDist,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 0f,
+                    maxMm = maxElev,
+                    enabled = true,
+                ) { newTop ->
+                    val newElev = (activeContainer.interiorHeightMm - doors.heightMm - newTop).coerceIn(0f, maxElev)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedCabinetDoors(doors.id) { it.copy(elevationYMm = newElev) }
+                    }
+                }
+
+                // Bottom distance
+                ModuleDimensionRow(
+                    label = s.partitionBottomLabel,
+                    valueMm = bottomDist,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 0f,
+                    maxMm = maxElev,
+                    enabled = true,
+                ) { newBottom ->
+                    val newElev = newBottom.coerceIn(0f, maxElev)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedCabinetDoors(doors.id) { it.copy(elevationYMm = newElev) }
                     }
                 }
             }

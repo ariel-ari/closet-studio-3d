@@ -199,6 +199,39 @@ The inclined shoe rack (zapatera inclinada) provides ergonomic tilted footwear s
    - **Badge:** Displays `"$baseLetter • ZAP"` when selected.
    - **Inspector:** Displays bay width (read-only), board thickness ($12-30\text{ mm}$), depth ($200-D_{\text{inner}}\text{ mm}$), tilt angle ($5^\circ-35^\circ$), front lip height ($20-80\text{ mm}$), and top/bottom clearances.
 
+---
+
+## 12. Cabinet Doors Protocol (Regla de Oro de Puertas de Armario)
+Cabinet doors (`CabinetDoorsSpec`) provide front enclosure for closet bays, configurable as 1 or 2 swinging door leaves:
+
+1. **Modular Bay Containment & Leaf Distribution:**
+   - **Default Count:** Default is 2 doors per bay (`doorCount = 2`). Switchable to 1 door (`doorCount = 1`) in the inspector.
+   - **Width Distribution:** Spans bay clear width ($W_{\text{bay}} = S_{\max} - S_{\min}$).
+     - For 2 doors: each leaf has width $W_{\text{leaf}} = \frac{W_{\text{bay}} - \text{doorGap}}{2}$.
+     - For 1 door: single leaf has width $W_{\text{leaf}} = W_{\text{bay}} - \text{doorGap}$.
+   - **Front Alignment:** Mounted flush at the front face of the carcass ($D \in [D_{\text{inner}}, D_{\text{inner}} + \text{thickness}]$).
+
+2. **Hardware Anatomy & Handles:**
+   - **Vertical Chrome Bar Handles:** Vertical cylindrical chrome handles mounted with top and bottom cylindrical standoffs (`RoomSurface.DOOR_HANDLE`).
+   - **Handle Placement:**
+     - For 2 doors: dual symmetric handles placed towards the center meeting stile for ergonomic grip.
+     - For 1 door: single handle placed on the right opening edge.
+   - **Configurable Dimensions:** Height default $1200\text{ mm}$ (adjustable from $200\text{ mm}$ to $H_{\text{inner}}$), thickness $18\text{ mm}$ ($12-30\text{ mm}$).
+
+3. **Global Visibility Toggle (Ocultar / Mostrar Puertas):**
+   - **Top Bar Control:** A dedicated `DoorFront` toggle button in the top app bar allows hiding or revealing all closet cabinet doors simultaneously.
+   - **Interior Inspection:** When hidden, doors disappear completely from the 3D render and raycast picking penetrates directly to interior shelves, drawers, rails, and dividers.
+   - **Persistence:** Hiding doors does not alter or delete data; clicking the button again restores them immediately with user feedback toasts.
+
+4. **Unified Interaction Contract:**
+   - **Visual Catalog 3D Graphic:** 9th unit in catalog with dedicated Canvas illustration `CabinetDoors3DGraphic` displaying two wood panels and chrome handles.
+   - **Live 3D Drag & Drop:** Real-time preview inside closet bay during drag.
+   - **Silent Placement:** Dropping finalizes placement, closes catalog, leaves doors selected with purple highlight outline, and does not open inspector automatically.
+   - **Floating Action Buttons:** ✏️ Edit, ❐ Duplicate, 🗑️ Delete.
+   - **Badge:** Displays `"$baseLetter • PUE"` when selected.
+   - **Inspector:** Features door count chips (`[1 Puerta]` vs `[2 Puertas]`), read-only bay width, editable height, thickness, elevation, and clearances.
+
+
 
 
 

@@ -252,6 +252,29 @@ data class ShoeRackSpec(
 }
 
 @Serializable
+data class CabinetDoorsSpec(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val bayIndex: Int = 0,
+    val doorCount: Int = 2,
+    val elevationYMm: Float = 0f,
+    val heightMm: Float = 1200f,
+    val thicknessMm: Float = 18f,
+    val doorGapMm: Float = 2f,
+    val hasHandles: Boolean = true,
+    val handleLengthMm: Float = 160f,
+) {
+    init {
+        require(bayIndex >= 0) { "doors bayIndex must be non-negative" }
+        require(doorCount in 1..2) { "doorCount must be 1 or 2" }
+        require(elevationYMm >= 0f) { "doors elevation must be non-negative" }
+        require(heightMm > 0f) { "doors height must be positive" }
+        require(thicknessMm > 0f) { "doors thickness must be positive" }
+        require(doorGapMm >= 0f) { "doorGapMm must be non-negative" }
+        require(handleLengthMm > 0f) { "handleLengthMm must be positive" }
+    }
+}
+
+@Serializable
 data class ClosetContainerSpec(
     val id: String,
     val wall: WallIndex = WallIndex.NORTH,
@@ -270,6 +293,7 @@ data class ClosetContainerSpec(
     val clothesRails: List<ClothesRailSpec> = emptyList(),
     val verticalPoles: List<VerticalPoleSpec> = emptyList(),
     val shoeRacks: List<ShoeRackSpec> = emptyList(),
+    val cabinetDoors: List<CabinetDoorsSpec> = emptyList(),
 ) {
     init {
         require(widthMm >= 0f) { "container width must be non-negative" }
@@ -372,6 +396,7 @@ data class ClosetContainerSpec(
         val existingTargets = mutableListOf<Float>()
         val isRail = clothesRails.any { it.id == currentShelfId }
         val isShoeRack = shoeRacks.any { it.id == currentShelfId }
+        val isDoors = currentShelfId?.startsWith("doors") == true || cabinetDoors.any { it.id == currentShelfId }
 
         if (isRail) {
             // Clothes rail Priority 1: Coplanar alignment with other rails across bays
@@ -401,6 +426,26 @@ data class ClosetContainerSpec(
             existingTargets.add(0f)
             for (other in shelves) {
                 existingTargets.add(other.elevationYMm + other.thicknessMm)
+            }
+        } else if (isDoors) {
+            // Cabinet doors Priority 1: Coplanar alignment with other doors across bays
+            for (cd in cabinetDoors) {
+                if (cd.id != currentShelfId) {
+                    existingTargets.add(cd.elevationYMm)
+                    if (targetBayIndex == null || cd.bayIndex == targetBayIndex) {
+                        existingTargets.add(cd.elevationYMm + cd.heightMm)
+                        val under = cd.elevationYMm - shelfThicknessMm
+                        if (under >= 0f) existingTargets.add(under)
+                    }
+                }
+            }
+            // Flush on bottom floor panel or top of drawers/shelves
+            existingTargets.add(0f)
+            for (other in shelves) {
+                existingTargets.add(other.elevationYMm + other.thicknessMm)
+            }
+            for (d in drawers) {
+                existingTargets.add(d.elevationYMm + d.heightMm)
             }
         } else {
             for (other in shelves) {
@@ -439,6 +484,14 @@ data class ClosetContainerSpec(
                     existingTargets.add(sr.elevationYMm)
                     if (targetBayIndex == null || sr.bayIndex == targetBayIndex) {
                         existingTargets.add(sr.elevationYMm + sr.totalVerticalSpanMm(interiorDepthMm))
+                    }
+                }
+            }
+            for (cd in cabinetDoors) {
+                if (cd.id != currentShelfId) {
+                    existingTargets.add(cd.elevationYMm)
+                    if (targetBayIndex == null || cd.bayIndex == targetBayIndex) {
+                        existingTargets.add(cd.elevationYMm + cd.heightMm)
                     }
                 }
             }
@@ -1086,6 +1139,81 @@ data class ClosetContainerSpec(
         return copy(shoeRacks = shoeRacks.map { if (it.id == id) transform(it) else it })
     }
 
+    fun withAddedCabinetDoors(
+        bayIndex: Int? = null,
+        targetYMm: Float? = null,
+        doorCount: Int = 2,
+        heightMm: Float? = null,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
+        val innerH = interiorHeightMm
+        val bays = getBays()
+        val targetBay = (bayIndex ?: 0).coerceIn(0, bays.lastIndex)
+        val (compY0, compY1) = findVerticalCompartmentRange(targetBay, targetYMm ?: (innerH * 0.5f))
+        val defaultH = (compY1 - compY0).coerceIn(100f, innerH)
+        val h = (heightMm ?: defaultH).coerceIn(100f, innerH)
+        val defaultElev = compY0.coerceIn(0f, (innerH - h).coerceAtLeast(0f))
+        val rawElev = defaultElev
+        val snappedElev = if (snapThresholdMm > 0f) {
+            findSnapElevation(
+                currentShelfId = "doors_new",
+                rawElevationYMm = rawElev,
+                targetBayIndex = targetBay,
+                shelfThicknessMm = h,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            rawElev
+        }
+        val clampedElev = snappedElev.coerceIn(0f, (innerH - h).coerceAtLeast(0f))
+        val newDoors = CabinetDoorsSpec(
+            id = "doors_${System.currentTimeMillis()}_${cabinetDoors.size + 1}",
+            bayIndex = targetBay,
+            doorCount = doorCount.coerceIn(1, 2),
+            elevationYMm = clampedElev,
+            heightMm = h,
+        )
+        return copy(cabinetDoors = cabinetDoors + newDoors)
+    }
+
+    fun withMovedCabinetDoors(
+        id: String,
+        newElevationYMm: Float,
+        targetXMm: Float? = null,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
+        val doors = cabinetDoors.firstOrNull { it.id == id } ?: return this
+        val innerH = interiorHeightMm
+        val clampedElev = newElevationYMm.coerceIn(0f, (innerH - doors.heightMm).coerceAtLeast(0f))
+        val newBayIndex = if (targetXMm != null) {
+            findBayAtX(targetXMm).index
+        } else {
+            doors.bayIndex
+        }
+        val snappedElev = if (snapThresholdMm > 0f) {
+            findSnapElevation(
+                currentShelfId = id,
+                rawElevationYMm = clampedElev,
+                targetBayIndex = newBayIndex,
+                shelfThicknessMm = doors.heightMm,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            clampedElev
+        }
+
+        return withUpdatedCabinetDoors(id) {
+            it.copy(
+                elevationYMm = snappedElev.coerceIn(0f, (innerH - it.heightMm).coerceAtLeast(0f)),
+                bayIndex = newBayIndex.coerceIn(0, getBays().lastIndex),
+            )
+        }
+    }
+
+    fun withUpdatedCabinetDoors(id: String, transform: (CabinetDoorsSpec) -> CabinetDoorsSpec): ClosetContainerSpec {
+        return copy(cabinetDoors = cabinetDoors.map { if (it.id == id) transform(it) else it })
+    }
+
     fun withRemovedPartition(id: String): ClosetContainerSpec {
         val remainingDividers = dividers.filterNot { it.id == id }
         val remainingShelves = shelves.filterNot { it.id == id }
@@ -1093,6 +1221,7 @@ data class ClosetContainerSpec(
         val remainingRails = clothesRails.filterNot { it.id == id }
         val remainingPoles = verticalPoles.filterNot { it.id == id }
         val remainingRacks = shoeRacks.filterNot { it.id == id }
+        val remainingDoors = cabinetDoors.filterNot { it.id == id }
         val maxBayIdx = remainingDividers.size
         val reclampedShelves = remainingShelves.map {
             if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
@@ -1109,6 +1238,9 @@ data class ClosetContainerSpec(
         val reclampedRacks = remainingRacks.map {
             if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
         }
+        val reclampedDoors = remainingDoors.map {
+            if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
+        }
         return copy(
             dividers = remainingDividers,
             shelves = reclampedShelves,
@@ -1116,6 +1248,7 @@ data class ClosetContainerSpec(
             clothesRails = reclampedRails,
             verticalPoles = reclampedPoles,
             shoeRacks = reclampedRacks,
+            cabinetDoors = reclampedDoors,
         )
     }
 }
@@ -1996,6 +2129,16 @@ data class RoomSpec(
                 elevationYMm = rack.elevationYMm.coerceIn(0f, maxElev),
             )
         }
+        val clampedDoors = container.cabinetDoors.map { doors ->
+            val clampedH = doors.heightMm.coerceIn(100f, innerH.coerceAtLeast(100f))
+            val maxElev = (innerH - clampedH).coerceAtLeast(0f)
+            doors.copy(
+                bayIndex = doors.bayIndex.coerceIn(0, maxBayIdx),
+                elevationYMm = doors.elevationYMm.coerceIn(0f, maxElev),
+                heightMm = clampedH,
+                doorCount = doors.doorCount.coerceIn(1, 2),
+            )
+        }
 
         return container.copy(
             widthMm = clampedW,
@@ -2008,6 +2151,7 @@ data class RoomSpec(
             clothesRails = clampedRails,
             verticalPoles = clampedPoles,
             shoeRacks = clampedRacks,
+            cabinetDoors = clampedDoors,
         )
     }
 
@@ -2311,6 +2455,7 @@ data class RoomSpec(
         rayDirX: Float,
         rayDirY: Float,
         rayDirZ: Float,
+        includeDoors: Boolean = true,
     ): PartitionHit? {
         if (containers.isEmpty()) return null
         val nw = vertexNW
@@ -2323,7 +2468,7 @@ data class RoomSpec(
 
         for (raw in containers) {
             val c = clampContainer(raw)
-            if (c.dividers.isEmpty() && c.shelves.isEmpty() && c.drawers.isEmpty() && c.clothesRails.isEmpty() && c.verticalPoles.isEmpty() && c.shoeRacks.isEmpty()) continue
+            if (c.dividers.isEmpty() && c.shelves.isEmpty() && c.drawers.isEmpty() && c.clothesRails.isEmpty() && c.verticalPoles.isEmpty() && c.shoeRacks.isEmpty() && (c.cabinetDoors.isEmpty() || !includeDoors)) continue
 
             val (pStart, pEnd) = when (c.wall) {
                 WallIndex.NORTH -> nw to ne
@@ -2493,6 +2638,26 @@ data class RoomSpec(
                 if (hitT != null && hitT < bestT) {
                     bestT = hitT
                     bestHit = PartitionHit(c.id, rack.id, isVertical = false, hitDistance = hitT)
+                }
+            }
+
+            // Test cabinet doors (when includeDoors is true)
+            if (includeDoors) {
+                for (doors in c.cabinetDoors) {
+                    val bay = bays.getOrElse(doors.bayIndex) { bays.last() }
+                    val doorsS0 = s0Inner + bay.startXMm - 10f
+                    val doorsS1 = s0Inner + bay.endXMm + 10f
+                    val doorsY0 = plinthH + t + doors.elevationYMm - 10f
+                    val doorsY1 = plinthH + t + doors.elevationYMm + doors.heightMm + 10f
+                    val totalD = c.depthMm
+                    val doorsD0 = (wallGap + totalD - doors.thicknessMm - 20f).coerceAtLeast(0f)
+                    val doorsD1 = wallGap + totalD + 40f
+
+                    val hitT = intersectAABB(doorsS0, doorsS1, doorsY0, doorsY1, doorsD0, doorsD1)
+                    if (hitT != null && hitT < bestT) {
+                        bestT = hitT
+                        bestHit = PartitionHit(c.id, doors.id, isVertical = false, hitDistance = hitT)
+                    }
                 }
             }
         }

@@ -59,12 +59,14 @@ fun RoomScene(
     orthoSize: Float = 3.0f,
     selectedContainerId: String? = null,
     selectedPartitionId: String? = null,
+    showDoors: Boolean = true,
 ) {
-    val parts = remember(room, selectedContainerId, selectedPartitionId) {
+    val parts = remember(room, selectedContainerId, selectedPartitionId, showDoors) {
         RoomGeometryBuilder.build(
             room,
             selectedContainerId = selectedContainerId,
             selectedPartitionId = selectedPartitionId,
+            showDoors = showDoors,
         )
     }
 

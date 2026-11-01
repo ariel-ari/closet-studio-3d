@@ -48,6 +48,7 @@ object RoomGeometryBuilder {
         uvScaleMm: Float = 600f,
         selectedContainerId: String? = null,
         selectedPartitionId: String? = null,
+        showDoors: Boolean = true,
     ): List<RoomPart> {
         val h = room.clearHeightMm
         val slab = 40f
@@ -246,6 +247,7 @@ object RoomGeometryBuilder {
                     selectedPartitionId = selectedPartitionId,
                     partitionOutlineBuilder = partitionOutlineBuilder,
                     handleBuilder = handleBuilder,
+                    showDoors = showDoors,
                 )
             }
 
@@ -664,6 +666,7 @@ object RoomGeometryBuilder {
         selectedPartitionId: String? = null,
         partitionOutlineBuilder: MeshBuilder? = null,
         handleBuilder: MeshBuilder? = null,
+        showDoors: Boolean = true,
     ) {
         val nw = room.vertexNW
         val ne = room.vertexNE
@@ -1413,6 +1416,122 @@ object RoomGeometryBuilder {
                     y0 = outY0, y1 = outY1,
                     d0 = dOut0, d1 = dOut1,
                 )
+            }
+        }
+
+        // 7g. Cabinet Doors (Puertas de armario: 1 o 2 hojas frontales con tiradores cromados verticales)
+        if (showDoors) {
+            for (doors in container.cabinetDoors) {
+                val bay = bays.getOrElse(doors.bayIndex) { bays.last() }
+                val bayS0 = (s0Inner + bay.startXMm).coerceIn(interiorLeftS, interiorRightS)
+                val bayS1 = (s0Inner + bay.endXMm).coerceIn(bayS0, interiorRightS)
+                if (bayS1 <= bayS0 + 20f) continue
+
+                val doorY0 = (interiorBottomY + doors.elevationYMm).coerceIn(interiorBottomY, (interiorTopY - 10f).coerceAtLeast(interiorBottomY))
+                val doorY1 = (doorY0 + doors.heightMm).coerceAtMost(interiorTopY)
+                if (doorY1 <= doorY0 + 20f) continue
+
+                val d0 = (wallGap + totalD - doors.thicknessMm).coerceAtLeast(0f)
+                val d1 = wallGap + totalD
+
+                val leaves = if (doors.doorCount == 1) {
+                    listOf(bayS0 to bayS1)
+                } else {
+                    val gap = doors.doorGapMm.coerceIn(1f, 8f)
+                    val leafW = ((bayS1 - bayS0) - gap) * 0.5f
+                    if (leafW > 10f) {
+                        listOf(
+                            bayS0 to (bayS0 + leafW),
+                            (bayS1 - leafW) to bayS1,
+                        )
+                    } else {
+                        listOf(bayS0 to bayS1)
+                    }
+                }
+
+                for ((leafS0, leafS1) in leaves) {
+                    addWallAlignedBox(
+                        builder = vertPanelsBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = leafS0, s1 = leafS1,
+                        y0 = doorY0, y1 = doorY1,
+                        d0 = d0, d1 = d1,
+                        frontEdgeBuilder = frontEdgesBuilder,
+                    )
+                }
+
+                // Handles (Tiradores verticales cromados tipo barra)
+                if (doors.hasHandles && handleBuilder != null) {
+                    val hLen = doors.handleLengthMm.coerceIn(60f, (doorY1 - doorY0 - 40f).coerceAtLeast(60f))
+                    val yMid = (doorY0 + doorY1) * 0.5f
+                    val hY0 = yMid - hLen * 0.5f
+                    val hY1 = yMid + hLen * 0.5f
+                    val hBarD0 = d1 + 18f
+                    val hBarD1 = d1 + 28f
+
+                    val handlePositions = if (doors.doorCount == 1) {
+                        listOf(bayS1 - 35f)
+                    } else {
+                        val gap = doors.doorGapMm.coerceIn(1f, 8f)
+                        val leafW = ((bayS1 - bayS0) - gap) * 0.5f
+                        listOf(
+                            (bayS0 + leafW - 32f), // Left door handle near right edge
+                            (bayS1 - leafW + 32f), // Right door handle near left edge
+                        )
+                    }
+
+                    for (hS in handlePositions) {
+                        val hs0 = hS - 5f
+                        val hs1 = hS + 5f
+                        // Main vertical bar
+                        addWallAlignedBox(
+                            builder = handleBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = hs0, s1 = hs1,
+                            y0 = hY0, y1 = hY1,
+                            d0 = hBarD0, d1 = hBarD1,
+                        )
+                        // Top standoff post
+                        addWallAlignedBox(
+                            builder = handleBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = hs0 + 1f, s1 = hs1 - 1f,
+                            y0 = hY1 - 12f, y1 = hY1 - 2f,
+                            d0 = d1, d1 = hBarD0,
+                        )
+                        // Bottom standoff post
+                        addWallAlignedBox(
+                            builder = handleBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = hs0 + 1f, s1 = hs1 - 1f,
+                            y0 = hY0 + 2f, y1 = hY0 + 12f,
+                            d0 = d1, d1 = hBarD0,
+                        )
+                    }
+                }
+
+                // Selection & Smart Alignment Highlight Outline (Crisp Purple Box)
+                val selectedDoors = if (selectedPartitionId != null) container.cabinetDoors.firstOrNull { it.id == selectedPartitionId } else null
+                val isDoorsSelected = doors.id == selectedPartitionId
+                val isDoorsAligned = selectedDoors != null && doors.id != selectedDoors.id && kotlin.math.abs(doors.elevationYMm - selectedDoors.elevationYMm) < 1.0f
+
+                if ((isDoorsSelected || isDoorsAligned) && partitionOutlineBuilder != null) {
+                    val pRim = 4f
+                    val dOut0 = d1 - 2f
+                    val dOut1 = d1 + 6f
+                    val outS0 = (bayS0 - pRim).coerceAtLeast(interiorLeftS)
+                    val outS1 = (bayS1 + pRim).coerceAtMost(interiorRightS)
+                    val outY0 = (doorY0 - pRim).coerceAtLeast(interiorBottomY)
+                    val outY1 = (doorY1 + pRim).coerceAtMost(interiorTopY)
+
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = outS0, s1 = outS1,
+                        y0 = outY0, y1 = outY1,
+                        d0 = dOut0, d1 = dOut1,
+                    )
+                }
             }
         }
 
