@@ -789,4 +789,85 @@ class ClosetPartitionTest {
         )
         assertMm(doors.elevationYMm, snappedElev)
     }
+
+    @Test
+    fun `cabinet doors adapt to 1, 2, or all compartments and ignore drawers in adjacent bays`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 18f,
+            plinthHeightMm = 80f,
+        )
+
+        // Divide container into two bays (Bay 0 and Bay 1)
+        container = container.withAddedDivider(offsetXMm = 1000f)
+        assertEquals(2, container.getBays().size)
+
+        // Bay 0 has a horizontal shelf in the middle (elevation = 1100mm, thickness = 18mm)
+        container = container.withAddedShelf(bayIndex = 0, elevationYMm = 1100f)
+        val shelf0 = container.shelves.first { it.bayIndex == 0 }
+
+        // Bay 1 has a bottom drawer (elevation = 0mm, height = 300mm)
+        container = container.withAddedDrawer(bayIndex = 1, elevationYMm = 0f, heightMm = 300f)
+        val drawer1 = container.drawers.first { it.bayIndex == 1 }
+
+        // Test 1: In Bay 0 (no drawers), snapping does NOT pick drawer from Bay 1
+        val snapElevBay0 = container.findSnapElevation(
+            currentShelfId = "doors_new",
+            rawElevationYMm = 290f,
+            targetBayIndex = 0,
+            shelfThicknessMm = 1000f,
+            snapThresholdMm = 28f,
+        )
+        assertFalse(kotlin.math.abs(snapElevBay0 - (drawer1.elevationYMm + drawer1.heightMm)) < 1f)
+
+        // Test 2: In Bay 0, dropping in upper region (targetY = 1700mm) adapts door to upper compartment
+        val withUpperDoor = container.withAddedCabinetDoors(bayIndex = 0, targetYMm = 1700f)
+        val upperDoor = withUpperDoor.cabinetDoors.last()
+        assertMm(shelf0.elevationYMm + shelf0.thicknessMm, upperDoor.elevationYMm)
+        assertMm(container.interiorHeightMm - (shelf0.elevationYMm + shelf0.thicknessMm), upperDoor.heightMm)
+
+        // Test 3: In Bay 0, dropping in lower region (targetY = 500mm) adapts door to lower compartment
+        val withLowerDoor = container.withAddedCabinetDoors(bayIndex = 0, targetYMm = 500f)
+        val lowerDoor = withLowerDoor.cabinetDoors.last()
+        assertMm(0f, lowerDoor.elevationYMm)
+        assertMm(shelf0.elevationYMm, lowerDoor.heightMm)
+
+        // Test 4: In Bay 0, dropping near the shelf mid spans BOTH compartments (full bay)
+        val shelfMid = shelf0.elevationYMm + shelf0.thicknessMm * 0.5f
+        val withFullDoor = container.withAddedCabinetDoors(bayIndex = 0, targetYMm = shelfMid)
+        val fullDoor = withFullDoor.cabinetDoors.last()
+        assertMm(0f, fullDoor.elevationYMm)
+        assertMm(container.interiorHeightMm, fullDoor.heightMm)
+
+        // Test 5: In Bay 1 (with bottom drawer), door sits flush on top of drawer
+        val withDrawerDoor = container.withAddedCabinetDoors(bayIndex = 1, targetYMm = 1200f)
+        val drawerDoor = withDrawerDoor.cabinetDoors.last()
+        assertMm(drawer1.elevationYMm + drawer1.heightMm, drawerDoor.elevationYMm)
+        assertMm(container.interiorHeightMm - (drawer1.elevationYMm + drawer1.heightMm), drawerDoor.heightMm)
+
+        // Test 6: 3 compartments (Bay 0 with 2 shelves at 700mm and 1400mm)
+        var container3Comp = ClosetContainerSpec(
+            id = "c3",
+            wall = WallIndex.NORTH,
+            widthMm = 1000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 18f,
+            plinthHeightMm = 80f,
+        )
+        container3Comp = container3Comp.withAddedShelf(bayIndex = 0, elevationYMm = 700f)
+        container3Comp = container3Comp.withAddedShelf(bayIndex = 0, elevationYMm = 1400f)
+        val comps3 = container3Comp.getBayCompartments(0)
+        assertEquals(3, comps3.size)
+        assertMm(0f, comps3[0].bottomYMm)
+        assertMm(700f, comps3[0].topYMm)
+        assertMm(718f, comps3[1].bottomYMm)
+        assertMm(1400f, comps3[1].topYMm)
+        assertMm(1418f, comps3[2].bottomYMm)
+        assertMm(container3Comp.interiorHeightMm, comps3[2].topYMm)
+    }
 }

@@ -61,6 +61,15 @@ data class ContainerBay(
 }
 
 @Serializable
+data class BayCompartment(
+    val index: Int = 0,
+    val bottomYMm: Float,
+    val topYMm: Float,
+) {
+    val heightMm: Float get() = (topYMm - bottomYMm).coerceAtLeast(0f)
+}
+
+@Serializable
 data class VerticalDividerSpec(
     val id: String = java.util.UUID.randomUUID().toString(),
     val offsetXMm: Float = 0f,
@@ -375,6 +384,101 @@ data class ClosetContainerSpec(
     }
 
     /**
+     * Returns the vertical compartments (usable vertical sections) within [bayIndex].
+     * Takes into account:
+     * - Bottom drawers (elevationYMm <= 50mm): doors sit on top of consecutive bottom drawers.
+     * - Dividing shelves: each shelf separates the bay into upper and lower compartments.
+     * - Internal elevated drawers: act as solid dividers.
+     */
+    fun getBayCompartments(bayIndex: Int): List<BayCompartment> {
+        val innerH = interiorHeightMm
+        val bayDrawers = drawers.filter { it.bayIndex == bayIndex }.sortedBy { it.elevationYMm }
+        val bayShelves = shelves.filter { it.bayIndex == bayIndex }.sortedBy { it.elevationYMm }
+
+        var baseFloorY = 0f
+        for (d in bayDrawers) {
+            if (d.elevationYMm <= baseFloorY + 30f) {
+                baseFloorY = kotlin.math.max(baseFloorY, d.elevationYMm + d.heightMm)
+            }
+        }
+
+        val dividingShelves = bayShelves.filter { it.elevationYMm >= (baseFloorY - 5f) && (it.elevationYMm + it.thicknessMm) <= innerH }
+        val elevatedDrawers = bayDrawers.filter { it.elevationYMm > (baseFloorY + 10f) && (it.elevationYMm + it.heightMm) <= innerH }
+
+        if (dividingShelves.isEmpty() && elevatedDrawers.isEmpty()) {
+            return listOf(BayCompartment(0, baseFloorY, innerH))
+        }
+
+        data class DividerBlock(val bottomY: Float, val topY: Float)
+        val blocks = (dividingShelves.map { DividerBlock(it.elevationYMm, it.elevationYMm + it.thicknessMm) } +
+            elevatedDrawers.map { DividerBlock(it.elevationYMm, it.elevationYMm + it.heightMm) })
+            .sortedBy { it.bottomY }
+
+        val comps = mutableListOf<BayCompartment>()
+        var curY = baseFloorY
+        var compIdx = 0
+
+        for (block in blocks) {
+            if (block.bottomY > curY + 20f) {
+                comps.add(BayCompartment(compIdx++, curY, block.bottomY))
+            }
+            curY = kotlin.math.max(curY, block.topY)
+        }
+        if (curY < innerH - 20f) {
+            comps.add(BayCompartment(compIdx, curY, innerH))
+        }
+
+        return if (comps.isNotEmpty()) comps else listOf(BayCompartment(0, baseFloorY, innerH))
+    }
+
+    /**
+     * Determines the vertical door span (bottomY to topY) based on user interaction point [targetYMm].
+     * Adapts intelligently to:
+     * - Single compartment (when hovering inside a compartment)
+     * - Spanning adjacent compartments (when hovering over a dividing shelf)
+     * - Spanning the entire bay / all compartments (when hovering over middle of bay or bay center)
+     */
+    fun findDoorsPlacementSpan(bayIndex: Int, targetYMm: Float): Pair<Float, Float> {
+        val innerH = interiorHeightMm
+        val comps = getBayCompartments(bayIndex)
+        if (comps.isEmpty()) return 0f to innerH
+        if (comps.size == 1) return comps[0].bottomYMm to comps[0].topYMm
+
+        val fullBottom = comps.first().bottomYMm
+        val fullTop = comps.last().topYMm
+
+        // 1. Check if hovering near the boundary (dividing shelf) between comp[i] and comp[i+1]
+        for (i in 0 until comps.size - 1) {
+            val dividerBottom = comps[i].topYMm
+            val dividerTop = comps[i + 1].bottomYMm
+            val dividerMid = (dividerBottom + dividerTop) * 0.5f
+            if (kotlin.math.abs(targetYMm - dividerMid) <= 65f) {
+                // Hovered right over the divider!
+                // If there are exactly 2 compartments, spanning both means full bay!
+                // If there are 3+ compartments, it spans the 2 adjacent compartments (comp[i] and comp[i+1])!
+                return comps[i].bottomYMm to comps[i + 1].topYMm
+            }
+        }
+
+        // 2. If 3 or more compartments and hovering near the overall center of the bay, span all
+        val fullMid = (fullBottom + fullTop) * 0.5f
+        if (comps.size >= 3 && kotlin.math.abs(targetYMm - fullMid) <= 45f) {
+            return fullBottom to fullTop
+        }
+
+        // 3. Otherwise find which individual compartment targetYMm is located in
+        for (comp in comps) {
+            if (targetYMm in comp.bottomYMm..comp.topYMm) {
+                return comp.bottomYMm to comp.topYMm
+            }
+        }
+
+        // 4. Closest compartment fallback
+        val closest = comps.minByOrNull { kotlin.math.abs(targetYMm - (it.bottomYMm + it.topYMm) * 0.5f) }
+        return if (closest != null) closest.bottomYMm to closest.topYMm else fullBottom to fullTop
+    }
+
+    /**
      * Calculates the magnetically snapped elevation for a horizontal shelf:
      * 1. Priority 1 (Cabinetry alignment): Snaps to the elevation of any existing shelf
      *    in any other compartment or bay within [snapThresholdMm].
@@ -439,13 +543,18 @@ data class ClosetContainerSpec(
                     }
                 }
             }
-            // Flush on bottom floor panel or top of drawers/shelves
+            // Flush on bottom floor panel or top of drawers/shelves in the same bay
             existingTargets.add(0f)
             for (other in shelves) {
-                existingTargets.add(other.elevationYMm + other.thicknessMm)
+                if (targetBayIndex == null || other.bayIndex == targetBayIndex) {
+                    existingTargets.add(other.elevationYMm + other.thicknessMm)
+                    existingTargets.add(other.elevationYMm)
+                }
             }
             for (d in drawers) {
-                existingTargets.add(d.elevationYMm + d.heightMm)
+                if (targetBayIndex == null || d.bayIndex == targetBayIndex) {
+                    existingTargets.add(d.elevationYMm + d.heightMm)
+                }
             }
         } else {
             for (other in shelves) {
@@ -1144,34 +1253,38 @@ data class ClosetContainerSpec(
         targetYMm: Float? = null,
         doorCount: Int = 2,
         heightMm: Float? = null,
+        elevationYMm: Float? = null,
         snapThresholdMm: Float = 28f,
     ): ClosetContainerSpec {
         val innerH = interiorHeightMm
         val bays = getBays()
         val targetBay = (bayIndex ?: 0).coerceIn(0, bays.lastIndex)
-        val (compY0, compY1) = findVerticalCompartmentRange(targetBay, targetYMm ?: (innerH * 0.5f))
-        val defaultH = (compY1 - compY0).coerceIn(100f, innerH)
-        val h = (heightMm ?: defaultH).coerceIn(100f, innerH)
-        val defaultElev = compY0.coerceIn(0f, (innerH - h).coerceAtLeast(0f))
-        val rawElev = defaultElev
+        val (spanY0, spanY1) = if (elevationYMm != null && heightMm != null) {
+            elevationYMm to (elevationYMm + heightMm)
+        } else {
+            findDoorsPlacementSpan(targetBay, targetYMm ?: (innerH * 0.5f))
+        }
+        val computedH = (heightMm ?: (spanY1 - spanY0)).coerceIn(100f, innerH)
+        val computedElev = (elevationYMm ?: spanY0).coerceIn(0f, (innerH - computedH).coerceAtLeast(0f))
+
         val snappedElev = if (snapThresholdMm > 0f) {
             findSnapElevation(
                 currentShelfId = "doors_new",
-                rawElevationYMm = rawElev,
+                rawElevationYMm = computedElev,
                 targetBayIndex = targetBay,
-                shelfThicknessMm = h,
+                shelfThicknessMm = computedH,
                 snapThresholdMm = snapThresholdMm,
             )
         } else {
-            rawElev
+            computedElev
         }
-        val clampedElev = snappedElev.coerceIn(0f, (innerH - h).coerceAtLeast(0f))
+        val clampedElev = snappedElev.coerceIn(0f, (innerH - computedH).coerceAtLeast(0f))
         val newDoors = CabinetDoorsSpec(
             id = "doors_${System.currentTimeMillis()}_${cabinetDoors.size + 1}",
             bayIndex = targetBay,
             doorCount = doorCount.coerceIn(1, 2),
             elevationYMm = clampedElev,
-            heightMm = h,
+            heightMm = computedH,
         )
         return copy(cabinetDoors = cabinetDoors + newDoors)
     }
@@ -1184,27 +1297,52 @@ data class ClosetContainerSpec(
     ): ClosetContainerSpec {
         val doors = cabinetDoors.firstOrNull { it.id == id } ?: return this
         val innerH = interiorHeightMm
-        val clampedElev = newElevationYMm.coerceIn(0f, (innerH - doors.heightMm).coerceAtLeast(0f))
         val newBayIndex = if (targetXMm != null) {
             findBayAtX(targetXMm).index
         } else {
             doors.bayIndex
         }
+
+        val (finalElev, finalHeight) = if (newBayIndex != doors.bayIndex) {
+            val (spanY0, spanY1) = findDoorsPlacementSpan(newBayIndex, newElevationYMm)
+            val adaptedH = (spanY1 - spanY0).coerceIn(100f, innerH)
+            spanY0 to adaptedH
+        } else {
+            val comps = getBayCompartments(newBayIndex)
+            if (comps.size > 1) {
+                val (spanY0, spanY1) = findDoorsPlacementSpan(newBayIndex, newElevationYMm)
+                val targetSpanH = spanY1 - spanY0
+                if (comps.any { kotlin.math.abs(doors.heightMm - it.heightMm) < 50f } ||
+                    kotlin.math.abs(doors.heightMm - targetSpanH) < 60f ||
+                    kotlin.math.abs(newElevationYMm - spanY0) < 60f
+                ) {
+                    spanY0 to targetSpanH.coerceIn(100f, innerH)
+                } else {
+                    val clampedElev = newElevationYMm.coerceIn(0f, (innerH - doors.heightMm).coerceAtLeast(0f))
+                    clampedElev to doors.heightMm
+                }
+            } else {
+                val clampedElev = newElevationYMm.coerceIn(0f, (innerH - doors.heightMm).coerceAtLeast(0f))
+                clampedElev to doors.heightMm
+            }
+        }
+
         val snappedElev = if (snapThresholdMm > 0f) {
             findSnapElevation(
                 currentShelfId = id,
-                rawElevationYMm = clampedElev,
+                rawElevationYMm = finalElev,
                 targetBayIndex = newBayIndex,
-                shelfThicknessMm = doors.heightMm,
+                shelfThicknessMm = finalHeight,
                 snapThresholdMm = snapThresholdMm,
             )
         } else {
-            clampedElev
+            finalElev
         }
 
         return withUpdatedCabinetDoors(id) {
             it.copy(
-                elevationYMm = snappedElev.coerceIn(0f, (innerH - it.heightMm).coerceAtLeast(0f)),
+                elevationYMm = snappedElev.coerceIn(0f, (innerH - finalHeight).coerceAtLeast(0f)),
+                heightMm = finalHeight,
                 bayIndex = newBayIndex.coerceIn(0, getBays().lastIndex),
             )
         }

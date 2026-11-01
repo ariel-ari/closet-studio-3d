@@ -231,6 +231,16 @@ Cabinet doors (`CabinetDoorsSpec`) provide front enclosure for closet bays, conf
    - **Badge:** Displays `"$baseLetter • PUE"` when selected.
    - **Inspector:** Features door count chips (`[1 Puerta]` vs `[2 Puertas]`), read-only bay width, editable height, thickness, elevation, and clearances.
 
+5. **Vertical Compartment Adaptation & Adjacent Bay Isolation:**
+   - **Strict Same-Bay Stacking:** Shelf and drawer vertical snapping targets (`findSnapElevation`) are strictly scoped to the door's containing bay (`targetBayIndex`). Drawers in adjacent bays never lift doors in the current bay, eliminating unwanted bottom gaps.
+   - **Compartment Detection (`getBayCompartments`):** Dynamically partitions a bay into clear vertical compartments using dividing shelves and consecutive bottom drawer stacks.
+   - **Multi-Compartment Coverage (1, 2, or All):**
+     - When dragged into a specific compartment, the door automatically adapts to that compartment's bounds (e.g., Upper only or Lower only).
+     - When dragged across a dividing shelf, it spans both adjacent compartments.
+     - When dropped at bay center or selected via `[Todo el vano]` in the inspector, it covers all compartments from the floor (or drawer top) to the ceiling.
+     - Contextual chips in the inspector provide instantaneous 1-click toggling between `[Todo el vano]`, `[Superior]`, `[Inferior]`, `[Medio]`, and combined spans.
+
+
 
 
 

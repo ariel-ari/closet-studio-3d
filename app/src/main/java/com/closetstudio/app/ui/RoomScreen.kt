@@ -6248,6 +6248,193 @@ private fun ModuleInspectorContent(
                     )
                 }
 
+                // Compartment Coverage Selection
+                val bayComps = activeContainer.getBayCompartments(doors.bayIndex)
+                if (bayComps.size > 1) {
+                    Text(
+                        text = s.doorsCoverageLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1A1A1A),
+                        modifier = Modifier.padding(top = 10.dp, bottom = 4.dp),
+                    )
+
+                    val fullBottom = bayComps.first().bottomYMm
+                    val fullTop = bayComps.last().topYMm
+                    val fullH = (fullTop - fullBottom).coerceAtLeast(100f)
+                    val isFullBaySelected = kotlin.math.abs(doors.elevationYMm - fullBottom) < 5f &&
+                        kotlin.math.abs(doors.heightMm - fullH) < 5f
+
+                    FilterChip(
+                        selected = isFullBaySelected,
+                        onClick = {
+                            onUpdateContainer(activeContainer.id) { c ->
+                                c.withUpdatedCabinetDoors(doors.id) {
+                                    it.copy(elevationYMm = fullBottom, heightMm = fullH)
+                                }
+                            }
+                        },
+                        label = { Text(s.doorsFullBayLabel) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    if (bayComps.size == 2) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            val isLowerSelected = kotlin.math.abs(doors.elevationYMm - bayComps[0].bottomYMm) < 5f &&
+                                kotlin.math.abs(doors.heightMm - bayComps[0].heightMm) < 5f
+                            val isUpperSelected = kotlin.math.abs(doors.elevationYMm - bayComps[1].bottomYMm) < 5f &&
+                                kotlin.math.abs(doors.heightMm - bayComps[1].heightMm) < 5f
+
+                            FilterChip(
+                                selected = isLowerSelected,
+                                onClick = {
+                                    onUpdateContainer(activeContainer.id) { c ->
+                                        c.withUpdatedCabinetDoors(doors.id) {
+                                            it.copy(elevationYMm = bayComps[0].bottomYMm, heightMm = bayComps[0].heightMm)
+                                        }
+                                    }
+                                },
+                                label = { Text(s.doorsLowerLabel) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            FilterChip(
+                                selected = isUpperSelected,
+                                onClick = {
+                                    onUpdateContainer(activeContainer.id) { c ->
+                                        c.withUpdatedCabinetDoors(doors.id) {
+                                            it.copy(elevationYMm = bayComps[1].bottomYMm, heightMm = bayComps[1].heightMm)
+                                        }
+                                    }
+                                },
+                                label = { Text(s.doorsUpperLabel) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    } else if (bayComps.size == 3) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            val isLowerSelected = kotlin.math.abs(doors.elevationYMm - bayComps[0].bottomYMm) < 5f &&
+                                kotlin.math.abs(doors.heightMm - bayComps[0].heightMm) < 5f
+                            val isMidSelected = kotlin.math.abs(doors.elevationYMm - bayComps[1].bottomYMm) < 5f &&
+                                kotlin.math.abs(doors.heightMm - bayComps[1].heightMm) < 5f
+                            val isUpperSelected = kotlin.math.abs(doors.elevationYMm - bayComps[2].bottomYMm) < 5f &&
+                                kotlin.math.abs(doors.heightMm - bayComps[2].heightMm) < 5f
+
+                            FilterChip(
+                                selected = isLowerSelected,
+                                onClick = {
+                                    onUpdateContainer(activeContainer.id) { c ->
+                                        c.withUpdatedCabinetDoors(doors.id) {
+                                            it.copy(elevationYMm = bayComps[0].bottomYMm, heightMm = bayComps[0].heightMm)
+                                        }
+                                    }
+                                },
+                                label = { Text(s.doorsLowerLabel) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            FilterChip(
+                                selected = isMidSelected,
+                                onClick = {
+                                    onUpdateContainer(activeContainer.id) { c ->
+                                        c.withUpdatedCabinetDoors(doors.id) {
+                                            it.copy(elevationYMm = bayComps[1].bottomYMm, heightMm = bayComps[1].heightMm)
+                                        }
+                                    }
+                                },
+                                label = { Text(s.doorsMiddleLabel) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            FilterChip(
+                                selected = isUpperSelected,
+                                onClick = {
+                                    onUpdateContainer(activeContainer.id) { c ->
+                                        c.withUpdatedCabinetDoors(doors.id) {
+                                            it.copy(elevationYMm = bayComps[2].bottomYMm, heightMm = bayComps[2].heightMm)
+                                        }
+                                    }
+                                },
+                                label = { Text(s.doorsUpperLabel) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            val span12Elev = bayComps[0].bottomYMm
+                            val span12H = (bayComps[1].topYMm - bayComps[0].bottomYMm).coerceAtLeast(100f)
+                            val is12Selected = kotlin.math.abs(doors.elevationYMm - span12Elev) < 5f &&
+                                kotlin.math.abs(doors.heightMm - span12H) < 5f
+
+                            val span23Elev = bayComps[1].bottomYMm
+                            val span23H = (bayComps[2].topYMm - bayComps[1].bottomYMm).coerceAtLeast(100f)
+                            val is23Selected = kotlin.math.abs(doors.elevationYMm - span23Elev) < 5f &&
+                                kotlin.math.abs(doors.heightMm - span23H) < 5f
+
+                            FilterChip(
+                                selected = is12Selected,
+                                onClick = {
+                                    onUpdateContainer(activeContainer.id) { c ->
+                                        c.withUpdatedCabinetDoors(doors.id) {
+                                            it.copy(elevationYMm = span12Elev, heightMm = span12H)
+                                        }
+                                    }
+                                },
+                                label = { Text("${s.doorsLowerLabel} + ${s.doorsMiddleLabel}") },
+                                modifier = Modifier.weight(1f),
+                            )
+                            FilterChip(
+                                selected = is23Selected,
+                                onClick = {
+                                    onUpdateContainer(activeContainer.id) { c ->
+                                        c.withUpdatedCabinetDoors(doors.id) {
+                                            it.copy(elevationYMm = span23Elev, heightMm = span23H)
+                                        }
+                                    }
+                                },
+                                label = { Text("${s.doorsMiddleLabel} + ${s.doorsUpperLabel}") },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            bayComps.forEachIndexed { idx, comp ->
+                                val isCompSelected = kotlin.math.abs(doors.elevationYMm - comp.bottomYMm) < 5f &&
+                                    kotlin.math.abs(doors.heightMm - comp.heightMm) < 5f
+                                FilterChip(
+                                    selected = isCompSelected,
+                                    onClick = {
+                                        onUpdateContainer(activeContainer.id) { c ->
+                                            c.withUpdatedCabinetDoors(doors.id) {
+                                                it.copy(elevationYMm = comp.bottomYMm, heightMm = comp.heightMm)
+                                            }
+                                        }
+                                    },
+                                    label = { Text("${idx + 1}") },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Width (bay width, read-only)
                 ModuleDimensionRow(
                     label = s.partitionWidthLabel,
