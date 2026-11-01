@@ -475,4 +475,63 @@ class ClosetPartitionTest {
         assertTrue(parts.any { it.surface == RoomSurface.CONTAINER_BODY })
         assertTrue(parts.any { it.surface == RoomSurface.PARTITION_SELECTED_OUTLINE })
     }
+
+    @Test
+    fun `clothes rail defaults to center, respects zero penetration, and builds chrome rod geometry`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 1800f,
+            heightMm = 2200f,
+            depthMm = 600f,
+            panelThicknessMm = 18f,
+            plinthHeightMm = 80f,
+        )
+
+        val innerH = container.interiorHeightMm // 2200 - 80 - 36 = 2084 mm
+        val innerD = container.interiorDepthMm // 600 - 6 = 594 mm
+
+        // 1. Adding rail with default params: centers vertically in bay and centers in depth
+        container = container.withAddedClothesRail()
+        assertEquals(1, container.clothesRails.size)
+        val rail = container.clothesRails.single()
+        assertMm(innerH * 0.5f, rail.elevationYMm)
+        assertMm(innerD * 0.5f, rail.effectiveDepth(innerD))
+        assertEquals(25f, rail.diameterMm)
+
+        // 2. Add second bay by adding vertical divider
+        container = container.withAddedDivider(offsetXMm = 880f)
+        assertEquals(2, container.getBays().size)
+
+        // Add second rail in bay 1 nearby in elevation: magnetically snaps to match bay 0 rail
+        container = container.withAddedClothesRail(bayIndex = 1, elevationYMm = (innerH * 0.5f) + 15f)
+        assertEquals(2, container.clothesRails.size)
+        val railBay1 = container.clothesRails[1]
+        assertMm(rail.elevationYMm, railBay1.elevationYMm) // Snap alignment
+
+        // 3. Build geometry: produces DOOR_HANDLE mesh for chrome rod and brackets, and purple selection outline
+        val room = RoomSpec(containers = listOf(container))
+        val parts = RoomGeometryBuilder.build(room, selectedContainerId = "c1", selectedPartitionId = rail.id)
+        assertTrue(parts.any { it.surface == RoomSurface.DOOR_HANDLE })
+        assertTrue(parts.any { it.surface == RoomSurface.PARTITION_SELECTED_OUTLINE })
+
+        // 4. Raycast picking hits the rail
+        val s0Inner = container.offsetMm + container.effectivePanelThicknessMm
+        val bay0MidX = s0Inner + container.getBays()[0].widthMm * 0.5f
+        val railWorldY = container.effectivePlinthHeightMm + container.effectivePanelThicknessMm + rail.elevationYMm
+        val railWorldD = 4f + container.backThicknessMm + rail.effectiveDepth(innerD)
+
+        val hit = room.pickPartitionByRayMm(
+            rayOriginX = bay0MidX,
+            rayOriginY = railWorldY,
+            rayOriginZ = -200f,
+            rayDirX = 0f,
+            rayDirY = 0f,
+            rayDirZ = 1f,
+        )
+        assertNotNull(hit)
+        assertEquals("c1", hit.containerId)
+        assertEquals(rail.id, hit.partitionId)
+        assertTrue(!hit.isVertical)
+    }
 }

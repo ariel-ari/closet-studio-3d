@@ -116,37 +116,29 @@ Manual millimetric alignment of cabinetry partitions on touchscreen devices is p
 
 ---
 
-## 8. Drawer System & Modular Architecture Protocol (Regla de Oro de Cajones y Cajoneras)
-The drawer system replicates functional cabinetry drawer units with customizable front styles, strict containment, and smart magnetic stacking:
+## 9. Clothes Rail & Hanging Rod Protocol (Regla de Oro de Tubos Colgadores)
+The clothes rail (tubo o fierro colgador) replicates wardrobe hanging rods for garments and coat hangers:
 
-1. **Polymorphic Front Architecture (Strategy Pattern):**
-   Drawers share 100% of their physical domain model, physics, bay adaptation, raycasting, and gesture interactions via `DrawerSpec`. Only the decorative front face geometry varies polymorphically:
-   - **`DrawerFrontType.HANDLE` ("Cajón con tirador"):** Solid front face board spanning bay width $[X_{\min}, X_{\max}]$ and height $H_{\text{drawer}}$ with a centered chrome bow/bar handle (`DOOR_HANDLE`).
-   - **`DrawerFrontType.NOTCH` ("Cajón con uñero"):** Minimalist handle-free design with a centered ergonomic finger cutout (uñero). Built with 3 front panel segments (left $[X_0, X_{\text{notch0}}]$, right $[X_{\text{notch1}}, X_1]$, and bottom center $[X_{\text{notch0}}, X_{\text{notch1}}]$ beneath cutout), maintaining physical melamina thickness and seamless edge banding.
-   - **Common Anatomy:** Both styles share the recessed interior wooden box (left/right sides, back panel, bottom panel) and clamped purple selection outline (`#8B5CF6`).
+1. **Default Centered Placement:**
+   - **Vertical Center:** When added to a closet compartment, elevation $Y$ is automatically centered between the compartment boundaries (floor, shelves, or roof):
+     $$Y = \frac{\text{comp}Y_0 + \text{comp}Y_1}{2}$$
+   - **Depth Center:** By default, the rail is centered along the interior depth:
+     $$Z = D_{\text{inner}} \times 0.5$$
+     providing symmetrical clearance for hanger shoulders towards both the back wall and the front opening.
 
-2. **Modular Bay Containment & Automatic Adaptation:**
-   - Drawers reside within a specific compartment/bay $i \in [0, N-1]$.
-   - Width is derived dynamically from bay span: $\text{Width} = X_{\max} - X_{\min}$.
-   - If adjacent vertical dividers move, the drawer width automatically recalibrates to maintain snug carpenter fit.
+2. **Structural Anatomy & Realistic Hardware:**
+   - **Chrome Rail Extrusion:** Smooth cylindrical extrusion along the horizontal bay axis ($S$-axis) with polished chrome reflection (`RoomSurface.DOOR_HANDLE`).
+   - **Mounting Flange Brackets:** Dual lateral circular mounting brackets ($8\text{ mm}$ thick) pressed flush against the interior melamina panels on both sides.
+   - **Configurable Diameter:** Default wardrobe standard $25\text{ mm}$, adjustable in the inspector from $15\text{ mm}$ to $50\text{ mm}$.
 
-3. **Strict Zero Penetration Invariant:**
-   - Bottom elevation is strictly clamped: $Y \in [0, H_{\text{inner}} - H_{\text{drawer}}]$.
-   - Drawers can never penetrate through the carcass bottom panel or plinth, nor through the upper roof panel.
+3. **Zero Penetration & Smart Magnetic Alignment:**
+   - Elevation is clamped strictly within inner bounds $[r, H_{\text{inner}} - r]$ where $r = \frac{\text{diameter}}{2}$.
+   - **Cross-Bay Rail Snap:** When dragging a clothes rail vertically, it snaps to the elevation of matching rails in other bays ($\pm 28\text{ mm}$ tolerance) to easily align continuous hanging sections.
 
-4. **Smart Stacking & Magnetic Snapping:**
-   - **Plinth/Floor Snap:** Snaps to base $Y = 0$ when dragged near the bottom panel.
-   - **Auto-Stacking on Drawers (Priority 1):** When placed or dragged directly over an existing drawer within the same bay, the bottom snaps flush to the top edge of the lower drawer:
-     $$Y = Y_{\text{lower}} + H_{\text{lower}}$$
-     allowing instant creation of 2, 3, 4, or multi-drawer stacks without manual adjustment.
-   - **Stacking on Shelves:** Snaps flush onto the top surface of a shelf within the same bay ($Y = Y_{\text{shelf}} + T_{\text{shelf}}$).
-   - **Cross-Bay Coplanar Snapping:** When moving across bays, elevation $Y$ magnetically aligns with matching drawers in other bays to create elegant, horizontal symmetrical drawer lines across the closet.
-
-5. **Unified Interaction Contract:**
-   - Live 3D dragging from catalog into the closet cavity with real-time feedback.
-   - Clean drop with auto-close of catalog and **no automatic inspector opening**.
-   - 3 floating action buttons: ✏️ Edit (opens Module inspector), ❐ Duplicate (stacks duplicate immediately on top), 🗑️ Delete.
-   - Inspector controls: bay width (read-only), height (editable $80\text{--}600\text{ mm}$), depth (anchored to back panel), top clearance, bottom elevation.
+4. **Unified Interaction Contract:**
+   - Dragging from the catalog into the closet cavity displays live 3D insertion feedback under the finger.
+   - Dropping finalizes placement, auto-closes the catalog popup, leaves the rail selected with purple highlight, and **does not open the inspector modal automatically**.
+   - Standard 3 floating action buttons: ✏️ Edit (inspect dimensions, diameter, elevation, and depth offset), ❐ Duplicate, 🗑️ Delete.
 
 
 

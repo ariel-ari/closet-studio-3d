@@ -475,6 +475,51 @@ object RoomGeometryBuilder {
         )
     }
 
+    private fun addWallAlignedCylinder(
+        builder: MeshBuilder,
+        pStart: Vec2Mm,
+        ux: Float,
+        uz: Float,
+        nx: Float,
+        nz: Float,
+        s0: Float,
+        s1: Float,
+        centerY: Float,
+        centerD: Float,
+        radiusMm: Float,
+        segments: Int = 12,
+    ) {
+        if (s1 <= s0 || radiusMm <= 0f) return
+        fun pt(s: Float, y: Float, d: Float): Vec3 = Vec3(
+            x = pStart.x + s * ux + d * nx,
+            y = y,
+            z = pStart.z + s * uz + d * nz,
+        )
+
+        val angleStep = (2.0 * Math.PI / segments).toFloat()
+        for (i in 0 until segments) {
+            val a0 = i * angleStep
+            val a1 = (i + 1) * angleStep
+            val y0 = centerY + radiusMm * kotlin.math.sin(a0)
+            val d0 = centerD + radiusMm * kotlin.math.cos(a0)
+            val y1 = centerY + radiusMm * kotlin.math.sin(a1)
+            val d1 = centerD + radiusMm * kotlin.math.cos(a1)
+
+            val midA = (a0 + a1) * 0.5f
+            val nY = kotlin.math.sin(midA)
+            val nD = kotlin.math.cos(midA)
+            val norm = Vec3(nD * nx, nY, nD * nz)
+
+            builder.addQuad(
+                a = pt(s0, y0, d0),
+                b = pt(s1, y0, d0),
+                c = pt(s1, y1, d1),
+                d = pt(s0, y1, d1),
+                normal = norm,
+            )
+        }
+    }
+
     private fun addContainerToBuilders(
         room: RoomSpec,
         container: ClosetContainerSpec,
@@ -998,6 +1043,87 @@ object RoomGeometryBuilder {
                         s0 = fS0 + 14f, s1 = fS1 - 14f,
                         y0 = (boxY1 - pRim).coerceAtLeast(interiorBottomY), y1 = boxY1,
                         d0 = boxD0 - 2f, d1 = boxD0 + 16f,
+                    )
+                }
+            }
+        }
+
+        // 7d. Clothes Rails / Hanger Rods (Polished chrome tube with mounting brackets)
+        for (rail in container.clothesRails) {
+            val bay = bays.getOrElse(rail.bayIndex) { bays.last() }
+            val railS0 = (s0Inner + bay.startXMm).coerceIn(interiorLeftS, interiorRightS)
+            val railS1 = (s0Inner + bay.endXMm).coerceIn(railS0, interiorRightS)
+            val railY = (interiorBottomY + rail.elevationYMm).coerceIn(interiorBottomY, interiorTopY)
+            val railDepth = rail.effectiveDepth(container.interiorDepthMm)
+            val railD = wallGap + backT + railDepth
+            val radius = rail.diameterMm * 0.5f
+
+            if (railS1 > railS0 + 20f && handleBuilder != null) {
+                val bracketR = (radius * 1.6f).coerceIn(18f, 26f)
+                val bracketThick = 8f
+
+                // 1. Left mounting flange bracket against bay left wall
+                addWallAlignedCylinder(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = railS0, s1 = railS0 + bracketThick,
+                    centerY = railY, centerD = railD,
+                    radiusMm = bracketR,
+                    segments = 12,
+                )
+                // Left bracket cap facing into bay (+S)
+                addWallAlignedBox(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = railS0 + bracketThick - 1f, s1 = railS0 + bracketThick,
+                    y0 = railY - bracketR, y1 = railY + bracketR,
+                    d0 = railD - bracketR, d1 = railD + bracketR,
+                )
+
+                // 2. Right mounting flange bracket against bay right wall
+                addWallAlignedCylinder(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = railS1 - bracketThick, s1 = railS1,
+                    centerY = railY, centerD = railD,
+                    radiusMm = bracketR,
+                    segments = 12,
+                )
+                // Right bracket cap facing into bay (-S)
+                addWallAlignedBox(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = railS1 - bracketThick, s1 = railS1 - bracketThick + 1f,
+                    y0 = railY - bracketR, y1 = railY + bracketR,
+                    d0 = railD - bracketR, d1 = railD + bracketR,
+                )
+
+                // 3. Central chrome hanger rod spanning between brackets
+                addWallAlignedCylinder(
+                    builder = handleBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = railS0 + bracketThick - 2f, s1 = railS1 - bracketThick + 2f,
+                    centerY = railY, centerD = railD,
+                    radiusMm = radius,
+                    segments = 12,
+                )
+
+                // 4. Selection & Alignment Highlight Outline (Crisp Purple Rim matching user screenshot)
+                val selectedRail = if (selectedPartitionId != null) container.clothesRails.firstOrNull { it.id == selectedPartitionId } else null
+                val isRailSelected = rail.id == selectedPartitionId
+                val isRailAligned = selectedRail != null && rail.id != selectedRail.id && kotlin.math.abs(rail.elevationYMm - selectedRail.elevationYMm) < 1.0f
+
+                if ((isRailSelected || isRailAligned) && partitionOutlineBuilder != null) {
+                    val pRim = 3f
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = (railS0 - pRim).coerceAtLeast(interiorLeftS),
+                        s1 = (railS1 + pRim).coerceAtMost(interiorRightS),
+                        y0 = (railY - radius - pRim).coerceAtLeast(interiorBottomY),
+                        y1 = (railY + radius + pRim).coerceAtMost(interiorTopY),
+                        d0 = railD - radius - pRim,
+                        d1 = railD + radius + pRim,
                     )
                 }
             }

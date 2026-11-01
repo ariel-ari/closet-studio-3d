@@ -139,6 +139,27 @@ data class DrawerSpec(
 }
 
 @Serializable
+data class ClothesRailSpec(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val bayIndex: Int = 0,
+    val elevationYMm: Float = 0f,
+    val depthOffsetMm: Float? = null,
+    val diameterMm: Float = 25f,
+) {
+    init {
+        require(bayIndex >= 0) { "rail bayIndex must be non-negative" }
+        require(elevationYMm >= 0f) { "rail elevation must be non-negative" }
+        require(diameterMm > 0f) { "rail diameter must be positive" }
+        if (depthOffsetMm != null) {
+            require(depthOffsetMm > 0f) { "rail depthOffset must be positive" }
+        }
+    }
+
+    fun effectiveDepth(interiorDepthMm: Float): Float =
+        (depthOffsetMm ?: (interiorDepthMm * 0.5f)).coerceIn(50f, (interiorDepthMm - 50f).coerceAtLeast(50f))
+}
+
+@Serializable
 data class ClosetContainerSpec(
     val id: String,
     val wall: WallIndex = WallIndex.NORTH,
@@ -154,6 +175,7 @@ data class ClosetContainerSpec(
     val dividers: List<VerticalDividerSpec> = emptyList(),
     val shelves: List<HorizontalShelfSpec> = emptyList(),
     val drawers: List<DrawerSpec> = emptyList(),
+    val clothesRails: List<ClothesRailSpec> = emptyList(),
 ) {
     init {
         require(widthMm >= 0f) { "container width must be non-negative" }
@@ -277,6 +299,12 @@ data class ClosetContainerSpec(
                     val under = d.elevationYMm - shelfThicknessMm
                     if (under >= 0f) existingTargets.add(under)
                 }
+            }
+        }
+        for (r in clothesRails) {
+            if (r.id != currentShelfId) {
+                // Coplanar clothes rail alignment across bays
+                existingTargets.add(r.elevationYMm)
             }
         }
         // Flush on bottom floor panel
@@ -650,10 +678,81 @@ data class ClosetContainerSpec(
         return copy(drawers = drawers.map { if (it.id == id) transform(it) else it })
     }
 
+    fun withAddedClothesRail(
+        bayIndex: Int? = null,
+        elevationYMm: Float? = null,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
+        val innerH = interiorHeightMm
+        val bays = getBays()
+        val targetBay = (bayIndex ?: 0).coerceIn(0, bays.lastIndex)
+        val defaultElev = run {
+            val (compY0, compY1) = findVerticalCompartmentRange(targetBay, innerH * 0.5f)
+            (compY0 + compY1) * 0.5f
+        }
+        val rawElev = (elevationYMm ?: defaultElev).coerceIn(25f, (innerH - 25f).coerceAtLeast(25f))
+        val snappedElev = if (elevationYMm != null && snapThresholdMm > 0f) {
+            findSnapElevation(
+                currentShelfId = null,
+                rawElevationYMm = rawElev,
+                targetBayIndex = targetBay,
+                shelfThicknessMm = 25f,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            rawElev
+        }
+        val newRail = ClothesRailSpec(
+            id = "rail_${System.currentTimeMillis()}_${clothesRails.size + 1}",
+            bayIndex = targetBay,
+            elevationYMm = snappedElev,
+        )
+        return copy(clothesRails = clothesRails + newRail)
+    }
+
+    fun withMovedClothesRail(
+        id: String,
+        newElevationYMm: Float,
+        targetXMm: Float? = null,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
+        val rail = clothesRails.firstOrNull { it.id == id } ?: return this
+        val innerH = interiorHeightMm
+        val clampedElev = newElevationYMm.coerceIn(25f, (innerH - 25f).coerceAtLeast(25f))
+        val newBayIndex = if (targetXMm != null) {
+            findBayAtX(targetXMm).index
+        } else {
+            rail.bayIndex
+        }
+        val snappedElev = if (snapThresholdMm > 0f) {
+            findSnapElevation(
+                currentShelfId = id,
+                rawElevationYMm = clampedElev,
+                targetBayIndex = newBayIndex,
+                shelfThicknessMm = rail.diameterMm,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            clampedElev
+        }
+
+        return withUpdatedClothesRail(id) {
+            it.copy(
+                elevationYMm = snappedElev,
+                bayIndex = newBayIndex.coerceIn(0, getBays().lastIndex),
+            )
+        }
+    }
+
+    fun withUpdatedClothesRail(id: String, transform: (ClothesRailSpec) -> ClothesRailSpec): ClosetContainerSpec {
+        return copy(clothesRails = clothesRails.map { if (it.id == id) transform(it) else it })
+    }
+
     fun withRemovedPartition(id: String): ClosetContainerSpec {
         val remainingDividers = dividers.filterNot { it.id == id }
         val remainingShelves = shelves.filterNot { it.id == id }
         val remainingDrawers = drawers.filterNot { it.id == id }
+        val remainingRails = clothesRails.filterNot { it.id == id }
         val maxBayIdx = remainingDividers.size
         val reclampedShelves = remainingShelves.map {
             if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
@@ -661,7 +760,15 @@ data class ClosetContainerSpec(
         val reclampedDrawers = remainingDrawers.map {
             if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
         }
-        return copy(dividers = remainingDividers, shelves = reclampedShelves, drawers = reclampedDrawers)
+        val reclampedRails = remainingRails.map {
+            if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
+        }
+        return copy(
+            dividers = remainingDividers,
+            shelves = reclampedShelves,
+            drawers = reclampedDrawers,
+            clothesRails = reclampedRails,
+        )
     }
 }
 
@@ -1511,6 +1618,13 @@ data class RoomSpec(
                 elevationYMm = drawer.elevationYMm.coerceIn(0f, maxElev),
             )
         }
+        val clampedRails = container.clothesRails.map { rail ->
+            val maxElev = (innerH - rail.diameterMm).coerceAtLeast(0f)
+            rail.copy(
+                bayIndex = rail.bayIndex.coerceIn(0, maxBayIdx),
+                elevationYMm = rail.elevationYMm.coerceIn(0f, maxElev),
+            )
+        }
 
         return container.copy(
             widthMm = clampedW,
@@ -1520,6 +1634,7 @@ data class RoomSpec(
             dividers = clampedDividers,
             shelves = clampedShelves,
             drawers = clampedDrawers,
+            clothesRails = clampedRails,
         )
     }
 
@@ -1835,7 +1950,7 @@ data class RoomSpec(
 
         for (raw in containers) {
             val c = clampContainer(raw)
-            if (c.dividers.isEmpty() && c.shelves.isEmpty() && c.drawers.isEmpty()) continue
+            if (c.dividers.isEmpty() && c.shelves.isEmpty() && c.drawers.isEmpty() && c.clothesRails.isEmpty()) continue
 
             val (pStart, pEnd) = when (c.wall) {
                 WallIndex.NORTH -> nw to ne
@@ -1950,6 +2065,24 @@ data class RoomSpec(
                 if (hitT != null && hitT < bestT) {
                     bestT = hitT
                     bestHit = PartitionHit(c.id, drawer.id, isVertical = false, hitDistance = hitT)
+                }
+            }
+
+            // Test clothes rails (expanded by 35mm in Y and D for easy touch picking)
+            for (rail in c.clothesRails) {
+                val bay = bays.getOrElse(rail.bayIndex) { bays.last() }
+                val railS0 = s0Inner + bay.startXMm - 20f
+                val railS1 = s0Inner + bay.endXMm + 20f
+                val railY0 = plinthH + t + rail.elevationYMm - 35f
+                val railY1 = plinthH + t + rail.elevationYMm + 35f
+                val railDepth = rail.effectiveDepth(c.interiorDepthMm)
+                val railD0 = (wallGap + backT + railDepth - 45f).coerceAtLeast(0f)
+                val railD1 = wallGap + backT + railDepth + 45f
+
+                val hitT = intersectAABB(railS0, railS1, railY0, railY1, railD0, railD1)
+                if (hitT != null && hitT < bestT) {
+                    bestT = hitT
+                    bestHit = PartitionHit(c.id, rail.id, isVertical = false, hitDistance = hitT)
                 }
             }
         }

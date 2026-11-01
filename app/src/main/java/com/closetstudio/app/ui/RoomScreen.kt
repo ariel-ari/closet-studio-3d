@@ -110,6 +110,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -152,6 +154,7 @@ enum class DraggedUnitType {
     HORIZONTAL_SHELF,
     DRAWER,
     DRAWER_NOTCH,
+    CLOTHES_RAIL,
 }
 
 /**
@@ -1779,7 +1782,8 @@ fun RoomScreen() {
                             if (selectedPartitionId != null && activeContainer != null) {
                                 val exists = activeContainer.dividers.any { it.id == selectedPartitionId } ||
                                         activeContainer.shelves.any { it.id == selectedPartitionId } ||
-                                        activeContainer.drawers.any { it.id == selectedPartitionId }
+                                        activeContainer.drawers.any { it.id == selectedPartitionId } ||
+                                        activeContainer.clothesRails.any { it.id == selectedPartitionId }
                                 if (!exists) {
                                     selectedPartitionId = null
                                 }
@@ -2160,6 +2164,7 @@ fun RoomScreen() {
                                         val badgeText = if (hasSelectedPartition) {
                                             if (selectedPartitionIsVertical) "$baseLetter • DIV"
                                             else if (activeContainer.drawers.any { it.id == selectedPartitionId }) "$baseLetter • CAJ"
+                                            else if (activeContainer.clothesRails.any { it.id == selectedPartitionId }) "$baseLetter • TUB"
                                             else "$baseLetter • EST"
                                         } else {
                                             baseLetter
@@ -2235,6 +2240,15 @@ fun RoomScreen() {
                                                         )
                                                         createdId = newDrawer.id
                                                         container.copy(drawers = container.drawers + newDrawer)
+                                                    } else if (container.clothesRails.any { it.id == selectedPartitionId }) {
+                                                        val source = container.clothesRails.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
+                                                        val newElev = (source.elevationYMm + 200f).coerceAtMost((container.interiorHeightMm - source.diameterMm).coerceAtLeast(0f))
+                                                        val newRail = source.copy(
+                                                            id = "rail_${System.currentTimeMillis()}_${container.clothesRails.size + 1}",
+                                                            elevationYMm = newElev,
+                                                        )
+                                                        createdId = newRail.id
+                                                        container.copy(clothesRails = container.clothesRails + newRail)
                                                     } else {
                                                         val source = container.shelves.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
                                                         val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
@@ -2709,6 +2723,25 @@ fun RoomScreen() {
                                             }
                                         }
                                     },
+                                    onAddClothesRail = { dropFracX, dropFracY ->
+                                        val target = activeContainer ?: room.containers.firstOrNull()
+                                        if (target != null) {
+                                            val dropX = if (dropFracX != null) dropFracX * target.interiorWidthMm else target.interiorWidthMm * 0.5f
+                                            val bay = target.findBayAtX(dropX)
+                                            val dropY = if (dropFracY != null) dropFracY * target.interiorHeightMm else null
+                                            val updated = target.withAddedClothesRail(bayIndex = bay.index, elevationYMm = dropY)
+                                            val newRail = updated.clothesRails.lastOrNull()
+                                            val updatedRoom = room.withUpdatedContainer(target.id) { updated }
+                                            updateRoom(updatedRoom)
+                                            selectedContainerId = target.id
+                                            selectedPartitionId = newRail?.id
+                                            selectedPartitionIsVertical = false
+                                            showUnitsColumn = false
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar(s.partitionAddedToast)
+                                            }
+                                        }
+                                    },
                                     onDragUnitStart = { type, startRootPos ->
                                         draggedUnitType = type
                                         isDraggingUnit = true
@@ -2723,7 +2756,7 @@ fun RoomScreen() {
                                             ?: room.containers.firstOrNull { it.wall == currentWall }
                                             ?: room.containers.firstOrNull()
 
-                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH)) {
+                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH || draggedUnitType == DraggedUnitType.CLOTHES_RAIL)) {
                                             val interiorPt = projectScreenToContainerInterior(
                                                 room = room,
                                                 container = target,
@@ -2812,6 +2845,27 @@ fun RoomScreen() {
                                                         }
                                                         updateRoom(updatedRoom)
                                                     }
+                                                } else if (draggedUnitType == DraggedUnitType.CLOTHES_RAIL) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        if (isInsideCloset) {
+                                                            val bay = target.findBayAtX(clampedX)
+                                                            val updated = target.withAddedClothesRail(bayIndex = bay.index, elevationYMm = clampedY)
+                                                            val newRail = updated.clothesRails.lastOrNull()
+                                                            if (newRail != null) {
+                                                                activeDragPartitionId = newRail.id
+                                                                selectedContainerId = target.id
+                                                                selectedPartitionId = newRail.id
+                                                                selectedPartitionIsVertical = false
+                                                                updateRoom(room.withUpdatedContainer(target.id) { updated })
+                                                            }
+                                                        }
+                                                    } else {
+                                                        val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                            currentC.withMovedClothesRail(partId, newElevationYMm = clampedY, targetXMm = clampedX)
+                                                        }
+                                                        updateRoom(updatedRoom)
+                                                    }
                                                 }
                                             }
                                         }
@@ -2862,7 +2916,7 @@ fun RoomScreen() {
                                                         )
                                                     }
                                                 }
-                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH -> {
+                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH, DraggedUnitType.CLOTHES_RAIL -> {
                                                     val partId = activeDragPartitionId
                                                     if (partId != null && target != null) {
                                                         selectedContainerId = target.id
@@ -3001,6 +3055,7 @@ fun RoomScreen() {
                                         DraggedUnitType.HORIZONTAL_SHELF -> HorizontalShelf3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.DRAWER -> Drawer3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.DRAWER_NOTCH -> DrawerNotch3DGraphic(modifier = Modifier.fillMaxSize())
+                                        DraggedUnitType.CLOTHES_RAIL -> ClothesRail3DGraphic(modifier = Modifier.fillMaxSize())
                                     }
                                 }
                             }
@@ -3627,6 +3682,7 @@ private fun RightSideUnitsAndInspectorColumn(
     onAddDivider: (dropFractionX: Float?) -> Unit = {},
     onAddShelf: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onAddDrawer: (dropFractionX: Float?, dropFractionY: Float?, frontType: DrawerFrontType) -> Unit = { _, _, _ -> },
+    onAddClothesRail: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onDragUnitStart: (DraggedUnitType, startRootPos: Offset) -> Unit,
     onDragUnitMove: (delta: Offset) -> Unit,
     onDragUnitEnd: () -> Unit,
@@ -3886,6 +3942,7 @@ private fun RightSideUnitsAndInspectorColumn(
                 var shelfRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var drawerRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var drawerNotchRootOffset by remember { mutableStateOf(Offset.Zero) }
+                var clothesRailRootOffset by remember { mutableStateOf(Offset.Zero) }
 
                 Column(
                     modifier = Modifier
@@ -4056,6 +4113,39 @@ private fun RightSideUnitsAndInspectorColumn(
                             modifier = Modifier
                                 .fillMaxWidth(0.82f)
                                 .height(120.dp),
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(horizontal = 24.dp))
+
+                    // 6th Unit: Clothes Rail / Hanger Rod ("Tubo colgador", matching screenshot media_1793508080702_50ab7e38.png)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .height(90.dp)
+                            .onGloballyPositioned { coordinates ->
+                                clothesRailRootOffset = coordinates.positionInRoot()
+                            }
+                            .pointerInput(Unit) {
+                                detectCatalogUnitDragGestures(
+                                    onDragStart = { localOffset ->
+                                        onDragUnitStart(DraggedUnitType.CLOTHES_RAIL, clothesRailRootOffset + localOffset)
+                                    },
+                                    onDrag = { dragAmount ->
+                                        onDragUnitMove(dragAmount)
+                                    },
+                                    onDragEnd = { onDragUnitEnd() },
+                                    onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddClothesRail(null, null) },
+                                )
+                            },
+                    ) {
+                        ClothesRail3DGraphic(
+                            modifier = Modifier
+                                .fillMaxWidth(0.85f)
+                                .height(80.dp),
                         )
                     }
                 }
@@ -4586,6 +4676,93 @@ private fun DrawerNotch3DGraphic(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun ClothesRail3DGraphic(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        val chromeBase = Color(0xFFC4C4C4)
+        val chromeHighlight = Color(0xFFFFFFFF)
+        val chromeShadow = Color(0xFF757575)
+        val bracketColor = Color(0xFF8E8E8E)
+        val lineStroke = Color(0xFF555555)
+
+        val railW = w * 0.85f
+        val x0 = (w - railW) * 0.5f
+        val x1 = x0 + railW
+        val yCenter = h * 0.5f
+
+        val rodRadiusY = (h * 0.12f).coerceIn(6f, 12f)
+        val bracketRadiusY = rodRadiusY * 1.8f
+        val bracketW = 12f
+
+        // 1. Left Mounting Flange Bracket
+        val leftBracketPath = Path().apply {
+            addOval(
+                Rect(
+                    left = x0,
+                    top = yCenter - bracketRadiusY,
+                    right = x0 + bracketW,
+                    bottom = yCenter + bracketRadiusY,
+                )
+            )
+        }
+        drawPath(leftBracketPath, color = bracketColor)
+        drawPath(leftBracketPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 2. Right Mounting Flange Bracket
+        val rightBracketPath = Path().apply {
+            addOval(
+                Rect(
+                    left = x1 - bracketW,
+                    top = yCenter - bracketRadiusY,
+                    right = x1,
+                    bottom = yCenter + bracketRadiusY,
+                )
+            )
+        }
+        drawPath(rightBracketPath, color = bracketColor)
+        drawPath(rightBracketPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 3. Central Chrome Rod Body (gradient shading from top highlight to bottom shadow)
+        val rodRect = Rect(
+            left = x0 + bracketW * 0.6f,
+            top = yCenter - rodRadiusY,
+            right = x1 - bracketW * 0.6f,
+            bottom = yCenter + rodRadiusY,
+        )
+        drawRect(
+            brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                colors = listOf(
+                    chromeShadow,
+                    chromeHighlight,
+                    chromeBase,
+                    chromeShadow,
+                ),
+                startY = rodRect.top,
+                endY = rodRect.bottom,
+            ),
+            topLeft = Offset(rodRect.left, rodRect.top),
+            size = Size(rodRect.width, rodRect.height),
+        )
+        // Outer stroke of rod
+        drawRect(
+            color = lineStroke.copy(alpha = 0.7f),
+            topLeft = Offset(rodRect.left, rodRect.top),
+            size = Size(rodRect.width, rodRect.height),
+            style = Stroke(width = 1f),
+        )
+        // Specular highlight line along top edge
+        drawLine(
+            color = Color.White.copy(alpha = 0.85f),
+            start = Offset(rodRect.left + 2f, yCenter - rodRadiusY * 0.35f),
+            end = Offset(rodRect.right - 2f, yCenter - rodRadiusY * 0.35f),
+            strokeWidth = 1.8f,
+        )
+    }
+}
+
+@Composable
 private fun ModuleDimensionRow(
     label: String,
     valueMm: Float,
@@ -4792,6 +4969,7 @@ private fun ModuleInspectorContent(
         } else {
             val shelf = activeContainer.shelves.firstOrNull { it.id == selectedPartitionId }
             val drawer = if (shelf == null) activeContainer.drawers.firstOrNull { it.id == selectedPartitionId } else null
+            val rail = if (shelf == null && drawer == null) activeContainer.clothesRails.firstOrNull { it.id == selectedPartitionId } else null
             if (shelf != null) {
                 val bays = activeContainer.getBays()
                 val bay = bays.getOrElse(shelf.bayIndex) { bays.last() }
@@ -4990,6 +5168,100 @@ private fun ModuleInspectorContent(
                     val newElev = newBottom.coerceIn(0f, maxElev)
                     onUpdateContainer(activeContainer.id) { c ->
                         c.withUpdatedDrawer(drawer.id) { it.copy(elevationYMm = newElev) }
+                    }
+                }
+            } else if (rail != null) {
+                val bays = activeContainer.getBays()
+                val bay = bays.getOrElse(rail.bayIndex) { bays.last() }
+
+                // Width (adapted from bay!)
+                ModuleDimensionRow(
+                    label = s.partitionWidthLabel,
+                    valueMm = bay.widthMm,
+                    unitSystem = unitSystem,
+                    enabled = false,
+                ) {}
+
+                // Diameter
+                ModuleDimensionRow(
+                    label = s.partitionDiameterLabel,
+                    valueMm = rail.diameterMm,
+                    unitSystem = unitSystem,
+                    stepMm = 1f,
+                    minMm = 15f,
+                    maxMm = 50f,
+                    enabled = true,
+                ) { newDiameter ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedClothesRail(rail.id) { it.copy(diameterMm = newDiameter) }
+                    }
+                }
+
+                // Depth
+                val currentDepth = rail.effectiveDepth(activeContainer.interiorDepthMm)
+                ModuleDimensionRow(
+                    label = s.partitionDepthLabel,
+                    valueMm = currentDepth,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 50f,
+                    maxMm = (activeContainer.interiorDepthMm - 50f).coerceAtLeast(50f),
+                    enabled = true,
+                ) { newDepth ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedClothesRail(rail.id) { it.copy(depthOffsetMm = newDepth) }
+                    }
+                }
+
+                // Position header with lock icon
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = s.partitionPositionTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1A1A1A),
+                    )
+                }
+
+                val maxElev = (activeContainer.interiorHeightMm - rail.diameterMm).coerceAtLeast(0f)
+                val bottomDist = rail.elevationYMm
+                val topDist = (activeContainer.interiorHeightMm - rail.elevationYMm).coerceAtLeast(0f)
+
+                // Top distance (clearance to roof)
+                ModuleDimensionRow(
+                    label = s.partitionTopLabel,
+                    valueMm = topDist,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 0f,
+                    maxMm = maxElev,
+                    enabled = true,
+                ) { newTop ->
+                    val newElev = (activeContainer.interiorHeightMm - newTop).coerceIn(0f, maxElev)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedClothesRail(rail.id) { it.copy(elevationYMm = newElev) }
+                    }
+                }
+
+                // Bottom distance
+                ModuleDimensionRow(
+                    label = s.partitionBottomLabel,
+                    valueMm = bottomDist,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 0f,
+                    maxMm = maxElev,
+                    enabled = true,
+                ) { newBottom ->
+                    val newElev = newBottom.coerceIn(0f, maxElev)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedClothesRail(rail.id) { it.copy(elevationYMm = newElev) }
                     }
                 }
             }
