@@ -264,6 +264,38 @@ Closet dimensions overlay displays comprehensive architectural CAD dimension lin
    - **Legible Dual-Pass Typography:** Numbers are drawn in bold with a $3.5\text{ dp}$ white stroke outline behind black fill, guaranteeing 100% legibility over any wood textures, dark finishes, or room walls.
    - **Unit Awareness:** Formats integers without suffix under millimeter mode (`2500`, `2000`, `1860`, `1328`, `1112`, `1474`, `286`) and compact format under other units (`3.60m`, `11' 10\"`).
 
+---
+
+## 14. Dynamic Material & Texture Architecture (Arquitectura de Texturas Dinámicas y Vetas)
+The texture system allows applying photorealistic PBR finishes to closet furniture (melamines), room walls, and floors with zero manual code registration:
+
+1. **Zero-Boilerplate Dynamic Asset Discovery (`MaterialCatalog`):**
+   - Textures are organized by directory in `assets/textures/`:
+     - `assets/textures/melamines/`: MDF melamine wood grains and patterns for cabinets and doors.
+     - `assets/textures/walls/`: Wall finishes (stuccos, paints, papers, acoustic slats).
+     - `assets/textures/floors/`: Floor finishes (hardwood parquet, tiles, polished concrete).
+   - Dropping any `.jpg` or `.png` into these directories automatically discovers them at runtime without modifying code, catalogs, or JSON manifests.
+   - Filenames are converted into clean commercial display names (e.g. `mdf-carvalho_ebano.jpg` $\to$ `"Carvalho Ebano"`).
+
+2. **Core Data Model & Persistence (`Project.kt`):**
+   - `ClosetContainerSpec`: Holds `materialTextureId: String?` (container-specific melamine) and `isGrainHorizontal: Boolean` (grain orientation).
+   - `RoomSpec`: Holds `wallTextureId: String?`, `floorTextureId: String?`, `defaultMelamineTextureId: String?`, and `defaultGrainHorizontal: Boolean`.
+   - Containers inherit `defaultMelamineTextureId` and `defaultGrainHorizontal` when created or when "Aplicar a todos los muebles" is chosen.
+
+3. **Filament PBR Shader Texture Mapping (`RoomScene.kt` & `MeshBuilder.kt`):**
+   - **Physical Tiling:** `MeshBuilder` calculates planar UV coordinates scaled by physical world dimensions ($600\text{ mm}$ melamine tile, $1200\text{ mm}$ wall tile, $800\text{ mm}$ floor tile).
+   - **Wood Grain Orientation Control (`rotateUv90`):** By default, wood grain runs vertically (`(u, v)`). When horizontal grain is selected, UV coordinates are swapped: $(u, v) \to (v, u)$, seamlessly rotating textures $90^\circ$ across all 3D faces without stretching or vertex distortion.
+   - **PBR Material Instances:** Dynamically binds Filament `ImageTexture` to `opaque_textured.filamat` with physical metallic, roughness, and reflectance parameters tailored per surface:
+     - Furniture: Metallic $0.04$, Roughness $0.40$, Reflectance $0.55$.
+     - Floor: Metallic $0.05$, Roughness $0.35$, Reflectance $0.50$.
+     - Wall: Metallic $0.0$, Roughness $0.50$, Reflectance $0.60$.
+   - Falls back instantly to high-quality procedural color materials when `textureKey == null`.
+
+4. **Multi-Level UI Integration (`MaterialsDialog.kt` & `ContainerMelamineSection`):**
+   - **Room-Level Dialog:** Accessible from Navigation Drawer and TopAppBar Overflow menu with 3 tabs ("Melaminas", "Paredes", "Pisos"), grain toggle, and responsive thumbnail grids.
+   - **Container-Level Inspector:** Allows overriding finishes per cabinet with horizontal scrolling carousel, grain toggle chip, and "Aplicar a todos los muebles" button.
+
+
 
 
 

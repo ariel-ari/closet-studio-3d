@@ -13,3 +13,6 @@ work/
 .idea/
 *.iml
 
+# Temporary local asset drops
+texturas/
+

@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Save
@@ -987,6 +988,7 @@ fun RoomScreen() {
     var showMyProjectsDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showUnitSystemDialog by remember { mutableStateOf(false) }
+    var showMaterialsDialog by remember { mutableStateOf(false) }
     var appUnitSystem by remember {
         mutableStateOf(AppUnitSystem.fromCode(projectStorage.getUnitSystemCode()))
     }
@@ -1377,6 +1379,17 @@ fun RoomScreen() {
                     )
 
                     NavigationDrawerItem(
+                        label = { Text(s.materialsAndTexturesTitle) },
+                        icon = { Icon(Icons.Default.Palette, null) },
+                        selected = false,
+                        onClick = {
+                            coroutineScope.launch { drawerState.close() }
+                            showMaterialsDialog = true
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+
+                    NavigationDrawerItem(
                         label = { Text(s.resetValues) },
                         icon = { Icon(Icons.Default.RestartAlt, null) },
                         selected = false,
@@ -1712,6 +1725,14 @@ fun RoomScreen() {
                                         onClick = {
                                             showOverflowMenu = false
                                             showUnitSystemDialog = true
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(s.materialsAndTexturesTitle) },
+                                        leadingIcon = { Icon(Icons.Default.Palette, null) },
+                                        onClick = {
+                                            showOverflowMenu = false
+                                            showMaterialsDialog = true
                                         },
                                     )
                                     DropdownMenuItem(
@@ -3539,6 +3560,12 @@ fun RoomScreen() {
                                     onClosePartition = {
                                         selectedPartitionId = null
                                     },
+                                    onApplyMelamineToAll = { textureId, horizontal ->
+                                        updateRoom(room.withAppliedMelamineToAllContainers(textureId, horizontal))
+                                        coroutineScope.launch {
+                                            messageHostState.showSnackbar(s.finishAppliedToAllToast)
+                                        }
+                                    },
                                     onClose = {
                                         showUnitsColumn = false
                                     },
@@ -4130,6 +4157,15 @@ fun RoomScreen() {
                     )
                 }
 
+                if (showMaterialsDialog) {
+                    MaterialsAndTexturesDialog(
+                        room = room,
+                        s = s,
+                        onUpdateRoom = { updateRoom(it) },
+                        onDismiss = { showMaterialsDialog = false },
+                    )
+                }
+
                 SnackbarHost(
                     hostState = messageHostState,
                     modifier = Modifier
@@ -4227,6 +4263,7 @@ private fun RightSideUnitsAndInspectorColumn(
     onDuplicatePartition: (containerId: String, partitionId: String, isVertical: Boolean) -> Unit = { _, _, _ -> },
     onDeletePartition: (containerId: String, partitionId: String) -> Unit = { _, _ -> },
     onClosePartition: () -> Unit = {},
+    onApplyMelamineToAll: (String?, Boolean) -> Unit = { _, _ -> },
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -4444,6 +4481,20 @@ private fun RightSideUnitsAndInspectorColumn(
                             )
                         }
                     }
+
+                    // Melamine Material & Grain Section
+                    ContainerMelamineSection(
+                        container = clamped,
+                        room = room,
+                        s = s,
+                        onUpdateContainer = { updated ->
+                            onUpdateContainer(clamped.id) { updated }
+                        },
+                        onApplyToAll = {
+                            val activeTex = clamped.materialTextureId ?: room.defaultMelamineTextureId
+                            onApplyMelamineToAll(activeTex, clamped.isGrainHorizontal)
+                        },
+                    )
 
                     // Action row inside editor (Duplicate & Delete)
                     Row(

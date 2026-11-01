@@ -73,6 +73,17 @@ fun RoomScene(
     val engine = rememberEngine()
     val materialLoader = rememberMaterialLoader(engine)
     val cameraNode = rememberCameraNode(engine)
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val textureCache = remember(engine) { mutableMapOf<String, com.google.android.filament.Texture?>() }
+    androidx.compose.runtime.DisposableEffect(engine) {
+        onDispose {
+            textureCache.values.filterNotNull().forEach { tex ->
+                runCatching { engine.destroyTexture(tex) }
+            }
+            textureCache.clear()
+        }
+    }
 
     // Room center coordinates and human eye height (1.40 m)
     val centerX = room.clearWidthMm * 0.5f * MM_TO_M
@@ -165,10 +176,68 @@ fun RoomScene(
                 color = Float4(1f, 1f, 1f, 1f),
             )
 
-            parts.forEachIndexed { index, (surface, mesh) ->
-                key(surface, index) {
-                    val material = remember(engine, surface) {
-                        when (surface) {
+            parts.forEachIndexed { index, (surface, mesh, textureKey) ->
+                key(surface, index, textureKey) {
+                    val material = remember(engine, surface, textureKey) {
+                        val loadedTexture = textureKey?.let { path ->
+                            if (textureCache.containsKey(path)) {
+                                textureCache[path]
+                            } else {
+                                val loaded = try {
+                                    context.assets.open(path).use { stream ->
+                                        val bitmap = android.graphics.BitmapFactory.decodeStream(stream)
+                                        if (bitmap != null) {
+                                            io.github.sceneview.texture.ImageTexture.Builder()
+                                                .bitmap(bitmap, com.google.android.filament.utils.TextureType.COLOR)
+                                                .build(engine)
+                                        } else null
+                                    }
+                                } catch (t: Throwable) {
+                                    android.util.Log.e("RoomScene", "Error loading texture: $path", t)
+                                    null
+                                }
+                                textureCache[path] = loaded
+                                loaded
+                            }
+                        }
+
+                        val texturedMaterial = if (loadedTexture != null) {
+                            when (surface) {
+                                RoomSurface.FLOOR -> materialLoader.createTextureInstance(
+                                    texture = loadedTexture,
+                                    isOpaque = true,
+                                    metallic = 0.05f,
+                                    roughness = 0.35f,
+                                    reflectance = 0.5f,
+                                )
+                                RoomSurface.WALL -> materialLoader.createTextureInstance(
+                                    texture = loadedTexture,
+                                    isOpaque = true,
+                                    metallic = 0.0f,
+                                    roughness = 0.5f,
+                                    reflectance = 0.6f,
+                                )
+                                RoomSurface.CONTAINER_FRONT_EDGE -> materialLoader.createTextureInstance(
+                                    texture = loadedTexture,
+                                    isOpaque = true,
+                                    metallic = 0.06f,
+                                    roughness = 0.32f,
+                                    reflectance = 0.62f,
+                                )
+                                RoomSurface.CONTAINER_BODY,
+                                RoomSurface.CONTAINER_SIDE_PANEL,
+                                RoomSurface.CONTAINER_BACK -> materialLoader.createTextureInstance(
+                                    texture = loadedTexture,
+                                    isOpaque = true,
+                                    metallic = 0.04f,
+                                    roughness = 0.40f,
+                                    reflectance = 0.55f,
+                                )
+                                else -> null
+                            }
+                        } else null
+
+                        texturedMaterial ?: when (surface) {
                             RoomSurface.FLOOR -> materialLoader.createColorInstance(
                                 color = Color(0xFFE0D2BE), // Bright light oak parquet
                                 metallic = 0.05f,

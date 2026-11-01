@@ -8,7 +8,10 @@ package com.closetstudio.core.geometry
  * texture size, which is what makes wood grain look consistent across a run of
  * carcasses. The projection axis is chosen from the dominant normal component.
  */
-class MeshBuilder(private val uvScaleMm: Float = 600f) {
+class MeshBuilder(
+    private val uvScaleMm: Float = 600f,
+    private val rotateUv90: Boolean = false,
+) {
     private val positions = FloatList(256)
     private val normals = FloatList(256)
     private val uvs = FloatList(256)
@@ -92,11 +95,12 @@ class MeshBuilder(private val uvScaleMm: Float = 600f) {
         val ay = kotlin.math.abs(n.y)
         val az = kotlin.math.abs(n.z)
         val scale = if (uvScaleMm == 0f) 1f else 1f / uvScaleMm
-        return when {
+        val (u, v) = when {
             ax >= ay && ax >= az -> (p.z * scale) to (p.y * scale)
             ay >= ax && ay >= az -> (p.x * scale) to (p.z * scale)
             else -> (p.x * scale) to (p.y * scale)
         }
+        return if (rotateUv90) (v to u) else (u to v)
     }
 
     private fun normalize(v: Vec3): Vec3 {

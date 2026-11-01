@@ -164,6 +164,18 @@ data class UiStrings(
     val partitionTopLabel: String,
     val partitionAddedToast: String,
     val partitionDeletedToast: String,
+    val materialsAndTexturesTitle: String,
+    val tabMelamines: String,
+    val tabWalls: String,
+    val tabFloors: String,
+    val grainDirectionLabel: String,
+    val grainVerticalLabel: String,
+    val grainHorizontalLabel: String,
+    val solidColorLabel: String,
+    val applyToAllContainersButton: String,
+    val finishAppliedToAllToast: String,
+    val noTexturesInFolder: String,
+    val copyTexturesHint: String,
 )
 
 private val SpanishStrings = UiStrings(
@@ -302,6 +314,18 @@ private val SpanishStrings = UiStrings(
     partitionTopLabel = "Arriba",
     partitionAddedToast = "División colocada en el armario",
     partitionDeletedToast = "División eliminada",
+    materialsAndTexturesTitle = "Materiales y Acabados",
+    tabMelamines = "Melaminas",
+    tabWalls = "Paredes",
+    tabFloors = "Pisos",
+    grainDirectionLabel = "Sentido de la veta",
+    grainVerticalLabel = "Vertical (por defecto)",
+    grainHorizontalLabel = "Horizontal",
+    solidColorLabel = "Color sólido / Por defecto",
+    applyToAllContainersButton = "Aplicar acabado a todos los muebles",
+    finishAppliedToAllToast = "Acabado aplicado a todos los muebles de la habitación",
+    noTexturesInFolder = "No se encontraron texturas en esta carpeta",
+    copyTexturesHint = "Copiá archivos .jpg o .png en assets/textures/ para agregarlas automáticamente",
 )
 
 private val EnglishStrings = UiStrings(
@@ -440,6 +464,18 @@ private val EnglishStrings = UiStrings(
     partitionTopLabel = "Top",
     partitionAddedToast = "Partition placed inside closet",
     partitionDeletedToast = "Partition deleted",
+    materialsAndTexturesTitle = "Materials & Finishes",
+    tabMelamines = "Melamines",
+    tabWalls = "Walls",
+    tabFloors = "Floors",
+    grainDirectionLabel = "Grain orientation",
+    grainVerticalLabel = "Vertical (default)",
+    grainHorizontalLabel = "Horizontal",
+    solidColorLabel = "Solid color / Default",
+    applyToAllContainersButton = "Apply finish to all furniture",
+    finishAppliedToAllToast = "Finish applied to all furniture in the room",
+    noTexturesInFolder = "No textures found in this folder",
+    copyTexturesHint = "Copy .jpg or .png files into assets/textures/ to add them automatically",
 )
 
 fun stringsFor(lang: AppLanguage): UiStrings = when (lang) {

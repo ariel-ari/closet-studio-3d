@@ -109,6 +109,34 @@ class MeshBuilderTest {
     }
 
     @Test
+    fun `uv rotation 90 degrees swaps u and v coordinates for horizontal wood grain`() {
+        val normalMesh = MeshBuilder(uvScaleMm = 600f, rotateUv90 = false).apply {
+            addQuad(
+                Vec3(0f, 0f, 0f), Vec3(600f, 0f, 0f), Vec3(600f, 1200f, 0f), Vec3(0f, 1200f, 0f),
+                Vec3.UNIT_Z,
+            )
+        }.build()
+
+        val rotatedMesh = MeshBuilder(uvScaleMm = 600f, rotateUv90 = true).apply {
+            addQuad(
+                Vec3(0f, 0f, 0f), Vec3(600f, 0f, 0f), Vec3(600f, 1200f, 0f), Vec3(0f, 1200f, 0f),
+                Vec3.UNIT_Z,
+            )
+        }.build()
+
+        assertEquals(normalMesh.vertexCount, rotatedMesh.vertexCount)
+        for (v in 0 until normalMesh.vertexCount) {
+            val normalU = normalMesh.uvs[v * 2]
+            val normalV = normalMesh.uvs[v * 2 + 1]
+            val rotatedU = rotatedMesh.uvs[v * 2]
+            val rotatedV = rotatedMesh.uvs[v * 2 + 1]
+
+            assertEquals(normalU, rotatedV, 1e-4f)
+            assertEquals(normalV, rotatedU, 1e-4f)
+        }
+    }
+
+    @Test
     fun `bounds report the box envelope`() {
         val mesh = MeshBuilder(600f).apply {
             addBoxOriginSize(Vec3(10f, 20f, 30f), Vec3(100f, 200f, 300f))

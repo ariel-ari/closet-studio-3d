@@ -310,6 +310,8 @@ data class ClosetContainerSpec(
     val verticalPoles: List<VerticalPoleSpec> = emptyList(),
     val shoeRacks: List<ShoeRackSpec> = emptyList(),
     val cabinetDoors: List<CabinetDoorsSpec> = emptyList(),
+    val materialTextureId: String? = null,
+    val isGrainHorizontal: Boolean = false,
 ) {
     init {
         require(widthMm >= 0f) { "container width must be non-negative" }
@@ -1405,6 +1407,9 @@ data class ClosetContainerSpec(
             cabinetDoors = reclampedDoors,
         )
     }
+
+    fun withMaterialTexture(textureId: String?): ClosetContainerSpec = copy(materialTextureId = textureId)
+    fun withGrainDirection(horizontal: Boolean): ClosetContainerSpec = copy(isGrainHorizontal = horizontal)
 }
 
 @Serializable
@@ -1455,6 +1460,10 @@ data class RoomSpec(
     val lockAngleCD: Boolean = false,
     val door: DoorSpec = DoorSpec(),
     val containers: List<ClosetContainerSpec> = emptyList(),
+    val wallTextureId: String? = null,
+    val floorTextureId: String? = null,
+    val defaultMelamineTextureId: String? = null,
+    val defaultGrainHorizontal: Boolean = false,
 ) {
     init {
         require(clearWidthMm >= 0f) { "Room width must be non-negative, got $clearWidthMm" }
@@ -2450,6 +2459,8 @@ data class RoomSpec(
             widthMm = w,
             heightMm = h,
             depthMm = d,
+            materialTextureId = defaultMelamineTextureId,
+            isGrainHorizontal = defaultGrainHorizontal,
         )
         val clamped = clampContainer(raw)
         return copy(containers = containers + clamped)
@@ -2504,6 +2515,21 @@ data class RoomSpec(
     fun withRemovedContainer(id: String): RoomSpec {
         return copy(containers = containers.filterNot { it.id == id })
     }
+
+    fun withWallTexture(textureId: String?): RoomSpec = copy(wallTextureId = textureId)
+    fun withFloorTexture(textureId: String?): RoomSpec = copy(floorTextureId = textureId)
+    fun withDefaultMelamineTexture(textureId: String?): RoomSpec = copy(defaultMelamineTextureId = textureId)
+    fun withDefaultGrainHorizontal(horizontal: Boolean): RoomSpec =
+        copy(
+            defaultGrainHorizontal = horizontal,
+            containers = containers.map { it.copy(isGrainHorizontal = horizontal) },
+        )
+    fun withAppliedMelamineToAllContainers(textureId: String?, horizontal: Boolean): RoomSpec =
+        copy(
+            defaultMelamineTextureId = textureId,
+            defaultGrainHorizontal = horizontal,
+            containers = containers.map { it.copy(materialTextureId = textureId, isGrainHorizontal = horizontal) },
+        )
 
     /**
      * Performs a 3D ray-box intersection test (in millimetres) against all placed [containers],

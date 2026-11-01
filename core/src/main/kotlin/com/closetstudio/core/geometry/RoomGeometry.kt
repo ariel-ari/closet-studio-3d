@@ -29,6 +29,7 @@ enum class RoomSurface {
 data class RoomPart(
     val surface: RoomSurface,
     val mesh: MeshData,
+    val textureKey: String? = null,
 )
 
 /**
@@ -76,7 +77,8 @@ object RoomGeometryBuilder {
             d = Vec3(sw.x, -slab, sw.z),
             normal = Vec3(0f, -1f, 0f),
         )
-        parts += RoomPart(RoomSurface.FLOOR, floorBuilder.build())
+        val floorTextureKey = room.floorTextureId?.let { "textures/floors/$it" }
+        parts += RoomPart(RoomSurface.FLOOR, floorBuilder.build(), textureKey = floorTextureKey)
 
         // 2. Ceiling (inward-facing quad with normal -Y)
         val ceilingBuilder = MeshBuilder(uvScaleMm)
@@ -221,52 +223,61 @@ object RoomGeometryBuilder {
             )
         }
 
-        parts += RoomPart(RoomSurface.WALL, wallBuilder.build())
+        val wallTextureKey = room.wallTextureId?.let { "textures/walls/$it" }
+        parts += RoomPart(RoomSurface.WALL, wallBuilder.build(), textureKey = wallTextureKey)
         parts += RoomPart(RoomSurface.DOOR_FRAME, frameBuilder.build())
         parts += RoomPart(RoomSurface.DOOR_LEAF, leafBuilder.build())
 
         if (room.containers.isNotEmpty()) {
-            val horizPanelsBuilder = MeshBuilder(uvScaleMm)
-            val vertPanelsBuilder = MeshBuilder(uvScaleMm)
-            val frontEdgesBuilder = MeshBuilder(uvScaleMm)
-            val containerBackBuilder = MeshBuilder(uvScaleMm)
             val selectedOutlineBuilder = MeshBuilder(uvScaleMm)
             val partitionOutlineBuilder = MeshBuilder(uvScaleMm)
 
             for (rawContainer in room.containers) {
                 val container = room.clampContainer(rawContainer)
                 if (container.widthMm < 40f || container.heightMm < 40f || container.depthMm < 40f) continue
+
+                val textureKey = (container.materialTextureId ?: room.defaultMelamineTextureId)?.let {
+                    "textures/melamines/$it"
+                }
+                val grainRotated = container.isGrainHorizontal
+
+                val cHorizPanelsBuilder = MeshBuilder(uvScaleMm, rotateUv90 = grainRotated)
+                val cVertPanelsBuilder = MeshBuilder(uvScaleMm, rotateUv90 = grainRotated)
+                val cFrontEdgesBuilder = MeshBuilder(uvScaleMm, rotateUv90 = grainRotated)
+                val cBackBuilder = MeshBuilder(uvScaleMm, rotateUv90 = grainRotated)
+
                 addContainerToBuilders(
                     room = room,
                     container = container,
-                    horizPanelsBuilder = horizPanelsBuilder,
-                    vertPanelsBuilder = vertPanelsBuilder,
-                    frontEdgesBuilder = frontEdgesBuilder,
-                    backBuilder = containerBackBuilder,
+                    horizPanelsBuilder = cHorizPanelsBuilder,
+                    vertPanelsBuilder = cVertPanelsBuilder,
+                    frontEdgesBuilder = cFrontEdgesBuilder,
+                    backBuilder = cBackBuilder,
                     selectedOutlineBuilder = if (container.id == selectedContainerId) selectedOutlineBuilder else null,
                     selectedPartitionId = selectedPartitionId,
                     partitionOutlineBuilder = partitionOutlineBuilder,
                     handleBuilder = handleBuilder,
                     showDoors = showDoors,
                 )
+
+                val horizMesh = cHorizPanelsBuilder.build()
+                if (horizMesh.vertexCount > 0) {
+                    parts += RoomPart(RoomSurface.CONTAINER_BODY, horizMesh, textureKey = textureKey)
+                }
+                val vertMesh = cVertPanelsBuilder.build()
+                if (vertMesh.vertexCount > 0) {
+                    parts += RoomPart(RoomSurface.CONTAINER_SIDE_PANEL, vertMesh, textureKey = textureKey)
+                }
+                val frontEdgeMesh = cFrontEdgesBuilder.build()
+                if (frontEdgeMesh.vertexCount > 0) {
+                    parts += RoomPart(RoomSurface.CONTAINER_FRONT_EDGE, frontEdgeMesh, textureKey = textureKey)
+                }
+                val backMesh = cBackBuilder.build()
+                if (backMesh.vertexCount > 0) {
+                    parts += RoomPart(RoomSurface.CONTAINER_BACK, backMesh, textureKey = textureKey)
+                }
             }
 
-            val horizMesh = horizPanelsBuilder.build()
-            if (horizMesh.vertexCount > 0) {
-                parts += RoomPart(RoomSurface.CONTAINER_BODY, horizMesh)
-            }
-            val vertMesh = vertPanelsBuilder.build()
-            if (vertMesh.vertexCount > 0) {
-                parts += RoomPart(RoomSurface.CONTAINER_SIDE_PANEL, vertMesh)
-            }
-            val frontEdgeMesh = frontEdgesBuilder.build()
-            if (frontEdgeMesh.vertexCount > 0) {
-                parts += RoomPart(RoomSurface.CONTAINER_FRONT_EDGE, frontEdgeMesh)
-            }
-            val backMesh = containerBackBuilder.build()
-            if (backMesh.vertexCount > 0) {
-                parts += RoomPart(RoomSurface.CONTAINER_BACK, backMesh)
-            }
             val outlineMesh = selectedOutlineBuilder.build()
             if (outlineMesh.vertexCount > 0) {
                 parts += RoomPart(RoomSurface.CONTAINER_SELECTED_OUTLINE, outlineMesh)
