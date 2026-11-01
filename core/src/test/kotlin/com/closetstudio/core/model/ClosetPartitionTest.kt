@@ -377,4 +377,60 @@ class ClosetPartitionTest {
         // Must snap to exactly 970 mm!
         assertMm(970f, div.offsetXMm)
     }
+
+    @Test
+    fun `adding drawer places it in bay and respects zero penetration rule`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 1800f,
+            heightMm = 2200f,
+            depthMm = 600f,
+            panelThicknessMm = 18f,
+            plinthHeightMm = 80f,
+        ).withAddedDivider(offsetXMm = 900f)
+
+        // Add drawer in Bay 0 at bottom
+        container = container.withAddedDrawer(bayIndex = 0, elevationYMm = 0f, heightMm = 200f)
+        val drawer = container.drawers.single()
+        assertMm(0f, drawer.elevationYMm)
+        assertMm(200f, drawer.heightMm)
+        assertEquals(0, drawer.bayIndex)
+
+        // Add second drawer in Bay 0 (should default to stacking on top of drawer 1: elevation 200 mm)
+        container = container.withAddedDrawer(bayIndex = 0, heightMm = 200f)
+        assertEquals(2, container.drawers.size)
+        val drawer2 = container.drawers[1]
+        assertMm(200f, drawer2.elevationYMm)
+
+        // Geometry builds with drawer parts and outline
+        val room = RoomSpec(containers = listOf(container))
+        val parts = RoomGeometryBuilder.build(room, selectedContainerId = "c1", selectedPartitionId = drawer.id)
+        assertTrue(parts.any { it.surface == RoomSurface.CONTAINER_BODY })
+        assertTrue(parts.any { it.surface == RoomSurface.DOOR_HANDLE })
+        assertTrue(parts.any { it.surface == RoomSurface.PARTITION_SELECTED_OUTLINE })
+    }
+
+    @Test
+    fun `drawer in adjacent bay magnetically snaps to match drawer elevation`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+            plinthHeightMm = 80f,
+        ).withAddedDivider(offsetXMm = 970f)
+
+        // Reference drawer in Bay 0 at elevation 0 mm
+        container = container.withAddedDrawer(bayIndex = 0, elevationYMm = 0f, heightMm = 200f)
+
+        // Add drawer in Bay 1 at elevation 15 mm (near 0 mm threshold)
+        container = container.withAddedDrawer(bayIndex = 1, elevationYMm = 15f, heightMm = 200f)
+        val drawerBay1 = container.drawers.first { it.bayIndex == 1 }
+
+        // Must snap to 0 mm flush with drawer in bay 0!
+        assertMm(0f, drawerBay1.elevationYMm)
+    }
 }

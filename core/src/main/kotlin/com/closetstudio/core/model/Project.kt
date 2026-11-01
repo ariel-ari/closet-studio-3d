@@ -111,6 +111,27 @@ data class HorizontalShelfSpec(
 }
 
 @Serializable
+data class DrawerSpec(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val bayIndex: Int = 0,
+    val elevationYMm: Float = 0f,
+    val heightMm: Float = 200f,
+    val depthMm: Float? = null,
+    val hasHandle: Boolean = true,
+) {
+    init {
+        require(bayIndex >= 0) { "drawer bayIndex must be non-negative" }
+        require(elevationYMm >= 0f) { "drawer elevation must be non-negative" }
+        require(heightMm > 0f) { "drawer height must be positive" }
+        if (depthMm != null) {
+            require(depthMm > 0f) { "drawer depth must be positive" }
+        }
+    }
+
+    fun effectiveDepth(interiorDepthMm: Float): Float = (depthMm ?: interiorDepthMm).coerceAtLeast(100f)
+}
+
+@Serializable
 data class ClosetContainerSpec(
     val id: String,
     val wall: WallIndex = WallIndex.NORTH,
@@ -125,6 +146,7 @@ data class ClosetContainerSpec(
     val fuseEndCorner: Boolean = false,
     val dividers: List<VerticalDividerSpec> = emptyList(),
     val shelves: List<HorizontalShelfSpec> = emptyList(),
+    val drawers: List<DrawerSpec> = emptyList(),
 ) {
     init {
         require(widthMm >= 0f) { "container width must be non-negative" }
@@ -216,22 +238,42 @@ data class ClosetContainerSpec(
     fun findSnapElevation(
         currentShelfId: String?,
         rawElevationYMm: Float,
+        targetBayIndex: Int? = null,
         shelfThicknessMm: Float = effectivePanelThicknessMm,
         snapThresholdMm: Float = 28f,
     ): Float {
         if (snapThresholdMm <= 0f) return rawElevationYMm
         val innerH = interiorHeightMm
 
-        // Priority 1: Match existing shelves across the entire container
-        val existingTargets = shelves
-            .filter { it.id != currentShelfId }
-            .flatMap { other ->
-                if (other.thicknessMm == shelfThicknessMm) {
-                    listOf(other.elevationYMm)
-                } else {
-                    listOf(other.elevationYMm, other.elevationYMm + other.thicknessMm - shelfThicknessMm)
+        // Priority 1: Match existing shelves and drawers across the entire container
+        val existingTargets = mutableListOf<Float>()
+        for (other in shelves) {
+            if (other.id != currentShelfId) {
+                // Coplanar shelf alignment across bays
+                existingTargets.add(other.elevationYMm)
+                if (other.thicknessMm != shelfThicknessMm) {
+                    existingTargets.add(other.elevationYMm + other.thicknessMm - shelfThicknessMm)
+                }
+                // Stacking directly on top of a shelf in the same bay
+                if (targetBayIndex == null || other.bayIndex == targetBayIndex) {
+                    existingTargets.add(other.elevationYMm + other.thicknessMm)
                 }
             }
+        }
+        for (d in drawers) {
+            if (d.id != currentShelfId) {
+                // Coplanar alignment
+                existingTargets.add(d.elevationYMm)
+                // Stacking directly on top or underneath a drawer in the same bay
+                if (targetBayIndex == null || d.bayIndex == targetBayIndex) {
+                    existingTargets.add(d.elevationYMm + d.heightMm)
+                    val under = d.elevationYMm - shelfThicknessMm
+                    if (under >= 0f) existingTargets.add(under)
+                }
+            }
+        }
+        // Flush on bottom floor panel
+        existingTargets.add(0f)
 
         var bestMatch: Float? = null
         var bestDist = Float.MAX_VALUE
@@ -459,20 +501,21 @@ data class ClosetContainerSpec(
         val innerH = interiorHeightMm
         val thickness = shelf.thicknessMm
         val clampedElev = newElevationYMm.coerceIn(10f, (innerH - thickness - 10f).coerceAtLeast(10f))
+        val newBayIndex = if (targetXMm != null) {
+            findBayAtX(targetXMm).index
+        } else {
+            shelf.bayIndex
+        }
         val snappedElev = if (snapThresholdMm > 0f) {
             findSnapElevation(
                 currentShelfId = id,
                 rawElevationYMm = clampedElev,
+                targetBayIndex = newBayIndex,
                 shelfThicknessMm = thickness,
                 snapThresholdMm = snapThresholdMm,
             )
         } else {
             clampedElev
-        }
-        val newBayIndex = if (targetXMm != null) {
-            findBayAtX(targetXMm).index
-        } else {
-            shelf.bayIndex
         }
 
         return withUpdatedShelf(id) {
@@ -497,6 +540,7 @@ data class ClosetContainerSpec(
             findSnapElevation(
                 currentShelfId = null,
                 rawElevationYMm = rawElev,
+                targetBayIndex = targetBay,
                 shelfThicknessMm = thickness,
                 snapThresholdMm = snapThresholdMm,
             )
@@ -512,6 +556,79 @@ data class ClosetContainerSpec(
         return copy(shelves = shelves + newShelf)
     }
 
+    fun withAddedDrawer(
+        bayIndex: Int? = null,
+        elevationYMm: Float? = null,
+        heightMm: Float = 200f,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
+        val innerH = interiorHeightMm
+        val bays = getBays()
+        val targetBay = (bayIndex ?: 0).coerceIn(0, bays.lastIndex)
+        val defaultElev = run {
+            val bayDrawers = drawers.filter { it.bayIndex == targetBay }
+            if (bayDrawers.isEmpty()) 0f
+            else {
+                val highest = bayDrawers.maxByOrNull { it.elevationYMm + it.heightMm }!!
+                highest.elevationYMm + highest.heightMm
+            }
+        }
+        val rawElev = (elevationYMm ?: defaultElev).coerceIn(0f, (innerH - heightMm).coerceAtLeast(0f))
+        val snappedElev = if (snapThresholdMm > 0f) {
+            findSnapElevation(
+                currentShelfId = null,
+                rawElevationYMm = rawElev,
+                targetBayIndex = targetBay,
+                shelfThicknessMm = heightMm,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            rawElev
+        }
+        val newDrawer = DrawerSpec(
+            id = "drawer_${System.currentTimeMillis()}_${drawers.size + 1}",
+            bayIndex = targetBay,
+            elevationYMm = snappedElev,
+            heightMm = heightMm,
+        )
+        return copy(drawers = drawers + newDrawer)
+    }
+
+    fun withMovedDrawer(
+        id: String,
+        newElevationYMm: Float,
+        targetXMm: Float? = null,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
+        val drawer = drawers.firstOrNull { it.id == id } ?: return this
+        val innerH = interiorHeightMm
+        val drawerH = drawer.heightMm
+        val clampedElev = newElevationYMm.coerceIn(0f, (innerH - drawerH).coerceAtLeast(0f))
+        val newBayIndex = if (targetXMm != null) {
+            findBayAtX(targetXMm).index
+        } else {
+            drawer.bayIndex
+        }
+        val snappedElev = if (snapThresholdMm > 0f) {
+            findSnapElevation(
+                currentShelfId = id,
+                rawElevationYMm = clampedElev,
+                targetBayIndex = newBayIndex,
+                shelfThicknessMm = drawerH,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            clampedElev
+        }
+
+        return withUpdatedDrawer(id) {
+            it.copy(
+                elevationYMm = snappedElev,
+                bayIndex = newBayIndex.coerceIn(0, getBays().lastIndex),
+            )
+        }
+    }
+
     fun withUpdatedDivider(id: String, transform: (VerticalDividerSpec) -> VerticalDividerSpec): ClosetContainerSpec {
         return copy(dividers = dividers.map { if (it.id == id) transform(it) else it })
     }
@@ -520,14 +637,22 @@ data class ClosetContainerSpec(
         return copy(shelves = shelves.map { if (it.id == id) transform(it) else it })
     }
 
+    fun withUpdatedDrawer(id: String, transform: (DrawerSpec) -> DrawerSpec): ClosetContainerSpec {
+        return copy(drawers = drawers.map { if (it.id == id) transform(it) else it })
+    }
+
     fun withRemovedPartition(id: String): ClosetContainerSpec {
         val remainingDividers = dividers.filterNot { it.id == id }
         val remainingShelves = shelves.filterNot { it.id == id }
+        val remainingDrawers = drawers.filterNot { it.id == id }
         val maxBayIdx = remainingDividers.size
         val reclampedShelves = remainingShelves.map {
             if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
         }
-        return copy(dividers = remainingDividers, shelves = reclampedShelves)
+        val reclampedDrawers = remainingDrawers.map {
+            if (it.bayIndex > maxBayIdx) it.copy(bayIndex = maxBayIdx) else it
+        }
+        return copy(dividers = remainingDividers, shelves = reclampedShelves, drawers = reclampedDrawers)
     }
 }
 
@@ -1370,6 +1495,13 @@ data class RoomSpec(
                 elevationYMm = shelf.elevationYMm.coerceIn(0f, maxElev),
             )
         }
+        val clampedDrawers = container.drawers.map { drawer ->
+            val maxElev = (innerH - drawer.heightMm).coerceAtLeast(0f)
+            drawer.copy(
+                bayIndex = drawer.bayIndex.coerceIn(0, maxBayIdx),
+                elevationYMm = drawer.elevationYMm.coerceIn(0f, maxElev),
+            )
+        }
 
         return container.copy(
             widthMm = clampedW,
@@ -1378,6 +1510,7 @@ data class RoomSpec(
             offsetMm = clampedOff,
             dividers = clampedDividers,
             shelves = clampedShelves,
+            drawers = clampedDrawers,
         )
     }
 
@@ -1693,7 +1826,7 @@ data class RoomSpec(
 
         for (raw in containers) {
             val c = clampContainer(raw)
-            if (c.dividers.isEmpty() && c.shelves.isEmpty()) continue
+            if (c.dividers.isEmpty() && c.shelves.isEmpty() && c.drawers.isEmpty()) continue
 
             val (pStart, pEnd) = when (c.wall) {
                 WallIndex.NORTH -> nw to ne
@@ -1791,6 +1924,23 @@ data class RoomSpec(
                 if (hitT != null && hitT < bestT) {
                     bestT = hitT
                     bestHit = PartitionHit(c.id, shelf.id, isVertical = false, hitDistance = hitT)
+                }
+            }
+
+            // Test drawers (expanded by 30mm for comfortable tap selection)
+            for (drawer in c.drawers) {
+                val bay = bays.getOrElse(drawer.bayIndex) { bays.last() }
+                val drawerS0 = s0Inner + bay.startXMm - 20f
+                val drawerS1 = s0Inner + bay.endXMm + 20f
+                val drawerY0 = plinthH + t + drawer.elevationYMm - 20f
+                val drawerY1 = plinthH + t + drawer.elevationYMm + drawer.heightMm + 20f
+                val drawerD0 = 0f
+                val drawerD1 = wallGap + backT + drawer.effectiveDepth(c.interiorDepthMm) + 30f
+
+                val hitT = intersectAABB(drawerS0, drawerS1, drawerY0, drawerY1, drawerD0, drawerD1)
+                if (hitT != null && hitT < bestT) {
+                    bestT = hitT
+                    bestHit = PartitionHit(c.id, drawer.id, isVertical = false, hitDistance = hitT)
                 }
             }
         }

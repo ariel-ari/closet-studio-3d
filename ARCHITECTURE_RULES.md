@@ -114,6 +114,41 @@ Manual millimetric alignment of cabinetry partitions on touchscreen devices is p
    - While within $\pm 28\text{ mm}$, the position locks to the alignment target.
    - Moving the finger beyond the $28\text{ mm}$ threshold smoothly releases the lock back to free continuous movement without jarring teleportation.
 
+---
+
+## 8. Drawer System & Component Protocol (Regla de Oro de Cajones y Cajoneras)
+The drawer unit ("Cajón con tirador") replicates functional carpentry drawer boxes with exterior decorative front faces and handles:
+
+1. **Realistic 3D Anatomy:**
+   - **Front Face Board:** Spans the compartment width $[X_{\min}, X_{\max}]$ and specified drawer height $H_{\text{drawer}}$. Uses container body melamina finish (`CONTAINER_BODY`).
+   - **Chrome Handle:** Centered bow/bar handle rendered with polished chrome finish (`DOOR_HANDLE`), sharing efficient vertex batching with door handles.
+   - **Internal Drawer Box:** Recessed interior wooden box comprising left side panel, right side panel, back panel, and floor base panel, replicating real sliding drawer hardware clearance.
+   - **Selection Outline:** Clamped purple contour (`#8B5CF6`) around the perimeter of the drawer box.
+
+2. **Modular Bay Containment & Automatic Adaptation:**
+   - Drawers reside within a specific compartment/bay $i \in [0, N-1]$.
+   - Width is derived dynamically from bay span: $\text{Width} = X_{\max} - X_{\min}$.
+   - If adjacent vertical dividers move, the drawer width automatically recalibrates to maintain snug carpenter fit.
+
+3. **Strict Zero Penetration Invariant:**
+   - Bottom elevation is strictly clamped: $Y \in [0, H_{\text{inner}} - H_{\text{drawer}}]$.
+   - Drawers can never penetrate through the carcass bottom panel or plinth, nor through the upper roof panel.
+
+4. **Smart Stacking & Magnetic Snapping:**
+   - **Plinth/Floor Snap:** Snaps to base $Y = 0$ when dragged near the bottom panel.
+   - **Auto-Stacking on Drawers (Priority 1):** When placed or dragged directly over an existing drawer within the same bay, the bottom snaps flush to the top edge of the lower drawer:
+     $$Y = Y_{\text{lower}} + H_{\text{lower}}$$
+     allowing instant creation of 2, 3, 4, or multi-drawer stacks without manual adjustment.
+   - **Stacking on Shelves:** Snaps flush onto the top surface of a shelf within the same bay ($Y = Y_{\text{shelf}} + T_{\text{shelf}}$).
+   - **Cross-Bay Coplanar Snapping:** When moving across bays, elevation $Y$ magnetically aligns with matching drawers in other bays to create elegant, horizontal symmetrical drawer lines across the closet.
+
+5. **Unified Interaction Contract:**
+   - Live 3D dragging from catalog into the closet cavity with real-time feedback.
+   - Clean drop with auto-close of catalog and **no automatic inspector opening**.
+   - 3 floating action buttons: ✏️ Edit (opens Module inspector), ❐ Duplicate (stacks duplicate immediately on top), 🗑️ Delete.
+   - Inspector controls: bay width (read-only), height (editable $80\text{--}600\text{ mm}$), depth (anchored to back panel), top clearance, bottom elevation.
+
+
 
 
 

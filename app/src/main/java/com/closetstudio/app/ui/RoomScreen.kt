@@ -149,6 +149,7 @@ enum class DraggedUnitType {
     CARCASS,
     VERTICAL_DIVIDER,
     HORIZONTAL_SHELF,
+    DRAWER,
 }
 
 /**
@@ -1775,7 +1776,8 @@ fun RoomScreen() {
                         LaunchedEffect(room.containers, selectedPartitionId) {
                             if (selectedPartitionId != null && activeContainer != null) {
                                 val exists = activeContainer.dividers.any { it.id == selectedPartitionId } ||
-                                        activeContainer.shelves.any { it.id == selectedPartitionId }
+                                        activeContainer.shelves.any { it.id == selectedPartitionId } ||
+                                        activeContainer.drawers.any { it.id == selectedPartitionId }
                                 if (!exists) {
                                     selectedPartitionId = null
                                 }
@@ -1938,6 +1940,8 @@ fun RoomScreen() {
                                             val updatedRoom = room.withUpdatedContainer(c.id) { currentC ->
                                                 if (selectedPartitionIsVertical) {
                                                     currentC.withMovedDivider(partId, newOffsetXMm = dragXMm, targetYMm = dragYMm)
+                                                } else if (currentC.drawers.any { it.id == partId }) {
+                                                    currentC.withMovedDrawer(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 } else {
                                                     currentC.withMovedShelf(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 }
@@ -2152,7 +2156,9 @@ fun RoomScreen() {
                                     ) {
                                         val baseLetter = containerWallLetter(activeContainer, room, splitDoorWall)
                                         val badgeText = if (hasSelectedPartition) {
-                                            if (selectedPartitionIsVertical) "$baseLetter • DIV" else "$baseLetter • EST"
+                                            if (selectedPartitionIsVertical) "$baseLetter • DIV"
+                                            else if (activeContainer.drawers.any { it.id == selectedPartitionId }) "$baseLetter • CAJ"
+                                            else "$baseLetter • EST"
                                         } else {
                                             baseLetter
                                         }
@@ -2218,6 +2224,15 @@ fun RoomScreen() {
                                                         )
                                                         createdId = newDiv.id
                                                         container.copy(dividers = container.dividers + newDiv)
+                                                    } else if (container.drawers.any { it.id == selectedPartitionId }) {
+                                                        val source = container.drawers.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
+                                                        val newElev = (source.elevationYMm + source.heightMm).coerceAtMost((container.interiorHeightMm - source.heightMm).coerceAtLeast(0f))
+                                                        val newDrawer = source.copy(
+                                                            id = "drawer_${System.currentTimeMillis()}_${container.drawers.size + 1}",
+                                                            elevationYMm = newElev,
+                                                        )
+                                                        createdId = newDrawer.id
+                                                        container.copy(drawers = container.drawers + newDrawer)
                                                     } else {
                                                         val source = container.shelves.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
                                                         val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
@@ -2673,6 +2688,25 @@ fun RoomScreen() {
                                             }
                                         }
                                     },
+                                    onAddDrawer = { dropFracX, dropFracY ->
+                                        val target = activeContainer ?: room.containers.firstOrNull()
+                                        if (target != null) {
+                                            val dropX = if (dropFracX != null) dropFracX * target.interiorWidthMm else target.interiorWidthMm * 0.5f
+                                            val bay = target.findBayAtX(dropX)
+                                            val dropY = if (dropFracY != null) dropFracY * target.interiorHeightMm else null
+                                            val updated = target.withAddedDrawer(bayIndex = bay.index, elevationYMm = dropY)
+                                            val newDrawer = updated.drawers.lastOrNull()
+                                            val updatedRoom = room.withUpdatedContainer(target.id) { updated }
+                                            updateRoom(updatedRoom)
+                                            selectedContainerId = target.id
+                                            selectedPartitionId = newDrawer?.id
+                                            selectedPartitionIsVertical = false
+                                            showUnitsColumn = false
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar(s.partitionAddedToast)
+                                            }
+                                        }
+                                    },
                                     onDragUnitStart = { type, startRootPos ->
                                         draggedUnitType = type
                                         isDraggingUnit = true
@@ -2687,7 +2721,7 @@ fun RoomScreen() {
                                             ?: room.containers.firstOrNull { it.wall == currentWall }
                                             ?: room.containers.firstOrNull()
 
-                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF)) {
+                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER)) {
                                             val interiorPt = projectScreenToContainerInterior(
                                                 room = room,
                                                 container = target,
@@ -2754,6 +2788,27 @@ fun RoomScreen() {
                                                         }
                                                         updateRoom(updatedRoom)
                                                     }
+                                                } else if (draggedUnitType == DraggedUnitType.DRAWER) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        if (isInsideCloset) {
+                                                            val bay = target.findBayAtX(clampedX)
+                                                            val updated = target.withAddedDrawer(bayIndex = bay.index, elevationYMm = clampedY)
+                                                            val newDrawer = updated.drawers.lastOrNull()
+                                                            if (newDrawer != null) {
+                                                                activeDragPartitionId = newDrawer.id
+                                                                selectedContainerId = target.id
+                                                                selectedPartitionId = newDrawer.id
+                                                                selectedPartitionIsVertical = false
+                                                                updateRoom(room.withUpdatedContainer(target.id) { updated })
+                                                            }
+                                                        }
+                                                    } else {
+                                                        val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                            currentC.withMovedDrawer(partId, newElevationYMm = clampedY, targetXMm = clampedX)
+                                                        }
+                                                        updateRoom(updatedRoom)
+                                                    }
                                                 }
                                             }
                                         }
@@ -2804,7 +2859,7 @@ fun RoomScreen() {
                                                         )
                                                     }
                                                 }
-                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF -> {
+                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER -> {
                                                     val partId = activeDragPartitionId
                                                     if (partId != null && target != null) {
                                                         selectedContainerId = target.id
@@ -2872,6 +2927,14 @@ fun RoomScreen() {
                                                     offsetXMm = newOff,
                                                 )
                                                 container.copy(dividers = container.dividers + newDiv)
+                                            } else if (container.drawers.any { it.id == partitionId }) {
+                                                val source = container.drawers.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
+                                                val newElev = (source.elevationYMm + source.heightMm).coerceAtMost((container.interiorHeightMm - source.heightMm).coerceAtLeast(0f))
+                                                val newDrawer = source.copy(
+                                                    id = "drawer_${System.currentTimeMillis()}_${container.drawers.size + 1}",
+                                                    elevationYMm = newElev,
+                                                )
+                                                container.copy(drawers = container.drawers + newDrawer)
                                             } else {
                                                 val source = container.shelves.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
                                                 val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
@@ -2933,6 +2996,7 @@ fun RoomScreen() {
                                         DraggedUnitType.CARCASS -> ClosetContainer3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.VERTICAL_DIVIDER -> VerticalDivider3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.HORIZONTAL_SHELF -> HorizontalShelf3DGraphic(modifier = Modifier.fillMaxSize())
+                                        DraggedUnitType.DRAWER -> Drawer3DGraphic(modifier = Modifier.fillMaxSize())
                                     }
                                 }
                             }
@@ -3558,6 +3622,7 @@ private fun RightSideUnitsAndInspectorColumn(
     onAddContainerOnCurrentWall: (dropFractionX: Float?) -> Unit,
     onAddDivider: (dropFractionX: Float?) -> Unit = {},
     onAddShelf: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
+    onAddDrawer: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onDragUnitStart: (DraggedUnitType, startRootPos: Offset) -> Unit,
     onDragUnitMove: (delta: Offset) -> Unit,
     onDragUnitEnd: () -> Unit,
@@ -3815,6 +3880,7 @@ private fun RightSideUnitsAndInspectorColumn(
                 var carcassRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var dividerRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var shelfRootOffset by remember { mutableStateOf(Offset.Zero) }
+                var drawerRootOffset by remember { mutableStateOf(Offset.Zero) }
 
                 Column(
                     modifier = Modifier
@@ -3919,6 +3985,39 @@ private fun RightSideUnitsAndInspectorColumn(
                             modifier = Modifier
                                 .fillMaxWidth(0.78f)
                                 .height(115.dp),
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(horizontal = 24.dp))
+
+                    // 4th Unit: Drawer with handle (Cajón con tirador matching screenshot media_1793498475563_a2bc7a9c.png)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .height(130.dp)
+                            .onGloballyPositioned { coordinates ->
+                                drawerRootOffset = coordinates.positionInRoot()
+                            }
+                            .pointerInput(Unit) {
+                                detectCatalogUnitDragGestures(
+                                    onDragStart = { localOffset ->
+                                        onDragUnitStart(DraggedUnitType.DRAWER, drawerRootOffset + localOffset)
+                                    },
+                                    onDrag = { dragAmount ->
+                                        onDragUnitMove(dragAmount)
+                                    },
+                                    onDragEnd = { onDragUnitEnd() },
+                                    onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddDrawer(null, null) },
+                                )
+                            },
+                    ) {
+                        Drawer3DGraphic(
+                            modifier = Modifier
+                                .fillMaxWidth(0.82f)
+                                .height(120.dp),
                         )
                     }
                 }
@@ -4243,6 +4342,116 @@ private fun HorizontalShelf3DGraphic(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun Drawer3DGraphic(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        val frontWood = Color(0xFFE6C299)
+        val sideWood = Color(0xFFAA8157)
+        val innerBoxWood = Color(0xFFD6B28A)
+        val bottomFloor = Color(0xFF7E7266)
+        val handleChrome = Color(0xFFE8EEF5)
+        val handleStroke = Color(0xFF6B7280)
+        val lineStroke = Color(0xFF8C6742).copy(alpha = 0.5f)
+
+        val drawerW = w * 0.80f
+        val frontH = (h * 0.38f).coerceAtLeast(22f)
+        val depthX = w * 0.14f
+        val depthY = h * 0.28f
+
+        val x0 = (w - drawerW - depthX) * 0.5f
+        val y0 = (h - frontH + depthY) * 0.5f + 8f
+
+        // 1. Box Bottom Floor
+        val floorPath = Path().apply {
+            moveTo(x0 + 10f, y0)
+            lineTo(x0 + drawerW - 10f, y0)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + 10f + depthX, y0 - depthY + 6f)
+            close()
+        }
+        drawPath(floorPath, color = bottomFloor)
+
+        // 2. Box Back Panel
+        val backPath = Path().apply {
+            moveTo(x0 + 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY - frontH * 0.40f)
+            lineTo(x0 + 10f + depthX, y0 - depthY - frontH * 0.40f)
+            close()
+        }
+        drawPath(backPath, color = innerBoxWood)
+        drawPath(backPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 3. Box Left Inner Side
+        val leftPath = Path().apply {
+            moveTo(x0 + 10f, y0)
+            lineTo(x0 + 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + 10f + depthX, y0 - depthY - frontH * 0.40f)
+            lineTo(x0 + 10f, y0 - frontH * 0.40f)
+            close()
+        }
+        drawPath(leftPath, color = sideWood)
+        drawPath(leftPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 4. Box Right Inner Side
+        val rightPath = Path().apply {
+            moveTo(x0 + drawerW - 10f, y0)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY - frontH * 0.40f)
+            lineTo(x0 + drawerW - 10f, y0 - frontH * 0.40f)
+            close()
+        }
+        drawPath(rightPath, color = sideWood)
+        drawPath(rightPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 5. Drawer Front Face
+        drawRect(
+            color = frontWood,
+            topLeft = Offset(x0, y0),
+            size = androidx.compose.ui.geometry.Size(drawerW, frontH),
+        )
+        drawRect(
+            color = lineStroke,
+            topLeft = Offset(x0, y0),
+            size = androidx.compose.ui.geometry.Size(drawerW, frontH),
+            style = Stroke(width = 1.2f),
+        )
+
+        // 6. Right edge of front face
+        val frontRightPath = Path().apply {
+            moveTo(x0 + drawerW, y0)
+            lineTo(x0 + drawerW + 6f, y0 - 5f)
+            lineTo(x0 + drawerW + 6f, y0 - 5f + frontH)
+            lineTo(x0 + drawerW, y0 + frontH)
+            close()
+        }
+        drawPath(frontRightPath, color = sideWood)
+        drawPath(frontRightPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 7. Chrome Handle on Center of Front Face
+        val handleW = drawerW * 0.30f
+        val handleH = 5f
+        val hX = x0 + (drawerW - handleW) * 0.5f
+        val hY = y0 + (frontH - handleH) * 0.5f
+        drawRoundRect(
+            color = handleChrome,
+            topLeft = Offset(hX, hY),
+            size = androidx.compose.ui.geometry.Size(handleW, handleH),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f),
+        )
+        drawRoundRect(
+            color = handleStroke,
+            topLeft = Offset(hX, hY),
+            size = androidx.compose.ui.geometry.Size(handleW, handleH),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f),
+            style = Stroke(width = 1f),
+        )
+    }
+}
+
+@Composable
 private fun ModuleDimensionRow(
     label: String,
     valueMm: Float,
@@ -4448,6 +4657,7 @@ private fun ModuleInspectorContent(
             }
         } else {
             val shelf = activeContainer.shelves.firstOrNull { it.id == selectedPartitionId }
+            val drawer = if (shelf == null) activeContainer.drawers.firstOrNull { it.id == selectedPartitionId } else null
             if (shelf != null) {
                 val bays = activeContainer.getBays()
                 val bay = bays.getOrElse(shelf.bayIndex) { bays.last() }
@@ -4546,6 +4756,106 @@ private fun ModuleInspectorContent(
                     val newElev = newBottom.coerceIn(10f, maxElev)
                     onUpdateContainer(activeContainer.id) { c ->
                         c.withUpdatedShelf(shelf.id) { it.copy(elevationYMm = newElev) }
+                    }
+                }
+            } else if (drawer != null) {
+                val bays = activeContainer.getBays()
+                val bay = bays.getOrElse(drawer.bayIndex) { bays.last() }
+
+                // Width (adapted from bay!)
+                ModuleDimensionRow(
+                    label = s.partitionWidthLabel,
+                    valueMm = bay.widthMm,
+                    unitSystem = unitSystem,
+                    enabled = false,
+                ) {}
+
+                // Height (box height: min 80mm, max 600mm)
+                ModuleDimensionRow(
+                    label = s.partitionHeightLabel,
+                    valueMm = drawer.heightMm,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 80f,
+                    maxMm = 600f,
+                    enabled = true,
+                ) { newHeight ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedDrawer(drawer.id) { it.copy(heightMm = newHeight) }
+                    }
+                }
+
+                // Depth (editable, anchored to back panel)
+                val currentDepth = drawer.effectiveDepth(activeContainer.interiorDepthMm)
+                ModuleDimensionRow(
+                    label = s.partitionDepthLabel,
+                    valueMm = currentDepth,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 100f,
+                    maxMm = 2000f,
+                    enabled = true,
+                ) { newDepth ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedDrawer(drawer.id) { it.copy(depthMm = newDepth) }
+                    }
+                }
+
+                // Position header with lock icon
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = s.partitionPositionTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1A1A1A),
+                    )
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Position Lock",
+                        tint = Color(0xFF1A1A1A),
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+
+                val bottomDist = drawer.elevationYMm
+                val topDist = (activeContainer.interiorHeightMm - (drawer.elevationYMm + drawer.heightMm)).coerceAtLeast(0f)
+                val maxElev = (activeContainer.interiorHeightMm - drawer.heightMm).coerceAtLeast(0f)
+
+                // Top distance
+                ModuleDimensionRow(
+                    label = s.partitionTopLabel,
+                    valueMm = topDist,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 0f,
+                    maxMm = maxElev,
+                    enabled = true,
+                ) { newTop ->
+                    val newElev = (activeContainer.interiorHeightMm - drawer.heightMm - newTop).coerceIn(0f, maxElev)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedDrawer(drawer.id) { it.copy(elevationYMm = newElev) }
+                    }
+                }
+
+                // Bottom distance
+                ModuleDimensionRow(
+                    label = s.partitionBottomLabel,
+                    valueMm = bottomDist,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 0f,
+                    maxMm = maxElev,
+                    enabled = true,
+                ) { newBottom ->
+                    val newElev = newBottom.coerceIn(0f, maxElev)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedDrawer(drawer.id) { it.copy(elevationYMm = newElev) }
                     }
                 }
             }

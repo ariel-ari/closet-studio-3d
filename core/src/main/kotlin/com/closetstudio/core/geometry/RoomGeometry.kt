@@ -222,7 +222,6 @@ object RoomGeometryBuilder {
         parts += RoomPart(RoomSurface.WALL, wallBuilder.build())
         parts += RoomPart(RoomSurface.DOOR_FRAME, frameBuilder.build())
         parts += RoomPart(RoomSurface.DOOR_LEAF, leafBuilder.build())
-        parts += RoomPart(RoomSurface.DOOR_HANDLE, handleBuilder.build())
 
         if (room.containers.isNotEmpty()) {
             val horizPanelsBuilder = MeshBuilder(uvScaleMm)
@@ -245,6 +244,7 @@ object RoomGeometryBuilder {
                     selectedOutlineBuilder = if (container.id == selectedContainerId) selectedOutlineBuilder else null,
                     selectedPartitionId = selectedPartitionId,
                     partitionOutlineBuilder = partitionOutlineBuilder,
+                    handleBuilder = handleBuilder,
                 )
             }
 
@@ -272,6 +272,11 @@ object RoomGeometryBuilder {
             if (partOutlineMesh.vertexCount > 0) {
                 parts += RoomPart(RoomSurface.PARTITION_SELECTED_OUTLINE, partOutlineMesh)
             }
+        }
+
+        val handleMesh = handleBuilder.build()
+        if (handleMesh.vertexCount > 0) {
+            parts += RoomPart(RoomSurface.DOOR_HANDLE, handleMesh)
         }
 
         return parts
@@ -479,6 +484,7 @@ object RoomGeometryBuilder {
         selectedOutlineBuilder: MeshBuilder?,
         selectedPartitionId: String? = null,
         partitionOutlineBuilder: MeshBuilder? = null,
+        handleBuilder: MeshBuilder? = null,
     ) {
         val nw = room.vertexNW
         val ne = room.vertexNE
@@ -804,6 +810,150 @@ object RoomGeometryBuilder {
                         s0 = shelfS0, s1 = shelfS1,
                         y0 = outY0, y1 = outY1,
                         d0 = shelfD0 - 2f, d1 = shelfD0 + 4f,
+                    )
+                }
+            }
+        }
+
+        // 7c. Drawers (Cabinetry drawer box with front face, chrome handle, and modular containment)
+        for (drawer in container.drawers) {
+            val bay = bays.getOrElse(drawer.bayIndex) { bays.last() }
+            val drawerS0 = (s0Inner + bay.startXMm).coerceIn(interiorLeftS, interiorRightS)
+            val drawerS1 = (s0Inner + bay.endXMm).coerceIn(drawerS0, interiorRightS)
+            val drawerY0 = (interiorBottomY + drawer.elevationYMm).coerceIn(interiorBottomY, (interiorTopY - drawer.heightMm).coerceAtLeast(interiorBottomY))
+            val drawerY1 = (drawerY0 + drawer.heightMm).coerceIn(drawerY0, interiorTopY)
+            val drawerD0 = wallGap + backT + 10f
+            val drawerD1 = wallGap + backT + drawer.effectiveDepth(container.interiorDepthMm)
+
+            if (drawerS1 > drawerS0 && drawerY1 > drawerY0) {
+                // 1. Front face board (with 2mm side clearance from bay sides for realistic cabinetry slide)
+                val fS0 = (drawerS0 + 2f).coerceAtMost(drawerS1)
+                val fS1 = (drawerS1 - 2f).coerceAtLeast(fS0)
+                val fD0 = drawerD1 - 18f
+                val fD1 = drawerD1
+
+                addWallAlignedBox(
+                    builder = horizPanelsBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = fS0, s1 = fS1,
+                    y0 = drawerY0, y1 = drawerY1,
+                    d0 = fD0, d1 = fD1,
+                    frontEdgeBuilder = frontEdgesBuilder,
+                )
+
+                // 2. Handle on front face (if enabled)
+                if (drawer.hasHandle && handleBuilder != null && fS1 > fS0 + 100f) {
+                    val sMid = (fS0 + fS1) * 0.5f
+                    val yMid = (drawerY0 + drawerY1) * 0.5f
+                    val handleHalfLen = 65f
+                    val handleHalfH = 6f
+                    // Horizontal chrome handle bar
+                    addWallAlignedBox(
+                        builder = handleBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = sMid - handleHalfLen, s1 = sMid + handleHalfLen,
+                        y0 = yMid - handleHalfH, y1 = yMid + handleHalfH,
+                        d0 = fD1 + 14f, d1 = fD1 + 22f,
+                    )
+                    // Left mounting standoff post
+                    addWallAlignedBox(
+                        builder = handleBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = sMid - 55f, s1 = sMid - 45f,
+                        y0 = yMid - 4f, y1 = yMid + 4f,
+                        d0 = fD1, d1 = fD1 + 15f,
+                    )
+                    // Right mounting standoff post
+                    addWallAlignedBox(
+                        builder = handleBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = sMid + 45f, s1 = sMid + 55f,
+                        y0 = yMid - 4f, y1 = yMid + 4f,
+                        d0 = fD1, d1 = fD1 + 15f,
+                    )
+                }
+
+                // 3. Drawer box (interior open body: left/right sides, back panel, bottom base)
+                val boxY0 = drawerY0 + 10f
+                val boxY1 = (drawerY1 - 12f).coerceAtLeast(boxY0 + 20f)
+                val boxD0 = drawerD0
+                val boxD1 = fD0
+
+                if (fS1 > fS0 + 40f && boxD1 > boxD0 + 40f) {
+                    // Left box side
+                    addWallAlignedBox(
+                        builder = vertPanelsBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = fS0 + 14f, s1 = fS0 + 28f,
+                        y0 = boxY0, y1 = boxY1,
+                        d0 = boxD0, d1 = boxD1,
+                    )
+                    // Right box side
+                    addWallAlignedBox(
+                        builder = vertPanelsBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = fS1 - 28f, s1 = fS1 - 14f,
+                        y0 = boxY0, y1 = boxY1,
+                        d0 = boxD0, d1 = boxD1,
+                    )
+                    // Back box panel
+                    addWallAlignedBox(
+                        builder = horizPanelsBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = fS0 + 28f, s1 = fS1 - 28f,
+                        y0 = boxY0, y1 = boxY1,
+                        d0 = boxD0, d1 = boxD0 + 14f,
+                    )
+                    // Bottom base floor panel (fondo del cajón)
+                    addWallAlignedBox(
+                        builder = backBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = fS0 + 14f, s1 = fS1 - 14f,
+                        y0 = boxY0, y1 = boxY0 + 10f,
+                        d0 = boxD0, d1 = boxD1,
+                    )
+                }
+
+                // 4. Selection & Smart Alignment Highlight Outline (Crisp Purple Rim matching user screenshot)
+                val selectedDrawer = if (selectedPartitionId != null) container.drawers.firstOrNull { it.id == selectedPartitionId } else null
+                val isDrawerSelected = drawer.id == selectedPartitionId
+                val isDrawerAligned = selectedDrawer != null && drawer.id != selectedDrawer.id && kotlin.math.abs(drawer.elevationYMm - selectedDrawer.elevationYMm) < 1.0f
+
+                if ((isDrawerSelected || isDrawerAligned) && partitionOutlineBuilder != null) {
+                    val pRim = 4f
+                    // Front top rim
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = (fS0 - pRim).coerceAtLeast(interiorLeftS),
+                        s1 = (fS1 + pRim).coerceAtMost(interiorRightS),
+                        y0 = (drawerY1 - pRim).coerceAtLeast(interiorBottomY),
+                        y1 = (drawerY1 + pRim).coerceAtMost(interiorTopY),
+                        d0 = fD0, d1 = fD1 + 6f,
+                    )
+                    // Left box top edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = fS0 + 12f, s1 = fS0 + 30f,
+                        y0 = (boxY1 - pRim).coerceAtLeast(interiorBottomY), y1 = boxY1,
+                        d0 = boxD0, d1 = boxD1,
+                    )
+                    // Right box top edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = fS1 - 30f, s1 = fS1 - 12f,
+                        y0 = (boxY1 - pRim).coerceAtLeast(interiorBottomY), y1 = boxY1,
+                        d0 = boxD0, d1 = boxD1,
+                    )
+                    // Back box top edge
+                    addWallAlignedBox(
+                        builder = partitionOutlineBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = fS0 + 14f, s1 = fS1 - 14f,
+                        y0 = (boxY1 - pRim).coerceAtLeast(interiorBottomY), y1 = boxY1,
+                        d0 = boxD0 - 2f, d1 = boxD0 + 16f,
                     )
                 }
             }
