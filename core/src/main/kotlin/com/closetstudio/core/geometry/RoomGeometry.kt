@@ -374,6 +374,94 @@ object RoomGeometryBuilder {
         )
     }
 
+    private fun addWallAlignedInclinedBox(
+        builder: MeshBuilder,
+        pStart: Vec2Mm,
+        ux: Float,
+        uz: Float,
+        nx: Float,
+        nz: Float,
+        s0: Float,
+        s1: Float,
+        yFront0: Float,
+        yFront1: Float,
+        yBack0: Float,
+        yBack1: Float,
+        d0: Float,
+        d1: Float,
+        frontEdgeBuilder: MeshBuilder? = null,
+    ) {
+        if (s1 <= s0 || d1 <= d0) return
+
+        fun pt(s: Float, y: Float, d: Float): Vec3 = Vec3(
+            x = pStart.x + s * ux + d * nx,
+            y = y,
+            z = pStart.z + s * uz + d * nz,
+        )
+
+        val deltaD = d1 - d0
+        val deltaY = yFront1 - yBack1
+        val slopeLen = kotlin.math.sqrt(deltaD * deltaD + deltaY * deltaY).coerceAtLeast(0.001f)
+        val nTopY = deltaD / slopeLen
+        val nTopD = -deltaY / slopeLen
+        val nTop = Vec3(nx * nTopD, nTopY, nz * nTopD)
+        val nBot = Vec3(-nx * nTopD, -nTopY, -nz * nTopD)
+
+        val nFront = Vec3(nx, 0f, nz)
+        val nBack = Vec3(-nx, 0f, -nz)
+        val nRight = Vec3(ux, 0f, uz)
+        val nLeft = Vec3(-ux, 0f, -uz)
+
+        // 1. Top face (inclined sloping down towards front opening)
+        builder.addQuad(
+            a = pt(s0, yFront1, d1),
+            b = pt(s1, yFront1, d1),
+            c = pt(s1, yBack1, d0),
+            d = pt(s0, yBack1, d0),
+            normal = nTop,
+        )
+        // 2. Bottom face
+        builder.addQuad(
+            a = pt(s0, yBack0, d0),
+            b = pt(s1, yBack0, d0),
+            c = pt(s1, yFront0, d1),
+            d = pt(s0, yFront0, d1),
+            normal = nBot,
+        )
+        // 3. Front face (at d = d1)
+        (frontEdgeBuilder ?: builder).addQuad(
+            a = pt(s0, yFront0, d1),
+            b = pt(s1, yFront0, d1),
+            c = pt(s1, yFront1, d1),
+            d = pt(s0, yFront1, d1),
+            normal = nFront,
+        )
+        // 4. Back face (at d = d0)
+        builder.addQuad(
+            a = pt(s1, yBack0, d0),
+            b = pt(s0, yBack0, d0),
+            c = pt(s0, yBack1, d0),
+            d = pt(s1, yBack1, d0),
+            normal = nBack,
+        )
+        // 5. Left face (at s = s0)
+        builder.addQuad(
+            a = pt(s0, yBack0, d0),
+            b = pt(s0, yFront0, d1),
+            c = pt(s0, yFront1, d1),
+            d = pt(s0, yBack1, d0),
+            normal = nLeft,
+        )
+        // 6. Right face (at s = s1)
+        builder.addQuad(
+            a = pt(s1, yFront0, d1),
+            b = pt(s1, yBack0, d0),
+            c = pt(s1, yBack1, d0),
+            d = pt(s1, yFront1, d1),
+            normal = nRight,
+        )
+    }
+
     /**
      * Builds a horizontal slab (e.g. top roof or bottom shelf floor) whose back edge (`d = d0`)
      * spans `s0Back..s1Back` along the wall and whose front edge (`d = d1`) spans `s0Front..s1Front`.
@@ -1254,6 +1342,77 @@ object RoomGeometryBuilder {
                         d1 = poleD + radius + pRim,
                     )
                 }
+            }
+        }
+
+        // 7f. Inclined Shoe Racks with Solid Wood Retaining Lip
+        for (rack in container.shoeRacks) {
+            val bay = bays.getOrElse(rack.bayIndex) { bays.last() }
+            val rackS0 = (s0Inner + bay.startXMm).coerceIn(interiorLeftS, interiorRightS)
+            val rackS1 = (s0Inner + bay.endXMm).coerceIn(rackS0, interiorRightS)
+            if (rackS1 <= rackS0) continue
+
+            val d0 = wallGap + backT
+            val effDepth = rack.effectiveDepth(container.interiorDepthMm)
+            val d1 = d0 + effDepth
+            val lipThick = rack.lipThicknessMm.coerceIn(12f, 30f)
+            val dSlanted1 = (d1 - lipThick).coerceAtLeast(d0 + 50f)
+
+            val rad = Math.toRadians(rack.inclinationAngleDeg.toDouble()).toFloat()
+            val vertThick = rack.thicknessMm / kotlin.math.cos(rad).coerceAtLeast(0.1f)
+            val deltaY = (dSlanted1 - d0) * kotlin.math.tan(rad)
+
+            val yFront0 = (interiorBottomY + rack.elevationYMm).coerceIn(interiorBottomY, (interiorTopY - 10f).coerceAtLeast(interiorBottomY))
+            val yFront1 = (yFront0 + vertThick).coerceAtMost(interiorTopY)
+            val yBack0 = (yFront0 + deltaY).coerceIn(interiorBottomY, (interiorTopY - 10f).coerceAtLeast(interiorBottomY))
+            val yBack1 = (yBack0 + vertThick).coerceAtMost(interiorTopY)
+
+            // 1. Slanted melamina shelf slab
+            addWallAlignedInclinedBox(
+                builder = horizPanelsBuilder,
+                pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                s0 = rackS0, s1 = rackS1,
+                yFront0 = yFront0, yFront1 = yFront1,
+                yBack0 = yBack0, yBack1 = yBack1,
+                d0 = d0, d1 = dSlanted1,
+                frontEdgeBuilder = frontEdgesBuilder,
+            )
+
+            // 2. Solid Wood Front Retaining Lip (Zócalo / tope frontal de melamina sólida que retiene los zapatos)
+            val lipY0 = yFront0
+            val lipY1 = (yFront1 + rack.lipHeightMm).coerceAtMost(interiorTopY)
+            if (lipY1 > lipY0) {
+                addWallAlignedBox(
+                    builder = horizPanelsBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = rackS0, s1 = rackS1,
+                    y0 = lipY0, y1 = lipY1,
+                    d0 = dSlanted1, d1 = d1,
+                    frontEdgeBuilder = frontEdgesBuilder,
+                )
+            }
+
+            // 3. Selection & Smart Alignment Highlight Outline (Crisp Purple Box)
+            val selectedRack = if (selectedPartitionId != null) container.shoeRacks.firstOrNull { it.id == selectedPartitionId } else null
+            val isRackSelected = rack.id == selectedPartitionId
+            val isRackAligned = selectedRack != null && rack.id != selectedRack.id && kotlin.math.abs(rack.elevationYMm - selectedRack.elevationYMm) < 1.0f
+
+            if ((isRackSelected || isRackAligned) && partitionOutlineBuilder != null) {
+                val pRim = 4f
+                val dOut0 = d1 - 2f
+                val dOut1 = d1 + 6f
+                val outS0 = (rackS0 - pRim).coerceAtLeast(interiorLeftS)
+                val outS1 = (rackS1 + pRim).coerceAtMost(interiorRightS)
+                val outY0 = (lipY0 - pRim).coerceAtLeast(interiorBottomY)
+                val outY1 = (lipY1 + pRim).coerceAtMost(interiorTopY)
+
+                addWallAlignedBox(
+                    builder = partitionOutlineBuilder,
+                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                    s0 = outS0, s1 = outS1,
+                    y0 = outY0, y1 = outY1,
+                    d0 = dOut0, d1 = dOut1,
+                )
             }
         }
 

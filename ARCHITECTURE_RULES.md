@@ -169,6 +169,37 @@ The vertical pole / post (tubo vertical o columna/poste de soporte metálico) re
    - Dropping finalizes placement, auto-closes catalog, leaves pole selected with purple highlight, and **never opens inspector automatically**.
    - Standard 3 floating action buttons: ✏️ Edit (inspect bay width, height, diameter, depth, left/right clearances), ❐ Duplicate, 🗑️ Delete.
 
+---
+
+## 11. Inclined Shoe Rack Protocol (Regla de Oro de Zapateras Inclinadas)
+The inclined shoe rack (zapatera inclinada) provides ergonomic tilted footwear shelves bounded within a modular closet bay:
+
+1. **Inclined Shelf Geometry & Solid Wood Retaining Lip:**
+   - **Slanted Board Extrusion:** Spans the entire clear width of its containing bay ($S \in [s_0, s_1]$). Tilts downward from back to front by configurable inclination angle $\theta$ (default $18^\circ$, adjustable from $5^\circ$ to $35^\circ$):
+     $$\Delta Y = D_{\text{span}} \times \tan(\theta)$$
+   - **Solid Wood Front Retaining Lip (Zócalo / tope frontal de madera sólida):** Replaces any metal wire mesh with a solid rectangular upright melamina lip spanning the front edge ($S \in [s_0, s_1]$, $D \in [d_1 - t_{\text{lip}}, d_1]$) rising above the shelf surface (default height $40\text{ mm}$, adjustable from $20\text{ mm}$ to $80\text{ mm}$; thickness $18\text{ mm}$).
+   - **Zero Wire Mesh:** Strictly constructed with cabinetry melamina matching the closet body (`RoomSurface.CONTAINER_BODY` and `CONTAINER_FRONT_EDGE`).
+
+2. **Zero Penetration & Enclosing Envelope:**
+   - Total vertical span is computed exactly:
+     $$H_{\text{span}} = \max(\Delta Y + t_v, t_v + h_{\text{lip}})$$
+     where $t_v = \frac{t}{\cos\theta}$.
+   - Elevation $Y$ is clamped within inner bounds $[0, H_{\text{inner}} - H_{\text{span}}]$, guaranteeing zero penetration into the roof, floor, or adjacent panels.
+
+3. **Smart Magnetic Alignment:**
+   - **Cross-Bay Shoe Rack Snap:** Snaps coplanar to matching shoe racks in adjacent bays within $\pm 28\text{ mm}$ threshold to maintain visual rhythm.
+   - **Vertical Stacking Snap:** Snaps vertically with ergonomic clearance ($H_{\text{span}} + 30\text{ mm}$) when placing multiple shoe racks in the same bay.
+   - **Floor Snap:** Easily aligns to $Y = 0\text{ mm}$.
+
+4. **Unified Interaction Contract:**
+   - **Visual Catalog 3D Graphic:** 8th unit in catalog with dedicated Canvas illustration `ShoeRack3DGraphic` showing the inclined wood slab and front solid wood lip.
+   - **Live 3D Drag & Drop:** Real-time preview inside closet bay during drag.
+   - **Silent Placement:** Dropping finalizes placement, closes catalog, leaves shoe rack selected with purple highlight, and **does not open the inspector modal automatically**.
+   - **Floating Action Buttons:** ✏️ Edit, ❐ Duplicate (stacks above with clearance), 🗑️ Delete.
+   - **Badge:** Displays `"$baseLetter • ZAP"` when selected.
+   - **Inspector:** Displays bay width (read-only), board thickness ($12-30\text{ mm}$), depth ($200-D_{\text{inner}}\text{ mm}$), tilt angle ($5^\circ-35^\circ$), front lip height ($20-80\text{ mm}$), and top/bottom clearances.
+
+
 
 
 

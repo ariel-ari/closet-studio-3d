@@ -5,6 +5,7 @@ import com.closetstudio.core.geometry.RoomGeometryBuilder
 import com.closetstudio.core.geometry.RoomSurface
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -613,5 +614,95 @@ class ClosetPartitionTest {
         val movedPole = movedContainer.verticalPoles.first { it.id == pole.id }
         assertMm(1550f, movedPole.effectiveX(movedContainer))
         assertEquals(1, movedPole.bayIndex)
+    }
+
+    @Test
+    fun `inclined shoe rack with solid wood lip defaults, zero penetration, geometry, snapping and picking`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            offsetMm = 200f,
+            widthMm = 1800f,
+            heightMm = 2200f,
+            depthMm = 600f,
+            panelThicknessMm = 18f,
+            plinthHeightMm = 80f,
+            backThicknessMm = 6f,
+        )
+
+        val innerW = container.interiorWidthMm
+        val innerH = container.interiorHeightMm
+        val innerD = container.interiorDepthMm
+
+        // 1. Add inclined shoe rack at elevation 300mm
+        container = container.withAddedShoeRack(bayIndex = 0, elevationYMm = 300f, inclinationAngleDeg = 18f)
+        assertEquals(1, container.shoeRacks.size)
+        val rack = container.shoeRacks.single()
+
+        assertEquals(0, rack.bayIndex)
+        assertMm(300f, rack.elevationYMm)
+        assertEquals(18f, rack.thicknessMm)
+        assertEquals(18f, rack.inclinationAngleDeg)
+        assertEquals(40f, rack.lipHeightMm)
+        assertEquals(18f, rack.lipThicknessMm)
+        assertMm(innerD, rack.effectiveDepth(innerD))
+
+        // Total vertical span & zero penetration check
+        val span = rack.totalVerticalSpanMm(innerD)
+        assertTrue(span > 100f)
+        val maxElev = rack.maxElevation(innerH, innerD)
+        assertEquals(innerH - span, maxElev)
+
+        // 2. Build geometry: produces CLOSET_HORIZONTAL mesh (for slanted slab and solid wood lip),
+        // CLOSET_FRONT_EDGE, and purple selection outline
+        val room = RoomSpec(containers = listOf(container))
+        val parts = RoomGeometryBuilder.build(room, selectedContainerId = "c1", selectedPartitionId = rack.id)
+        assertTrue(parts.any { it.surface == RoomSurface.CONTAINER_BODY })
+        assertTrue(parts.any { it.surface == RoomSurface.CONTAINER_FRONT_EDGE })
+        assertTrue(parts.any { it.surface == RoomSurface.PARTITION_SELECTED_OUTLINE })
+
+        // 3. Raycast picking hits the shoe rack with isVertical = false
+        val s0Inner = container.offsetMm + container.effectivePanelThicknessMm
+        val bay = container.getBays().first()
+        val rackMidX = s0Inner + (bay.startXMm + bay.endXMm) * 0.5f
+        val rackFrontY = container.effectivePlinthHeightMm + container.effectivePanelThicknessMm + rack.elevationYMm + 20f
+
+        val hit = room.pickPartitionByRayMm(
+            rayOriginX = rackMidX,
+            rayOriginY = rackFrontY,
+            rayOriginZ = -200f,
+            rayDirX = 0f,
+            rayDirY = 0f,
+            rayDirZ = 1f,
+        )
+        assertNotNull(hit)
+        assertEquals("c1", hit.containerId)
+        assertEquals(rack.id, hit.partitionId)
+        assertFalse(hit.isVertical)
+
+        // 4. Magnetic Snapping: Add divider to create Bay 0 and Bay 1
+        container = container.withAddedDivider(offsetXMm = 900f)
+        assertEquals(2, container.getBays().size)
+
+        // Add second shoe rack in Bay 1 within snap threshold of first shoe rack's elevation (300mm)
+        // With raw 315mm (within 28mm threshold), it must magnetically snap to exactly 300mm
+        val snappedElev = container.findSnapElevation(
+            currentShelfId = null,
+            rawElevationYMm = 315f,
+            targetBayIndex = 1,
+            shelfThicknessMm = 18f,
+            snapThresholdMm = 28f,
+        )
+        assertMm(300f, snappedElev)
+
+        // 5. Lateral Bay Transfer: moving shoe rack horizontally across into Bay 1
+        val movedContainer = container.withMovedShoeRack(
+            id = rack.id,
+            newElevationYMm = 300f,
+            targetXMm = 1200f, // Points into Bay 1 (offsetXMm 900+18 to 1800)
+            snapThresholdMm = 0f,
+        )
+        val movedRack = movedContainer.shoeRacks.first { it.id == rack.id }
+        assertEquals(1, movedRack.bayIndex)
     }
 }

@@ -156,6 +156,7 @@ enum class DraggedUnitType {
     DRAWER_NOTCH,
     CLOTHES_RAIL,
     VERTICAL_POLE,
+    SHOE_RACK,
 }
 
 /**
@@ -1785,7 +1786,8 @@ fun RoomScreen() {
                                         activeContainer.shelves.any { it.id == selectedPartitionId } ||
                                         activeContainer.drawers.any { it.id == selectedPartitionId } ||
                                         activeContainer.clothesRails.any { it.id == selectedPartitionId } ||
-                                        activeContainer.verticalPoles.any { it.id == selectedPartitionId }
+                                        activeContainer.verticalPoles.any { it.id == selectedPartitionId } ||
+                                        activeContainer.shoeRacks.any { it.id == selectedPartitionId }
                                 if (!exists) {
                                     selectedPartitionId = null
                                 }
@@ -1943,6 +1945,7 @@ fun RoomScreen() {
                                             val (tapX, tapY) = interiorPt
                                             val rail = activeContainer.clothesRails.firstOrNull { it.id == selectedPartitionId }
                                             val pole = if (rail == null) activeContainer.verticalPoles.firstOrNull { it.id == selectedPartitionId } else null
+                                            val rack = if (rail == null && pole == null) activeContainer.shoeRacks.firstOrNull { it.id == selectedPartitionId } else null
                                             if (rail != null) {
                                                 val bay = activeContainer.getBays().getOrElse(rail.bayIndex) { activeContainer.getBays().last() }
                                                 tapX in (bay.startXMm - 60f)..(bay.endXMm + 60f) &&
@@ -1953,6 +1956,10 @@ fun RoomScreen() {
                                                 val poleX = pole.effectiveX(activeContainer)
                                                 tapY in (compY0 - 60f)..(compY1 + 60f) &&
                                                     kotlin.math.abs(tapX - poleX) <= 120f
+                                            } else if (rack != null) {
+                                                val bay = activeContainer.getBays().getOrElse(rack.bayIndex) { activeContainer.getBays().last() }
+                                                tapX in (bay.startXMm - 60f)..(bay.endXMm + 60f) &&
+                                                    tapY in (rack.elevationYMm - 60f)..(rack.elevationYMm + rack.totalVerticalSpanMm(activeContainer.interiorDepthMm) + 60f)
                                             } else {
                                                 false
                                             }
@@ -1993,6 +2000,8 @@ fun RoomScreen() {
                                                     currentC.withMovedDrawer(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 } else if (currentC.clothesRails.any { it.id == partId }) {
                                                     currentC.withMovedClothesRail(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
+                                                } else if (currentC.shoeRacks.any { it.id == partId }) {
+                                                    currentC.withMovedShoeRack(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 } else {
                                                     currentC.withMovedShelf(partId, newElevationYMm = dragYMm, targetXMm = dragXMm)
                                                 }
@@ -2211,6 +2220,7 @@ fun RoomScreen() {
                                             else if (selectedPartitionIsVertical) "$baseLetter • DIV"
                                             else if (activeContainer.drawers.any { it.id == selectedPartitionId }) "$baseLetter • CAJ"
                                             else if (activeContainer.clothesRails.any { it.id == selectedPartitionId }) "$baseLetter • TUB"
+                                            else if (activeContainer.shoeRacks.any { it.id == selectedPartitionId }) "$baseLetter • ZAP"
                                             else "$baseLetter • EST"
                                         } else {
                                             baseLetter
@@ -2306,6 +2316,15 @@ fun RoomScreen() {
                                                         )
                                                         createdId = newRail.id
                                                         container.copy(clothesRails = container.clothesRails + newRail)
+                                                    } else if (container.shoeRacks.any { it.id == selectedPartitionId }) {
+                                                        val source = container.shoeRacks.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
+                                                        val targetY = source.elevationYMm + source.totalVerticalSpanMm(container.interiorDepthMm) + 30f
+                                                        val newRack = source.copy(
+                                                            id = "shoerack_${System.currentTimeMillis()}_${container.shoeRacks.size + 1}",
+                                                            elevationYMm = targetY.coerceIn(0f, source.maxElevation(container.interiorHeightMm, container.interiorDepthMm)),
+                                                        )
+                                                        createdId = newRack.id
+                                                        container.copy(shoeRacks = container.shoeRacks + newRack)
                                                     } else {
                                                         val source = container.shelves.firstOrNull { it.id == selectedPartitionId } ?: return@withUpdatedContainer container
                                                         val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
@@ -2818,6 +2837,25 @@ fun RoomScreen() {
                                             }
                                         }
                                     },
+                                    onAddShoeRack = { dropFracX, dropFracY ->
+                                        val target = activeContainer ?: room.containers.firstOrNull()
+                                        if (target != null) {
+                                            val dropX = if (dropFracX != null) dropFracX * target.interiorWidthMm else target.interiorWidthMm * 0.5f
+                                            val bay = target.findBayAtX(dropX)
+                                            val dropY = if (dropFracY != null) dropFracY * target.interiorHeightMm else null
+                                            val updated = target.withAddedShoeRack(bayIndex = bay.index, elevationYMm = dropY)
+                                            val newRack = updated.shoeRacks.lastOrNull()
+                                            val updatedRoom = room.withUpdatedContainer(target.id) { updated }
+                                            updateRoom(updatedRoom)
+                                            selectedContainerId = target.id
+                                            selectedPartitionId = newRack?.id
+                                            selectedPartitionIsVertical = false
+                                            showUnitsColumn = false
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar(s.partitionAddedToast)
+                                            }
+                                        }
+                                    },
                                     onDragUnitStart = { type, startRootPos ->
                                         draggedUnitType = type
                                         isDraggingUnit = true
@@ -2832,7 +2870,7 @@ fun RoomScreen() {
                                             ?: room.containers.firstOrNull { it.wall == currentWall }
                                             ?: room.containers.firstOrNull()
 
-                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH || draggedUnitType == DraggedUnitType.CLOTHES_RAIL || draggedUnitType == DraggedUnitType.VERTICAL_POLE)) {
+                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH || draggedUnitType == DraggedUnitType.CLOTHES_RAIL || draggedUnitType == DraggedUnitType.VERTICAL_POLE || draggedUnitType == DraggedUnitType.SHOE_RACK)) {
                                             val interiorPt = projectScreenToContainerInterior(
                                                 room = room,
                                                 container = target,
@@ -2963,6 +3001,27 @@ fun RoomScreen() {
                                                         }
                                                         updateRoom(updatedRoom)
                                                     }
+                                                } else if (draggedUnitType == DraggedUnitType.SHOE_RACK) {
+                                                    val partId = activeDragPartitionId
+                                                    if (partId == null) {
+                                                        if (isInsideCloset) {
+                                                            val bay = target.findBayAtX(clampedX)
+                                                            val updated = target.withAddedShoeRack(bayIndex = bay.index, elevationYMm = clampedY)
+                                                            val newRack = updated.shoeRacks.lastOrNull()
+                                                            if (newRack != null) {
+                                                                activeDragPartitionId = newRack.id
+                                                                selectedContainerId = target.id
+                                                                selectedPartitionId = newRack.id
+                                                                selectedPartitionIsVertical = false
+                                                                updateRoom(room.withUpdatedContainer(target.id) { updated })
+                                                            }
+                                                        }
+                                                    } else {
+                                                        val updatedRoom = room.withUpdatedContainer(target.id) { currentC ->
+                                                            currentC.withMovedShoeRack(partId, newElevationYMm = clampedY, targetXMm = clampedX)
+                                                        }
+                                                        updateRoom(updatedRoom)
+                                                    }
                                                 }
                                             }
                                         }
@@ -3013,7 +3072,7 @@ fun RoomScreen() {
                                                         )
                                                     }
                                                 }
-                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH, DraggedUnitType.CLOTHES_RAIL, DraggedUnitType.VERTICAL_POLE -> {
+                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH, DraggedUnitType.CLOTHES_RAIL, DraggedUnitType.VERTICAL_POLE, DraggedUnitType.SHOE_RACK -> {
                                                     val partId = activeDragPartitionId
                                                     if (partId != null && target != null) {
                                                         selectedContainerId = target.id
@@ -3107,6 +3166,15 @@ fun RoomScreen() {
                                                     elevationYMm = newElev,
                                                 )
                                                 container.copy(clothesRails = container.clothesRails + newRail)
+                                            } else if (container.shoeRacks.any { it.id == partitionId }) {
+                                                val source = container.shoeRacks.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
+                                                val targetY = source.elevationYMm + source.totalVerticalSpanMm(container.interiorDepthMm) + 30f
+                                                val newElev = targetY.coerceIn(0f, source.maxElevation(container.interiorHeightMm, container.interiorDepthMm))
+                                                val newRack = source.copy(
+                                                    id = "shoerack_${System.currentTimeMillis()}_${container.shoeRacks.size + 1}",
+                                                    elevationYMm = newElev,
+                                                )
+                                                container.copy(shoeRacks = container.shoeRacks + newRack)
                                             } else {
                                                 val source = container.shelves.firstOrNull { it.id == partitionId } ?: return@withUpdatedContainer container
                                                 val newElev = (source.elevationYMm + source.thicknessMm + 100f).coerceAtMost((container.interiorHeightMm - source.thicknessMm).coerceAtLeast(0f))
@@ -3172,6 +3240,7 @@ fun RoomScreen() {
                                         DraggedUnitType.DRAWER_NOTCH -> DrawerNotch3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.CLOTHES_RAIL -> ClothesRail3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.VERTICAL_POLE -> VerticalPole3DGraphic(modifier = Modifier.fillMaxSize())
+                                        DraggedUnitType.SHOE_RACK -> ShoeRack3DGraphic(modifier = Modifier.fillMaxSize())
                                     }
                                 }
                             }
@@ -3800,6 +3869,7 @@ private fun RightSideUnitsAndInspectorColumn(
     onAddDrawer: (dropFractionX: Float?, dropFractionY: Float?, frontType: DrawerFrontType) -> Unit = { _, _, _ -> },
     onAddClothesRail: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onAddVerticalPole: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
+    onAddShoeRack: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
     onDragUnitStart: (DraggedUnitType, startRootPos: Offset) -> Unit,
     onDragUnitMove: (delta: Offset) -> Unit,
     onDragUnitEnd: () -> Unit,
@@ -4061,6 +4131,7 @@ private fun RightSideUnitsAndInspectorColumn(
                 var drawerNotchRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var clothesRailRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var verticalPoleRootOffset by remember { mutableStateOf(Offset.Zero) }
+                var shoeRackRootOffset by remember { mutableStateOf(Offset.Zero) }
 
                 Column(
                     modifier = Modifier
@@ -4297,6 +4368,39 @@ private fun RightSideUnitsAndInspectorColumn(
                             modifier = Modifier
                                 .fillMaxWidth(0.5f)
                                 .height(120.dp),
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(horizontal = 24.dp))
+
+                    // 8th Unit: Inclined Shoe Rack with Solid Wood Retaining Lip ("Zapatera inclinada")
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .height(130.dp)
+                            .onGloballyPositioned { coordinates ->
+                                shoeRackRootOffset = coordinates.positionInRoot()
+                            }
+                            .pointerInput(Unit) {
+                                detectCatalogUnitDragGestures(
+                                    onDragStart = { localOffset ->
+                                        onDragUnitStart(DraggedUnitType.SHOE_RACK, shoeRackRootOffset + localOffset)
+                                    },
+                                    onDrag = { dragAmount ->
+                                        onDragUnitMove(dragAmount)
+                                    },
+                                    onDragEnd = { onDragUnitEnd() },
+                                    onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddShoeRack(null, null) },
+                                )
+                            },
+                    ) {
+                        ShoeRack3DGraphic(
+                            modifier = Modifier
+                                .fillMaxWidth(0.85f)
+                                .height(110.dp),
                         )
                     }
                 }
@@ -5001,6 +5105,90 @@ private fun VerticalPole3DGraphic(modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun ShoeRack3DGraphic(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        val woodTop = Color(0xFFE8C8A3)
+        val woodFront = Color(0xFFD6AD80)
+        val woodSide = Color(0xFFAA8157)
+        val lipFront = Color(0xFFE0BB90)
+        val lipTop = Color(0xFFF4D8B8)
+        val lipSide = Color(0xFFAA8157)
+        val lineStroke = Color(0xFF8B6B4C)
+
+        // 3D Perspective of an inclined shelf board:
+        val pBackLeft = Offset(w * 0.22f, h * 0.28f)
+        val pBackRight = Offset(w * 0.88f, h * 0.38f)
+        val pFrontRight = Offset(w * 0.76f, h * 0.72f)
+        val pFrontLeft = Offset(w * 0.10f, h * 0.62f)
+
+        val shelfThickY = 12f
+
+        // Shelf Bottom & Side thickness
+        val shelfLeftEdgePath = Path().apply {
+            moveTo(pBackLeft.x, pBackLeft.y)
+            lineTo(pFrontLeft.x, pFrontLeft.y)
+            lineTo(pFrontLeft.x, pFrontLeft.y + shelfThickY)
+            lineTo(pBackLeft.x, pBackLeft.y + shelfThickY)
+            close()
+        }
+        drawPath(shelfLeftEdgePath, color = woodSide)
+        drawPath(shelfLeftEdgePath, color = lineStroke, style = Stroke(width = 1f))
+
+        // Shelf Slanted Top Surface
+        val shelfTopPath = Path().apply {
+            moveTo(pBackLeft.x, pBackLeft.y)
+            lineTo(pBackRight.x, pBackRight.y)
+            lineTo(pFrontRight.x, pFrontRight.y)
+            lineTo(pFrontLeft.x, pFrontLeft.y)
+            close()
+        }
+        drawPath(shelfTopPath, color = woodTop)
+        drawPath(shelfTopPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // Solid Wood Front Retaining Lip (Zócalo de madera sólida que retiene los zapatos)
+        val lipHeight = 24f
+        val lipThickX = 6f
+        val lipThickY = 4f
+
+        // Lip Front Face
+        val lipFrontPath = Path().apply {
+            moveTo(pFrontLeft.x - lipThickX, pFrontLeft.y + shelfThickY + lipThickY)
+            lineTo(pFrontRight.x + lipThickX, pFrontRight.y + shelfThickY + lipThickY)
+            lineTo(pFrontRight.x + lipThickX, pFrontRight.y - lipHeight + lipThickY)
+            lineTo(pFrontLeft.x - lipThickX, pFrontLeft.y - lipHeight + lipThickY)
+            close()
+        }
+        drawPath(lipFrontPath, color = lipFront)
+        drawPath(lipFrontPath, color = lineStroke, style = Stroke(width = 1.2f))
+
+        // Lip Top Rim
+        val lipTopPath = Path().apply {
+            moveTo(pFrontLeft.x - lipThickX, pFrontLeft.y - lipHeight + lipThickY)
+            lineTo(pFrontRight.x + lipThickX, pFrontRight.y - lipHeight + lipThickY)
+            lineTo(pFrontRight.x, pFrontRight.y - lipHeight)
+            lineTo(pFrontLeft.x, pFrontLeft.y - lipHeight)
+            close()
+        }
+        drawPath(lipTopPath, color = lipTop)
+        drawPath(lipTopPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // Lip Left Edge
+        val lipLeftPath = Path().apply {
+            moveTo(pFrontLeft.x - lipThickX, pFrontLeft.y + shelfThickY + lipThickY)
+            lineTo(pFrontLeft.x, pFrontLeft.y + shelfThickY)
+            lineTo(pFrontLeft.x, pFrontLeft.y - lipHeight)
+            lineTo(pFrontLeft.x - lipThickX, pFrontLeft.y - lipHeight + lipThickY)
+            close()
+        }
+        drawPath(lipLeftPath, color = lipSide)
+        drawPath(lipLeftPath, color = lineStroke, style = Stroke(width = 1f))
+    }
+}
+
+@Composable
 private fun ModuleDimensionRow(
     label: String,
     valueMm: Float,
@@ -5317,6 +5505,7 @@ private fun ModuleInspectorContent(
             val shelf = activeContainer.shelves.firstOrNull { it.id == selectedPartitionId }
             val drawer = if (shelf == null) activeContainer.drawers.firstOrNull { it.id == selectedPartitionId } else null
             val rail = if (shelf == null && drawer == null) activeContainer.clothesRails.firstOrNull { it.id == selectedPartitionId } else null
+            val rack = if (shelf == null && drawer == null && rail == null) activeContainer.shoeRacks.firstOrNull { it.id == selectedPartitionId } else null
             if (shelf != null) {
                 val bays = activeContainer.getBays()
                 val bay = bays.getOrElse(shelf.bayIndex) { bays.last() }
@@ -5609,6 +5798,130 @@ private fun ModuleInspectorContent(
                     val newElev = newBottom.coerceIn(0f, maxElev)
                     onUpdateContainer(activeContainer.id) { c ->
                         c.withUpdatedClothesRail(rail.id) { it.copy(elevationYMm = newElev) }
+                    }
+                }
+            } else if (rack != null) {
+                val bays = activeContainer.getBays()
+                val bay = bays.getOrElse(rack.bayIndex) { bays.last() }
+
+                // Width (adapted from bay!)
+                ModuleDimensionRow(
+                    label = s.partitionWidthLabel,
+                    valueMm = bay.widthMm,
+                    unitSystem = unitSystem,
+                    enabled = false,
+                ) {}
+
+                // Thickness
+                ModuleDimensionRow(
+                    label = s.partitionHeightLabel,
+                    valueMm = rack.thicknessMm,
+                    unitSystem = unitSystem,
+                    stepMm = 1f,
+                    minMm = 12f,
+                    maxMm = 30f,
+                    enabled = true,
+                ) { newThick ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedShoeRack(rack.id) { it.copy(thicknessMm = newThick) }
+                    }
+                }
+
+                // Depth
+                val currentDepth = rack.effectiveDepth(activeContainer.interiorDepthMm)
+                ModuleDimensionRow(
+                    label = s.partitionDepthLabel,
+                    valueMm = currentDepth,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 200f,
+                    maxMm = activeContainer.interiorDepthMm,
+                    enabled = true,
+                ) { newDepth ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedShoeRack(rack.id) { it.copy(depthMm = newDepth) }
+                    }
+                }
+
+                // Tilt Angle
+                ModuleDimensionRow(
+                    label = s.shoeRackAngleLabel,
+                    valueMm = rack.inclinationAngleDeg,
+                    unitSystem = unitSystem,
+                    stepMm = 1f,
+                    minMm = 5f,
+                    maxMm = 35f,
+                    enabled = true,
+                ) { newAngle ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedShoeRack(rack.id) { it.copy(inclinationAngleDeg = newAngle) }
+                    }
+                }
+
+                // Solid Wood Lip Height
+                ModuleDimensionRow(
+                    label = s.shoeRackLipHeightLabel,
+                    valueMm = rack.lipHeightMm,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 20f,
+                    maxMm = 80f,
+                    enabled = true,
+                ) { newLipH ->
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedShoeRack(rack.id) { it.copy(lipHeightMm = newLipH) }
+                    }
+                }
+
+                // Position header with lock icon
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = s.partitionPositionTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1A1A1A),
+                    )
+                }
+
+                val maxElev = rack.maxElevation(activeContainer.interiorHeightMm, activeContainer.interiorDepthMm)
+                val bottomDist = rack.elevationYMm
+                val topDist = (activeContainer.interiorHeightMm - (rack.elevationYMm + rack.totalVerticalSpanMm(activeContainer.interiorDepthMm))).coerceAtLeast(0f)
+
+                // Top distance (clearance to roof)
+                ModuleDimensionRow(
+                    label = s.partitionTopLabel,
+                    valueMm = topDist,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 0f,
+                    maxMm = maxElev,
+                    enabled = true,
+                ) { newTop ->
+                    val newElev = (activeContainer.interiorHeightMm - rack.totalVerticalSpanMm(activeContainer.interiorDepthMm) - newTop).coerceIn(0f, maxElev)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedShoeRack(rack.id) { it.copy(elevationYMm = newElev) }
+                    }
+                }
+
+                // Bottom distance
+                ModuleDimensionRow(
+                    label = s.partitionBottomLabel,
+                    valueMm = bottomDist,
+                    unitSystem = unitSystem,
+                    stepMm = step,
+                    minMm = 0f,
+                    maxMm = maxElev,
+                    enabled = true,
+                ) { newBottom ->
+                    val newElev = newBottom.coerceIn(0f, maxElev)
+                    onUpdateContainer(activeContainer.id) { c ->
+                        c.withUpdatedShoeRack(rack.id) { it.copy(elevationYMm = newElev) }
                     }
                 }
             }
