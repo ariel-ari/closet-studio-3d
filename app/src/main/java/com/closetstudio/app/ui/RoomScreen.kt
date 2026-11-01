@@ -131,6 +131,7 @@ import com.closetstudio.app.data.ProjectStorage
 import com.closetstudio.app.render.MM_TO_M
 import com.closetstudio.core.model.ClosetContainerSpec
 import com.closetstudio.core.model.DoorSpec
+import com.closetstudio.core.model.DrawerFrontType
 import com.closetstudio.core.model.PartitionHit
 import com.closetstudio.core.model.RoomSpec
 import com.closetstudio.core.model.WallIndex
@@ -150,6 +151,7 @@ enum class DraggedUnitType {
     VERTICAL_DIVIDER,
     HORIZONTAL_SHELF,
     DRAWER,
+    DRAWER_NOTCH,
 }
 
 /**
@@ -2688,13 +2690,13 @@ fun RoomScreen() {
                                             }
                                         }
                                     },
-                                    onAddDrawer = { dropFracX, dropFracY ->
+                                    onAddDrawer = { dropFracX, dropFracY, frontType ->
                                         val target = activeContainer ?: room.containers.firstOrNull()
                                         if (target != null) {
                                             val dropX = if (dropFracX != null) dropFracX * target.interiorWidthMm else target.interiorWidthMm * 0.5f
                                             val bay = target.findBayAtX(dropX)
                                             val dropY = if (dropFracY != null) dropFracY * target.interiorHeightMm else null
-                                            val updated = target.withAddedDrawer(bayIndex = bay.index, elevationYMm = dropY)
+                                            val updated = target.withAddedDrawer(bayIndex = bay.index, elevationYMm = dropY, frontType = frontType)
                                             val newDrawer = updated.drawers.lastOrNull()
                                             val updatedRoom = room.withUpdatedContainer(target.id) { updated }
                                             updateRoom(updatedRoom)
@@ -2721,7 +2723,7 @@ fun RoomScreen() {
                                             ?: room.containers.firstOrNull { it.wall == currentWall }
                                             ?: room.containers.firstOrNull()
 
-                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER)) {
+                                        if (target != null && (draggedUnitType == DraggedUnitType.VERTICAL_DIVIDER || draggedUnitType == DraggedUnitType.HORIZONTAL_SHELF || draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH)) {
                                             val interiorPt = projectScreenToContainerInterior(
                                                 room = room,
                                                 container = target,
@@ -2788,12 +2790,13 @@ fun RoomScreen() {
                                                         }
                                                         updateRoom(updatedRoom)
                                                     }
-                                                } else if (draggedUnitType == DraggedUnitType.DRAWER) {
+                                                } else if (draggedUnitType == DraggedUnitType.DRAWER || draggedUnitType == DraggedUnitType.DRAWER_NOTCH) {
                                                     val partId = activeDragPartitionId
+                                                    val frontType = if (draggedUnitType == DraggedUnitType.DRAWER_NOTCH) DrawerFrontType.NOTCH else DrawerFrontType.HANDLE
                                                     if (partId == null) {
                                                         if (isInsideCloset) {
                                                             val bay = target.findBayAtX(clampedX)
-                                                            val updated = target.withAddedDrawer(bayIndex = bay.index, elevationYMm = clampedY)
+                                                            val updated = target.withAddedDrawer(bayIndex = bay.index, elevationYMm = clampedY, frontType = frontType)
                                                             val newDrawer = updated.drawers.lastOrNull()
                                                             if (newDrawer != null) {
                                                                 activeDragPartitionId = newDrawer.id
@@ -2859,7 +2862,7 @@ fun RoomScreen() {
                                                         )
                                                     }
                                                 }
-                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER -> {
+                                                DraggedUnitType.VERTICAL_DIVIDER, DraggedUnitType.HORIZONTAL_SHELF, DraggedUnitType.DRAWER, DraggedUnitType.DRAWER_NOTCH -> {
                                                     val partId = activeDragPartitionId
                                                     if (partId != null && target != null) {
                                                         selectedContainerId = target.id
@@ -2997,6 +3000,7 @@ fun RoomScreen() {
                                         DraggedUnitType.VERTICAL_DIVIDER -> VerticalDivider3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.HORIZONTAL_SHELF -> HorizontalShelf3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.DRAWER -> Drawer3DGraphic(modifier = Modifier.fillMaxSize())
+                                        DraggedUnitType.DRAWER_NOTCH -> DrawerNotch3DGraphic(modifier = Modifier.fillMaxSize())
                                     }
                                 }
                             }
@@ -3622,7 +3626,7 @@ private fun RightSideUnitsAndInspectorColumn(
     onAddContainerOnCurrentWall: (dropFractionX: Float?) -> Unit,
     onAddDivider: (dropFractionX: Float?) -> Unit = {},
     onAddShelf: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
-    onAddDrawer: (dropFractionX: Float?, dropFractionY: Float?) -> Unit = { _, _ -> },
+    onAddDrawer: (dropFractionX: Float?, dropFractionY: Float?, frontType: DrawerFrontType) -> Unit = { _, _, _ -> },
     onDragUnitStart: (DraggedUnitType, startRootPos: Offset) -> Unit,
     onDragUnitMove: (delta: Offset) -> Unit,
     onDragUnitEnd: () -> Unit,
@@ -3881,6 +3885,7 @@ private fun RightSideUnitsAndInspectorColumn(
                 var dividerRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var shelfRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var drawerRootOffset by remember { mutableStateOf(Offset.Zero) }
+                var drawerNotchRootOffset by remember { mutableStateOf(Offset.Zero) }
 
                 Column(
                     modifier = Modifier
@@ -4010,11 +4015,44 @@ private fun RightSideUnitsAndInspectorColumn(
                                     },
                                     onDragEnd = { onDragUnitEnd() },
                                     onDragCancel = { onDragUnitCancel() },
-                                    onTap = { onAddDrawer(null, null) },
+                                    onTap = { onAddDrawer(null, null, DrawerFrontType.HANDLE) },
                                 )
                             },
                     ) {
                         Drawer3DGraphic(
+                            modifier = Modifier
+                                .fillMaxWidth(0.82f)
+                                .height(120.dp),
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(horizontal = 24.dp))
+
+                    // 5th Unit: Drawer with finger pull / notch cutout (Cajón con uñero matching screenshot media_1793504581483_389611b8.png)
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp)
+                            .height(130.dp)
+                            .onGloballyPositioned { coordinates ->
+                                drawerNotchRootOffset = coordinates.positionInRoot()
+                            }
+                            .pointerInput(Unit) {
+                                detectCatalogUnitDragGestures(
+                                    onDragStart = { localOffset ->
+                                        onDragUnitStart(DraggedUnitType.DRAWER_NOTCH, drawerNotchRootOffset + localOffset)
+                                    },
+                                    onDrag = { dragAmount ->
+                                        onDragUnitMove(dragAmount)
+                                    },
+                                    onDragEnd = { onDragUnitEnd() },
+                                    onDragCancel = { onDragUnitCancel() },
+                                    onTap = { onAddDrawer(null, null, DrawerFrontType.NOTCH) },
+                                )
+                            },
+                    ) {
+                        DrawerNotch3DGraphic(
                             modifier = Modifier
                                 .fillMaxWidth(0.82f)
                                 .height(120.dp),
@@ -4448,6 +4486,102 @@ private fun Drawer3DGraphic(modifier: Modifier = Modifier) {
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f),
             style = Stroke(width = 1f),
         )
+    }
+}
+
+@Composable
+private fun DrawerNotch3DGraphic(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        val frontWood = Color(0xFFE6C299)
+        val sideWood = Color(0xFFAA8157)
+        val innerBoxWood = Color(0xFFD6B28A)
+        val bottomFloor = Color(0xFF7E7266)
+        val lineStroke = Color(0xFF8C6742).copy(alpha = 0.5f)
+
+        val drawerW = w * 0.80f
+        val frontH = (h * 0.38f).coerceAtLeast(22f)
+        val depthX = w * 0.14f
+        val depthY = h * 0.28f
+
+        val x0 = (w - drawerW - depthX) * 0.5f
+        val y0 = (h - frontH + depthY) * 0.5f + 8f
+
+        // 1. Box Bottom Floor
+        val floorPath = Path().apply {
+            moveTo(x0 + 10f, y0)
+            lineTo(x0 + drawerW - 10f, y0)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + 10f + depthX, y0 - depthY + 6f)
+            close()
+        }
+        drawPath(floorPath, color = bottomFloor)
+
+        // 2. Box Back Panel
+        val backPath = Path().apply {
+            moveTo(x0 + 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY - frontH * 0.40f)
+            lineTo(x0 + 10f + depthX, y0 - depthY - frontH * 0.40f)
+            close()
+        }
+        drawPath(backPath, color = innerBoxWood)
+        drawPath(backPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 3. Box Left Inner Side
+        val leftPath = Path().apply {
+            moveTo(x0 + 10f, y0)
+            lineTo(x0 + 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + 10f + depthX, y0 - depthY - frontH * 0.40f)
+            lineTo(x0 + 10f, y0 - frontH * 0.40f)
+            close()
+        }
+        drawPath(leftPath, color = sideWood)
+        drawPath(leftPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 4. Box Right Inner Side
+        val rightPath = Path().apply {
+            moveTo(x0 + drawerW - 10f, y0)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY + 6f)
+            lineTo(x0 + drawerW - 10f + depthX, y0 - depthY - frontH * 0.40f)
+            lineTo(x0 + drawerW - 10f, y0 - frontH * 0.40f)
+            close()
+        }
+        drawPath(rightPath, color = sideWood)
+        drawPath(rightPath, color = lineStroke, style = Stroke(width = 1f))
+
+        // 5. Drawer Front Face with Central Finger Pull Notch (matching user screenshot media_1793504581483_389611b8.png)
+        val notchW = drawerW * 0.36f
+        val notchH = frontH * 0.35f
+        val notchX0 = x0 + (drawerW - notchW) * 0.5f
+        val notchX1 = notchX0 + notchW
+
+        val frontPath = Path().apply {
+            moveTo(x0, y0 + frontH)
+            lineTo(x0 + drawerW, y0 + frontH)
+            lineTo(x0 + drawerW, y0)
+            lineTo(notchX1, y0)
+            lineTo(notchX1, y0 + notchH)
+            lineTo(notchX0, y0 + notchH)
+            lineTo(notchX0, y0)
+            lineTo(x0, y0)
+            close()
+        }
+        drawPath(frontPath, color = frontWood)
+        drawPath(frontPath, color = lineStroke, style = Stroke(width = 1.2f))
+
+        // 6. Right edge of front face
+        val frontRightPath = Path().apply {
+            moveTo(x0 + drawerW, y0)
+            lineTo(x0 + drawerW + 6f, y0 - 5f)
+            lineTo(x0 + drawerW + 6f, y0 - 5f + frontH)
+            lineTo(x0 + drawerW, y0 + frontH)
+            close()
+        }
+        drawPath(frontRightPath, color = sideWood)
+        drawPath(frontRightPath, color = lineStroke, style = Stroke(width = 1f))
     }
 }
 

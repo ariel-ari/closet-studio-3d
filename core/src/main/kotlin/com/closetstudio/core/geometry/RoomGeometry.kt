@@ -2,6 +2,7 @@ package com.closetstudio.core.geometry
 
 import com.closetstudio.core.model.ClosetContainerSpec
 import com.closetstudio.core.model.DoorSpec
+import com.closetstudio.core.model.DrawerFrontType
 import com.closetstudio.core.model.RoomCorner
 import com.closetstudio.core.model.RoomSpec
 import com.closetstudio.core.model.Vec2Mm
@@ -832,45 +833,88 @@ object RoomGeometryBuilder {
                 val fD0 = drawerD1 - 18f
                 val fD1 = drawerD1
 
-                addWallAlignedBox(
-                    builder = horizPanelsBuilder,
-                    pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                    s0 = fS0, s1 = fS1,
-                    y0 = drawerY0, y1 = drawerY1,
-                    d0 = fD0, d1 = fD1,
-                    frontEdgeBuilder = frontEdgesBuilder,
-                )
+                if (drawer.frontType == DrawerFrontType.NOTCH) {
+                    // Finger pull notch cutout in top center
+                    val notchWidth = ((fS1 - fS0) * 0.35f).coerceIn(120f, 260f)
+                    val nS0 = (fS0 + fS1 - notchWidth) * 0.5f
+                    val nS1 = nS0 + notchWidth
+                    val notchCutoutH = 35f.coerceAtMost((drawerY1 - drawerY0) * 0.40f)
+                    val notchY = drawerY1 - notchCutoutH
 
-                // 2. Handle on front face (if enabled)
-                if (drawer.hasHandle && handleBuilder != null && fS1 > fS0 + 100f) {
-                    val sMid = (fS0 + fS1) * 0.5f
-                    val yMid = (drawerY0 + drawerY1) * 0.5f
-                    val handleHalfLen = 65f
-                    val handleHalfH = 6f
-                    // Horizontal chrome handle bar
+                    // Left piece (full height)
+                    if (nS0 > fS0) {
+                        addWallAlignedBox(
+                            builder = horizPanelsBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = fS0, s1 = nS0,
+                            y0 = drawerY0, y1 = drawerY1,
+                            d0 = fD0, d1 = fD1,
+                            frontEdgeBuilder = frontEdgesBuilder,
+                        )
+                    }
+                    // Right piece (full height)
+                    if (fS1 > nS1) {
+                        addWallAlignedBox(
+                            builder = horizPanelsBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = nS1, s1 = fS1,
+                            y0 = drawerY0, y1 = drawerY1,
+                            d0 = fD0, d1 = fD1,
+                            frontEdgeBuilder = frontEdgesBuilder,
+                        )
+                    }
+                    // Center bottom piece (below cutout)
+                    if (notchY > drawerY0 && nS1 > nS0) {
+                        addWallAlignedBox(
+                            builder = horizPanelsBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = nS0, s1 = nS1,
+                            y0 = drawerY0, y1 = notchY,
+                            d0 = fD0, d1 = fD1,
+                            frontEdgeBuilder = frontEdgesBuilder,
+                        )
+                    }
+                } else {
                     addWallAlignedBox(
-                        builder = handleBuilder,
+                        builder = horizPanelsBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = sMid - handleHalfLen, s1 = sMid + handleHalfLen,
-                        y0 = yMid - handleHalfH, y1 = yMid + handleHalfH,
-                        d0 = fD1 + 14f, d1 = fD1 + 22f,
+                        s0 = fS0, s1 = fS1,
+                        y0 = drawerY0, y1 = drawerY1,
+                        d0 = fD0, d1 = fD1,
+                        frontEdgeBuilder = frontEdgesBuilder,
                     )
-                    // Left mounting standoff post
-                    addWallAlignedBox(
-                        builder = handleBuilder,
-                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = sMid - 55f, s1 = sMid - 45f,
-                        y0 = yMid - 4f, y1 = yMid + 4f,
-                        d0 = fD1, d1 = fD1 + 15f,
-                    )
-                    // Right mounting standoff post
-                    addWallAlignedBox(
-                        builder = handleBuilder,
-                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
-                        s0 = sMid + 45f, s1 = sMid + 55f,
-                        y0 = yMid - 4f, y1 = yMid + 4f,
-                        d0 = fD1, d1 = fD1 + 15f,
-                    )
+
+                    // 2. Handle on front face (if enabled)
+                    if (drawer.hasHandle && handleBuilder != null && fS1 > fS0 + 100f) {
+                        val sMid = (fS0 + fS1) * 0.5f
+                        val yMid = (drawerY0 + drawerY1) * 0.5f
+                        val handleHalfLen = 65f
+                        val handleHalfH = 6f
+                        // Horizontal chrome handle bar
+                        addWallAlignedBox(
+                            builder = handleBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = sMid - handleHalfLen, s1 = sMid + handleHalfLen,
+                            y0 = yMid - handleHalfH, y1 = yMid + handleHalfH,
+                            d0 = fD1 + 14f, d1 = fD1 + 22f,
+                        )
+                        // Left mounting standoff post
+                        addWallAlignedBox(
+                            builder = handleBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = sMid - 55f, s1 = sMid - 45f,
+                            y0 = yMid - 4f, y1 = yMid + 4f,
+                            d0 = fD1, d1 = fD1 + 15f,
+                        )
+                        // Right mounting standoff post
+                        addWallAlignedBox(
+                            builder = handleBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = sMid + 45f, s1 = sMid + 55f,
+                            y0 = yMid - 4f, y1 = yMid + 4f,
+                            d0 = fD1, d1 = fD1 + 15f,
+                        )
+                    }
                 }
 
                 // 3. Drawer box (interior open body: left/right sides, back panel, bottom base)

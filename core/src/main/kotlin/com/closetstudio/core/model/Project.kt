@@ -111,13 +111,20 @@ data class HorizontalShelfSpec(
 }
 
 @Serializable
+enum class DrawerFrontType {
+    HANDLE,
+    NOTCH,
+}
+
+@Serializable
 data class DrawerSpec(
     val id: String = java.util.UUID.randomUUID().toString(),
     val bayIndex: Int = 0,
     val elevationYMm: Float = 0f,
     val heightMm: Float = 200f,
     val depthMm: Float? = null,
-    val hasHandle: Boolean = true,
+    val frontType: DrawerFrontType = DrawerFrontType.HANDLE,
+    val hasHandle: Boolean = (frontType == DrawerFrontType.HANDLE),
 ) {
     init {
         require(bayIndex >= 0) { "drawer bayIndex must be non-negative" }
@@ -561,6 +568,7 @@ data class ClosetContainerSpec(
         elevationYMm: Float? = null,
         heightMm: Float = 200f,
         snapThresholdMm: Float = 28f,
+        frontType: DrawerFrontType = DrawerFrontType.HANDLE,
     ): ClosetContainerSpec {
         val innerH = interiorHeightMm
         val bays = getBays()
@@ -590,6 +598,7 @@ data class ClosetContainerSpec(
             bayIndex = targetBay,
             elevationYMm = snappedElev,
             heightMm = heightMm,
+            frontType = frontType,
         )
         return copy(drawers = drawers + newDrawer)
     }

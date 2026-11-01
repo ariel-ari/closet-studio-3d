@@ -433,4 +433,46 @@ class ClosetPartitionTest {
         // Must snap to 0 mm flush with drawer in bay 0!
         assertMm(0f, drawerBay1.elevationYMm)
     }
+
+    @Test
+    fun `drawer with finger pull notch respects modular architecture and zero penetration`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 1800f,
+            heightMm = 2200f,
+            depthMm = 600f,
+            panelThicknessMm = 18f,
+            plinthHeightMm = 80f,
+        ).withAddedDivider(offsetXMm = 900f)
+
+        // Add notch drawer in Bay 0
+        container = container.withAddedDrawer(
+            bayIndex = 0,
+            elevationYMm = 0f,
+            heightMm = 220f,
+            frontType = DrawerFrontType.NOTCH,
+        )
+        val drawer = container.drawers.single()
+        assertEquals(DrawerFrontType.NOTCH, drawer.frontType)
+        assertTrue(!drawer.hasHandle)
+        assertMm(0f, drawer.elevationYMm)
+        assertMm(220f, drawer.heightMm)
+
+        // Stacking a second notch drawer directly on top
+        container = container.withAddedDrawer(
+            bayIndex = 0,
+            heightMm = 220f,
+            frontType = DrawerFrontType.NOTCH,
+        )
+        assertEquals(2, container.drawers.size)
+        val stacked = container.drawers[1]
+        assertMm(220f, stacked.elevationYMm)
+
+        // Build geometry: builds notched front faces, open wooden box, and purple outline
+        val room = RoomSpec(containers = listOf(container))
+        val parts = RoomGeometryBuilder.build(room, selectedContainerId = "c1", selectedPartitionId = drawer.id)
+        assertTrue(parts.any { it.surface == RoomSurface.CONTAINER_BODY })
+        assertTrue(parts.any { it.surface == RoomSurface.PARTITION_SELECTED_OUTLINE })
+    }
 }

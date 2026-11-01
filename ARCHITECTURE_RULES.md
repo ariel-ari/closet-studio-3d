@@ -116,14 +116,14 @@ Manual millimetric alignment of cabinetry partitions on touchscreen devices is p
 
 ---
 
-## 8. Drawer System & Component Protocol (Regla de Oro de Cajones y Cajoneras)
-The drawer unit ("Cajón con tirador") replicates functional carpentry drawer boxes with exterior decorative front faces and handles:
+## 8. Drawer System & Modular Architecture Protocol (Regla de Oro de Cajones y Cajoneras)
+The drawer system replicates functional cabinetry drawer units with customizable front styles, strict containment, and smart magnetic stacking:
 
-1. **Realistic 3D Anatomy:**
-   - **Front Face Board:** Spans the compartment width $[X_{\min}, X_{\max}]$ and specified drawer height $H_{\text{drawer}}$. Uses container body melamina finish (`CONTAINER_BODY`).
-   - **Chrome Handle:** Centered bow/bar handle rendered with polished chrome finish (`DOOR_HANDLE`), sharing efficient vertex batching with door handles.
-   - **Internal Drawer Box:** Recessed interior wooden box comprising left side panel, right side panel, back panel, and floor base panel, replicating real sliding drawer hardware clearance.
-   - **Selection Outline:** Clamped purple contour (`#8B5CF6`) around the perimeter of the drawer box.
+1. **Polymorphic Front Architecture (Strategy Pattern):**
+   Drawers share 100% of their physical domain model, physics, bay adaptation, raycasting, and gesture interactions via `DrawerSpec`. Only the decorative front face geometry varies polymorphically:
+   - **`DrawerFrontType.HANDLE` ("Cajón con tirador"):** Solid front face board spanning bay width $[X_{\min}, X_{\max}]$ and height $H_{\text{drawer}}$ with a centered chrome bow/bar handle (`DOOR_HANDLE`).
+   - **`DrawerFrontType.NOTCH` ("Cajón con uñero"):** Minimalist handle-free design with a centered ergonomic finger cutout (uñero). Built with 3 front panel segments (left $[X_0, X_{\text{notch0}}]$, right $[X_{\text{notch1}}, X_1]$, and bottom center $[X_{\text{notch0}}, X_{\text{notch1}}]$ beneath cutout), maintaining physical melamina thickness and seamless edge banding.
+   - **Common Anatomy:** Both styles share the recessed interior wooden box (left/right sides, back panel, bottom panel) and clamped purple selection outline (`#8B5CF6`).
 
 2. **Modular Bay Containment & Automatic Adaptation:**
    - Drawers reside within a specific compartment/bay $i \in [0, N-1]$.
