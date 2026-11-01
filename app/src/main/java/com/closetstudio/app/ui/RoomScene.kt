@@ -206,32 +206,32 @@ fun RoomScene(
                                 RoomSurface.FLOOR -> materialLoader.createTextureInstance(
                                     texture = loadedTexture,
                                     isOpaque = true,
-                                    metallic = 0.05f,
-                                    roughness = 0.35f,
-                                    reflectance = 0.5f,
+                                    metallic = 0.0f,
+                                    roughness = 0.80f,
+                                    reflectance = 0.15f,
                                 )
                                 RoomSurface.WALL -> materialLoader.createTextureInstance(
                                     texture = loadedTexture,
                                     isOpaque = true,
                                     metallic = 0.0f,
-                                    roughness = 0.5f,
-                                    reflectance = 0.6f,
+                                    roughness = 0.95f,
+                                    reflectance = 0.05f,
                                 )
                                 RoomSurface.CONTAINER_FRONT_EDGE -> materialLoader.createTextureInstance(
                                     texture = loadedTexture,
                                     isOpaque = true,
-                                    metallic = 0.06f,
-                                    roughness = 0.32f,
-                                    reflectance = 0.62f,
+                                    metallic = 0.0f,
+                                    roughness = 0.88f,
+                                    reflectance = 0.08f,
                                 )
                                 RoomSurface.CONTAINER_BODY,
                                 RoomSurface.CONTAINER_SIDE_PANEL,
                                 RoomSurface.CONTAINER_BACK -> materialLoader.createTextureInstance(
                                     texture = loadedTexture,
                                     isOpaque = true,
-                                    metallic = 0.04f,
-                                    roughness = 0.40f,
-                                    reflectance = 0.55f,
+                                    metallic = 0.0f,
+                                    roughness = 0.90f,
+                                    reflectance = 0.08f,
                                 )
                                 else -> null
                             }
@@ -248,33 +248,33 @@ fun RoomScene(
                         texturedMaterial ?: when (surface) {
                             RoomSurface.FLOOR -> materialLoader.createColorInstance(
                                 color = Color(0xFFE0D2BE), // Bright light oak parquet
-                                metallic = 0.05f,
-                                roughness = 0.35f,
-                                reflectance = 0.5f,
+                                metallic = 0.0f,
+                                roughness = 0.80f,
+                                reflectance = 0.15f,
                             )
                             RoomSurface.WALL -> materialLoader.createColorInstance(
                                 color = Color(0xFFFAF7F0), // Clean bright warm eggshell wall
                                 metallic = 0.0f,
-                                roughness = 0.5f,
-                                reflectance = 0.6f,
+                                roughness = 0.95f,
+                                reflectance = 0.05f,
                             )
                             RoomSurface.CEILING -> materialLoader.createColorInstance(
                                 color = Color(0xFFFAF9F6),
                                 metallic = 0.0f,
-                                roughness = 0.9f,
-                                reflectance = 0.2f,
+                                roughness = 0.95f,
+                                reflectance = 0.05f,
                             )
                             RoomSurface.DOOR_FRAME -> materialLoader.createColorInstance(
                                 color = Color(0xFF8B5A2B), // Warm rich wood frame
                                 metallic = 0.0f,
-                                roughness = 0.45f,
-                                reflectance = 0.5f,
+                                roughness = 0.70f,
+                                reflectance = 0.25f,
                             )
                             RoomSurface.DOOR_LEAF -> materialLoader.createColorInstance(
                                 color = Color(0xFFA67444), // Warm cedar wood panel
-                                metallic = 0.05f,
-                                roughness = 0.4f,
-                                reflectance = 0.55f,
+                                metallic = 0.0f,
+                                roughness = 0.80f,
+                                reflectance = 0.15f,
                             )
                             RoomSurface.DOOR_HANDLE -> materialLoader.createColorInstance(
                                 color = Color(0xFFF5F5F5), // Polished bright chrome
@@ -284,21 +284,21 @@ fun RoomScene(
                             )
                             RoomSurface.CONTAINER_BODY -> materialLoader.createColorInstance(
                                 color = Color(0xFFD2A679), // Warm oak horizontal shelf/roof surface
-                                metallic = 0.04f,
-                                roughness = 0.38f,
-                                reflectance = 0.55f,
+                                metallic = 0.0f,
+                                roughness = 0.88f,
+                                reflectance = 0.08f,
                             )
                             RoomSurface.CONTAINER_SIDE_PANEL -> materialLoader.createColorInstance(
                                 color = Color(0xFFAA7C50), // Deeper warm wood for vertical side depth walls & plinth
-                                metallic = 0.04f,
-                                roughness = 0.45f,
-                                reflectance = 0.48f,
+                                metallic = 0.0f,
+                                roughness = 0.90f,
+                                reflectance = 0.08f,
                             )
                             RoomSurface.CONTAINER_FRONT_EDGE -> materialLoader.createColorInstance(
                                 color = Color(0xFFE6C299), // Bright crisp front board thickness edge (canto frontal)
-                                metallic = 0.06f,
-                                roughness = 0.32f,
-                                reflectance = 0.62f,
+                                metallic = 0.0f,
+                                roughness = 0.85f,
+                                reflectance = 0.08f,
                             )
                             RoomSurface.CONTAINER_SELECTED_OUTLINE -> materialLoader.createColorInstance(
                                 color = Color(0xFF3D5AFE), // Royal blue selection rim when the container is selected
@@ -314,9 +314,9 @@ fun RoomScene(
                             )
                             RoomSurface.CONTAINER_BACK -> materialLoader.createColorInstance(
                                 color = Color(0xFFF3EAD8), // Warm cream interior backing board recessed 600mm deep
-                                metallic = 0.02f,
-                                roughness = 0.55f,
-                                reflectance = 0.45f,
+                                metallic = 0.0f,
+                                roughness = 0.92f,
+                                reflectance = 0.06f,
                             )
                         }
                     }
