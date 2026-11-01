@@ -1445,21 +1445,27 @@ object RoomGeometryBuilder {
                 val doorY1 = (doorY0 + doors.heightMm).coerceAtMost(interiorTopY)
                 if (doorY1 <= doorY0 + 20f) continue
 
-                val d0 = (wallGap + totalD - doors.thicknessMm).coerceAtLeast(0f)
-                val d1 = wallGap + totalD
+                val perimeterGap = 2.5f
+                val s0Leaf = (bayS0 + perimeterGap).coerceAtMost(bayS1)
+                val s1Leaf = (bayS1 - perimeterGap).coerceAtLeast(s0Leaf)
+                val y0Leaf = (doorY0 + perimeterGap).coerceAtMost(doorY1)
+                val y1Leaf = (doorY1 - perimeterGap).coerceAtLeast(y0Leaf)
+
+                val d0 = (wallGap + totalD - doors.thicknessMm + 2f).coerceAtLeast(0f)
+                val d1 = wallGap + totalD + 2f
 
                 val leaves = if (doors.doorCount == 1) {
-                    listOf(bayS0 to bayS1)
+                    listOf(s0Leaf to s1Leaf)
                 } else {
-                    val gap = doors.doorGapMm.coerceIn(1f, 8f)
-                    val leafW = ((bayS1 - bayS0) - gap) * 0.5f
+                    val gap = doors.doorGapMm.coerceIn(2.5f, 8f)
+                    val leafW = ((s1Leaf - s0Leaf) - gap) * 0.5f
                     if (leafW > 10f) {
                         listOf(
-                            bayS0 to (bayS0 + leafW),
-                            (bayS1 - leafW) to bayS1,
+                            s0Leaf to (s0Leaf + leafW),
+                            (s1Leaf - leafW) to s1Leaf,
                         )
                     } else {
-                        listOf(bayS0 to bayS1)
+                        listOf(s0Leaf to s1Leaf)
                     }
                 }
 
@@ -1468,7 +1474,7 @@ object RoomGeometryBuilder {
                         builder = vertPanelsBuilder,
                         pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
                         s0 = leafS0, s1 = leafS1,
-                        y0 = doorY0, y1 = doorY1,
+                        y0 = y0Leaf, y1 = y1Leaf,
                         d0 = d0, d1 = d1,
                         frontEdgeBuilder = frontEdgesBuilder,
                     )

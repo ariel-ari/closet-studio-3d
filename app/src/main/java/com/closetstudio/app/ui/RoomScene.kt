@@ -15,6 +15,7 @@ import com.closetstudio.core.geometry.RoomSurface
 import com.closetstudio.core.model.RoomSpec
 import com.google.android.filament.Camera
 import com.google.android.filament.LightManager
+import com.google.android.filament.View
 import dev.romainguy.kotlin.math.Float3
 import dev.romainguy.kotlin.math.Float4
 import dev.romainguy.kotlin.math.Mat4
@@ -25,6 +26,7 @@ import io.github.sceneview.gesture.CameraGestureDetector
 import io.github.sceneview.rememberCameraNode
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberMaterialLoader
+import io.github.sceneview.rememberView
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -71,6 +73,19 @@ fun RoomScene(
     }
 
     val engine = rememberEngine()
+    val view = rememberView(engine) {
+        engine.createView().apply {
+            ambientOcclusionOptions = View.AmbientOcclusionOptions().apply {
+                enabled = true
+                radius = 0.35f
+                intensity = 2.0f
+                power = 1.5f
+                bias = 0.005f
+                quality = View.QualityLevel.HIGH
+            }
+            setShadowingEnabled(true)
+        }
+    }
     val materialLoader = rememberMaterialLoader(engine)
     val cameraNode = rememberCameraNode(engine)
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -153,6 +168,7 @@ fun RoomScene(
             modifier = Modifier.fillMaxSize(),
             surfaceType = SurfaceType.TextureSurface,
             engine = engine,
+            view = view,
             materialLoader = materialLoader,
             cameraNode = cameraNode,
             cameraManipulator = manipulator,
@@ -160,20 +176,21 @@ fun RoomScene(
             autoFitContent = false,
             isOpaque = false,
         ) {
-            // Eye-level ambient fill light to guarantee every wall is evenly illuminated without ceiling glare
+            // Ambient fill light for overall room balance without washing out depth
             LightNode(
                 type = LightManager.Type.POINT,
                 position = Float3(centerX, eyeY, centerZ),
-                intensity = 150_000f,
+                intensity = 90_000f,
                 color = Float4(1f, 1f, 1f, 1f),
             )
 
-            // Directional fill light so exterior/interior faces are evenly illuminated during 360° orbit
+            // Directional key light from ceiling angle to cast soft depth shadows under shelves & headers
             LightNode(
                 type = LightManager.Type.DIRECTIONAL,
-                direction = Float3(-0.4f, -0.8f, -0.4f),
-                intensity = 65_000f,
+                direction = Float3(-0.35f, -0.85f, -0.35f),
+                intensity = 75_000f,
                 color = Float4(1f, 1f, 1f, 1f),
+                apply = { castShadows(true) },
             )
 
             parts.forEachIndexed { index, (surface, mesh, textureKey) ->
