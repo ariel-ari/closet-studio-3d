@@ -303,4 +303,78 @@ class ClosetPartitionTest {
         val overflowingDiv = div.copy(endYMm = 9999f)
         assertMm(container.interiorHeightMm, overflowingDiv.effectiveEndY(container.interiorHeightMm))
     }
+
+    @Test
+    fun `horizontal shelf in bay 1 magnetically snaps to elevation of shelf in bay 0 within threshold`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+            plinthHeightMm = 80f,
+        ).withAddedDivider(offsetXMm = 970f) // Creates Bay 0 and Bay 1
+
+        // Add reference shelf in Bay 0 at elevation 1000 mm
+        container = container.withAddedShelf(bayIndex = 0, elevationYMm = 1000f)
+        val shelf0 = container.shelves.first { it.bayIndex == 0 }
+        assertMm(1000f, shelf0.elevationYMm)
+
+        // Add shelf in Bay 1 at raw elevation 1018 mm (within 28mm threshold of 1000 mm)
+        container = container.withAddedShelf(bayIndex = 1, elevationYMm = 1018f)
+        val shelf1 = container.shelves.first { it.id != shelf0.id }
+
+        // Must magnetically snap to exactly 1000f matching shelf 0!
+        assertMm(1000f, shelf1.elevationYMm)
+
+        // Moving shelf1 near 1000 mm (e.g. 985 mm) also snaps to 1000 mm
+        val moved = container.withMovedShelf(shelf1.id, newElevationYMm = 985f)
+        val movedShelf1 = moved.shelves.first { it.id == shelf1.id }
+        assertMm(1000f, movedShelf1.elevationYMm)
+    }
+
+    @Test
+    fun `horizontal shelf moves freely when outside magnetic snap threshold`() {
+        var container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+            plinthHeightMm = 80f,
+        ).withAddedDivider(offsetXMm = 970f)
+
+        // Reference shelf in Bay 0 at 1000 mm
+        container = container.withAddedShelf(bayIndex = 0, elevationYMm = 1000f)
+
+        // Add shelf in Bay 1 at raw elevation 1100 mm (well outside 28mm threshold of 1000 mm, and not at center/thirds)
+        // Note: innerH = 2400 - 80 - 40 = 2280 mm. Center = (2280 - 20) * 0.5 = 1130 mm. Distance to 1130 is 30mm > 28mm.
+        val nonSnappedElev = 1060f
+        container = container.withAddedShelf(bayIndex = 1, elevationYMm = nonSnappedElev)
+        val shelf1 = container.shelves.first { it.bayIndex == 1 }
+
+        // Must retain exact non-snapped elevation
+        assertMm(nonSnappedElev, shelf1.elevationYMm)
+    }
+
+    @Test
+    fun `vertical divider magnetically snaps to container center`() {
+        val container = ClosetContainerSpec(
+            id = "c1",
+            wall = WallIndex.NORTH,
+            widthMm = 2000f,
+            heightMm = 2400f,
+            depthMm = 600f,
+            panelThicknessMm = 20f,
+        )
+        // innerW = 2000 - 40 = 1960 mm. Center = (1960 - 20) * 0.5 = 970 mm.
+        // User moves divider to 982 mm (within 28 mm of 970 mm)
+        val withDiv = container.withAddedDivider(offsetXMm = 982f)
+        val div = withDiv.dividers.single()
+
+        // Must snap to exactly 970 mm!
+        assertMm(970f, div.offsetXMm)
+    }
 }

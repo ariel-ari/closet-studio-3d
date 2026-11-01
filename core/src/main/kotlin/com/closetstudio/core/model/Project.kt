@@ -205,7 +205,165 @@ data class ClosetContainerSpec(
         return prevY to innerH
     }
 
-    fun withAddedDivider(offsetXMm: Float? = null, targetYMm: Float? = null): ClosetContainerSpec {
+    /**
+     * Calculates the magnetically snapped elevation for a horizontal shelf:
+     * 1. Priority 1 (Cabinetry alignment): Snaps to the elevation of any existing shelf
+     *    in any other compartment or bay within [snapThresholdMm].
+     * 2. Priority 2 (Structural divisions): Snaps to the vertical midpoint (50% interior height)
+     *    or equal thirds / quarters if within [snapThresholdMm].
+     * If no target is within [snapThresholdMm], returns [rawElevationYMm].
+     */
+    fun findSnapElevation(
+        currentShelfId: String?,
+        rawElevationYMm: Float,
+        shelfThicknessMm: Float = effectivePanelThicknessMm,
+        snapThresholdMm: Float = 28f,
+    ): Float {
+        if (snapThresholdMm <= 0f) return rawElevationYMm
+        val innerH = interiorHeightMm
+
+        // Priority 1: Match existing shelves across the entire container
+        val existingTargets = shelves
+            .filter { it.id != currentShelfId }
+            .flatMap { other ->
+                if (other.thicknessMm == shelfThicknessMm) {
+                    listOf(other.elevationYMm)
+                } else {
+                    listOf(other.elevationYMm, other.elevationYMm + other.thicknessMm - shelfThicknessMm)
+                }
+            }
+
+        var bestMatch: Float? = null
+        var bestDist = Float.MAX_VALUE
+
+        for (target in existingTargets) {
+            val dist = kotlin.math.abs(rawElevationYMm - target)
+            if (dist <= snapThresholdMm && dist < bestDist) {
+                bestDist = dist
+                bestMatch = target
+            }
+        }
+        if (bestMatch != null) return bestMatch
+
+        // Priority 2: Structural divisions (midpoint, thirds, quarters)
+        val structuralTargets = mutableListOf<Float>()
+
+        // Half height (two equal clear openings)
+        val midH = (innerH - shelfThicknessMm) * 0.5f
+        if (midH in 20f..(innerH - shelfThicknessMm - 20f)) {
+            structuralTargets.add(midH)
+        }
+
+        // Thirds (three equal clear openings)
+        val thirdClearH = (innerH - 2f * shelfThicknessMm) / 3f
+        if (thirdClearH > 50f) {
+            val t1 = thirdClearH
+            val t2 = thirdClearH * 2f + shelfThicknessMm
+            if (t1 in 20f..(innerH - shelfThicknessMm - 20f)) structuralTargets.add(t1)
+            if (t2 in 20f..(innerH - shelfThicknessMm - 20f)) structuralTargets.add(t2)
+        }
+
+        // Quarters (four equal clear openings)
+        val quarterClearH = (innerH - 3f * shelfThicknessMm) / 4f
+        if (quarterClearH > 50f) {
+            val q1 = quarterClearH
+            val q2 = quarterClearH * 2f + shelfThicknessMm
+            val q3 = quarterClearH * 3f + 2f * shelfThicknessMm
+            if (q1 in 20f..(innerH - shelfThicknessMm - 20f)) structuralTargets.add(q1)
+            if (q2 in 20f..(innerH - shelfThicknessMm - 20f)) structuralTargets.add(q2)
+            if (q3 in 20f..(innerH - shelfThicknessMm - 20f)) structuralTargets.add(q3)
+        }
+
+        for (target in structuralTargets) {
+            val dist = kotlin.math.abs(rawElevationYMm - target)
+            if (dist <= snapThresholdMm && dist < bestDist) {
+                bestDist = dist
+                bestMatch = target
+            }
+        }
+
+        return bestMatch ?: rawElevationYMm
+    }
+
+    /**
+     * Calculates the magnetically snapped horizontal offset for a vertical divider:
+     * 1. Priority 1: Snaps to existing vertical dividers (e.g., partial dividers above/below shelves)
+     *    within [snapThresholdMm] to preserve clean vertical column continuity.
+     * 2. Priority 2: Snaps to container center (two equal bays), thirds (three equal bays),
+     *    or midpoints of existing bays within [snapThresholdMm].
+     * If no target is within [snapThresholdMm], returns [rawOffsetXMm].
+     */
+    fun findSnapDividerOffset(
+        currentDividerId: String?,
+        rawOffsetXMm: Float,
+        dividerThicknessMm: Float = effectivePanelThicknessMm,
+        snapThresholdMm: Float = 28f,
+    ): Float {
+        if (snapThresholdMm <= 0f) return rawOffsetXMm
+        val innerW = interiorWidthMm
+
+        // Priority 1: Other existing vertical dividers (for stacked / partial dividers)
+        val existingTargets = dividers
+            .filter { it.id != currentDividerId }
+            .map { it.offsetXMm }
+
+        var bestMatch: Float? = null
+        var bestDist = Float.MAX_VALUE
+
+        for (target in existingTargets) {
+            val dist = kotlin.math.abs(rawOffsetXMm - target)
+            if (dist <= snapThresholdMm && dist < bestDist) {
+                bestDist = dist
+                bestMatch = target
+            }
+        }
+        if (bestMatch != null) return bestMatch
+
+        // Priority 2: Structural divisions (midpoint, thirds, bay centers)
+        val structuralTargets = mutableListOf<Float>()
+
+        // Half width (two equal clear bays)
+        val midW = (innerW - dividerThicknessMm) * 0.5f
+        if (midW in 20f..(innerW - dividerThicknessMm - 20f)) {
+            structuralTargets.add(midW)
+        }
+
+        // Thirds (three equal clear bays)
+        val thirdClearW = (innerW - 2f * dividerThicknessMm) / 3f
+        if (thirdClearW > 50f) {
+            val t1 = thirdClearW
+            val t2 = thirdClearW * 2f + dividerThicknessMm
+            if (t1 in 20f..(innerW - dividerThicknessMm - 20f)) structuralTargets.add(t1)
+            if (t2 in 20f..(innerW - dividerThicknessMm - 20f)) structuralTargets.add(t2)
+        }
+
+        // Midpoints of existing bays (bisecting an existing bay)
+        val bays = getBays()
+        for (bay in bays) {
+            if (bay.widthMm > dividerThicknessMm * 2f + 50f) {
+                val bayMid = bay.startXMm + (bay.widthMm - dividerThicknessMm) * 0.5f
+                if (bayMid in 20f..(innerW - dividerThicknessMm - 20f)) {
+                    structuralTargets.add(bayMid)
+                }
+            }
+        }
+
+        for (target in structuralTargets) {
+            val dist = kotlin.math.abs(rawOffsetXMm - target)
+            if (dist <= snapThresholdMm && dist < bestDist) {
+                bestDist = dist
+                bestMatch = target
+            }
+        }
+
+        return bestMatch ?: rawOffsetXMm
+    }
+
+    fun withAddedDivider(
+        offsetXMm: Float? = null,
+        targetYMm: Float? = null,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
         val innerW = interiorWidthMm
         val innerH = interiorHeightMm
         val thickness = effectivePanelThicknessMm
@@ -215,7 +373,17 @@ data class ClosetContainerSpec(
             widest.startXMm + (widest.widthMm - thickness) * 0.5f
         }
         val clampedOffset = targetOffset.coerceIn(20f, (innerW - thickness - 20f).coerceAtLeast(20f))
-        val targetBay = findBayAtX(clampedOffset)
+        val snappedOffset = if (offsetXMm != null && snapThresholdMm > 0f) {
+            findSnapDividerOffset(
+                currentDividerId = null,
+                rawOffsetXMm = clampedOffset,
+                dividerThicknessMm = thickness,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            clampedOffset
+        }
+        val targetBay = findBayAtX(snappedOffset)
 
         val (startY, endY) = if (targetYMm != null) {
             findVerticalCompartmentRange(targetBay.index, targetYMm)
@@ -228,7 +396,7 @@ data class ClosetContainerSpec(
 
         val newDivider = VerticalDividerSpec(
             id = "div_${System.currentTimeMillis()}_${dividers.size + 1}",
-            offsetXMm = clampedOffset,
+            offsetXMm = snappedOffset,
             thicknessMm = thickness,
             startYMm = clampedStartY,
             endYMm = if (clampedEndY < innerH - 1f) clampedEndY else null,
@@ -241,13 +409,24 @@ data class ClosetContainerSpec(
         newOffsetXMm: Float,
         targetYMm: Float? = null,
         maintainCompartmentIfPossible: Boolean = true,
+        snapThresholdMm: Float = 28f,
     ): ClosetContainerSpec {
         val div = dividers.firstOrNull { it.id == id } ?: return this
         val innerW = interiorWidthMm
         val innerH = interiorHeightMm
         val thickness = div.thicknessMm
         val clampedOffset = newOffsetXMm.coerceIn(10f, (innerW - thickness - 10f).coerceAtLeast(10f))
-        val targetBay = findBayAtX(clampedOffset)
+        val snappedOffset = if (snapThresholdMm > 0f) {
+            findSnapDividerOffset(
+                currentDividerId = id,
+                rawOffsetXMm = clampedOffset,
+                dividerThicknessMm = thickness,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            clampedOffset
+        }
+        val targetBay = findBayAtX(snappedOffset)
 
         val (newStartY, newEndY) = if (targetYMm != null) {
             findVerticalCompartmentRange(targetBay.index, targetYMm)
@@ -263,7 +442,7 @@ data class ClosetContainerSpec(
 
         return withUpdatedDivider(id) {
             it.copy(
-                offsetXMm = clampedOffset,
+                offsetXMm = snappedOffset,
                 startYMm = clampedStartY,
                 endYMm = if (clampedEndY < innerH - 1f) clampedEndY else null,
             )
@@ -274,11 +453,22 @@ data class ClosetContainerSpec(
         id: String,
         newElevationYMm: Float,
         targetXMm: Float? = null,
+        snapThresholdMm: Float = 28f,
     ): ClosetContainerSpec {
         val shelf = shelves.firstOrNull { it.id == id } ?: return this
         val innerH = interiorHeightMm
         val thickness = shelf.thicknessMm
         val clampedElev = newElevationYMm.coerceIn(10f, (innerH - thickness - 10f).coerceAtLeast(10f))
+        val snappedElev = if (snapThresholdMm > 0f) {
+            findSnapElevation(
+                currentShelfId = id,
+                rawElevationYMm = clampedElev,
+                shelfThicknessMm = thickness,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            clampedElev
+        }
         val newBayIndex = if (targetXMm != null) {
             findBayAtX(targetXMm).index
         } else {
@@ -287,22 +477,36 @@ data class ClosetContainerSpec(
 
         return withUpdatedShelf(id) {
             it.copy(
-                elevationYMm = clampedElev,
+                elevationYMm = snappedElev,
                 bayIndex = newBayIndex.coerceIn(0, getBays().lastIndex),
             )
         }
     }
 
-    fun withAddedShelf(bayIndex: Int? = null, elevationYMm: Float? = null): ClosetContainerSpec {
+    fun withAddedShelf(
+        bayIndex: Int? = null,
+        elevationYMm: Float? = null,
+        snapThresholdMm: Float = 28f,
+    ): ClosetContainerSpec {
         val innerH = interiorHeightMm
         val thickness = effectivePanelThicknessMm
         val bays = getBays()
         val targetBay = (bayIndex ?: 0).coerceIn(0, bays.lastIndex)
-        val targetElev = (elevationYMm ?: (innerH * 0.5f)).coerceIn(20f, (innerH - thickness - 20f).coerceAtLeast(20f))
+        val rawElev = (elevationYMm ?: (innerH * 0.5f)).coerceIn(20f, (innerH - thickness - 20f).coerceAtLeast(20f))
+        val snappedElev = if (snapThresholdMm > 0f) {
+            findSnapElevation(
+                currentShelfId = null,
+                rawElevationYMm = rawElev,
+                shelfThicknessMm = thickness,
+                snapThresholdMm = snapThresholdMm,
+            )
+        } else {
+            rawElev
+        }
         val newShelf = HorizontalShelfSpec(
             id = "shelf_${System.currentTimeMillis()}_${shelves.size + 1}",
             bayIndex = targetBay,
-            elevationYMm = targetElev,
+            elevationYMm = snappedElev,
             thicknessMm = thickness,
         )
         return copy(shelves = shelves + newShelf)

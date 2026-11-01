@@ -95,6 +95,26 @@ This rule replicates physical cabinetry assembly where melamina boards must neve
    - **Auto-Close Catalog:** The "Add Unit" catalog popup closes automatically upon drop.
    - **No Inspector Modal:** The lateral dimension inspector panel ("Module") **must NEVER** open automatically upon drop. It opens exclusively when the user explicitly taps the ✏️ Edit floating button.
 
+---
+
+## 7. Smart Magnetic Alignment & Snapping Protocol (Regla de Oro de Alineado Inteligente)
+Manual millimetric alignment of cabinetry partitions on touchscreen devices is physically frustrating. To guarantee precision carpentry and effortless layout creation, all partition repositioning (both horizontal shelves and vertical dividers) **must adhere to smart magnetic snapping**:
+
+1. **Horizontal Shelf Alignment (Continuidad Horizontal entre Módulos):**
+   - **Cross-Bay Shelf Snap (Priority 1):** When moving or dragging a horizontal shelf in any compartment or bay, its elevation $Y$ automatically detects all other shelves across the closet container. When the shelf enters a magnetic tolerance zone ($\Delta Y \le 28\text{ mm}$), it magnetically snaps ("jale magnético") to the exact elevation of the reference shelf. This eliminates millimetric guessing and creates seamless horizontal continuity across vertical dividers.
+   - **Structural Midpoints & Thirds (Priority 2):** When no matching shelf is nearby, the shelf magnetically snaps to the container vertical midpoint $(H_{\text{inner}} - t) \times 0.5$ (creating two equal-height clear compartments), or equal thirds/quarters.
+   - **Visual Confirmation:** When aligned, both the active shelf and the matching reference shelf display the purple selection highlight outline simultaneously in the 3D viewport, giving instant visual confirmation of the alignment.
+
+2. **Vertical Divider Alignment (Alineación y Simetría Vertical):**
+   - **Column Continuity (Priority 1):** When dragging a partial vertical divider (bounded between shelves), it magnetically snaps to the horizontal offset $X$ of existing vertical dividers in compartments above or below, maintaining continuous vertical mullions.
+   - **Center & Symmetrical Divisions (Priority 2):** Vertical dividers snap to the container center $(W_{\text{inner}} - t) \times 0.5$ (splitting the carcass into two equal bays), thirds (three equal bays), or the center of any individual bay being bisected.
+
+3. **Smooth Magnetic Hysteresis:**
+   - Magnetic capture threshold is set to $28\text{ mm}$ (approx. $10\text{--}15\text{ px}$ in standard 3D projection).
+   - While within $\pm 28\text{ mm}$, the position locks to the alignment target.
+   - Moving the finger beyond the $28\text{ mm}$ threshold smoothly releases the lock back to free continuous movement without jarring teleportation.
+
+
 
 
 

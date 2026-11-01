@@ -691,8 +691,12 @@ object RoomGeometryBuilder {
                     frontEdgeBuilder = frontEdgesBuilder,
                 )
 
-                // Selection Highlight Outline (Crisp Purple Rim matching user screenshot, strictly within carcass interior)
-                if (div.id == selectedPartitionId && partitionOutlineBuilder != null) {
+                // Selection & Smart Alignment Highlight Outline (Crisp Purple Rim matching user screenshot, strictly within carcass interior)
+                val selectedDiv = if (selectedPartitionId != null) container.dividers.firstOrNull { it.id == selectedPartitionId } else null
+                val isDivSelected = div.id == selectedPartitionId
+                val isDivAligned = selectedDiv != null && div.id != selectedDiv.id && kotlin.math.abs(div.offsetXMm - selectedDiv.offsetXMm) < 1.0f
+
+                if ((isDivSelected || isDivAligned) && partitionOutlineBuilder != null) {
                     val pRim = 4f
                     val dOut0 = divD1 - 2f
                     val dOut1 = divD1 + 6f
@@ -756,8 +760,12 @@ object RoomGeometryBuilder {
                     frontEdgeBuilder = frontEdgesBuilder,
                 )
 
-                // Selection Highlight Outline (Crisp Purple Rim matching user screenshot, strictly within carcass interior)
-                if (shelf.id == selectedPartitionId && partitionOutlineBuilder != null) {
+                // Selection & Smart Alignment Highlight Outline (Crisp Purple Rim matching user screenshot, strictly within carcass interior)
+                val selectedShelf = if (selectedPartitionId != null) container.shelves.firstOrNull { it.id == selectedPartitionId } else null
+                val isShelfSelected = shelf.id == selectedPartitionId
+                val isShelfAligned = selectedShelf != null && shelf.id != selectedShelf.id && kotlin.math.abs(shelf.elevationYMm - selectedShelf.elevationYMm) < 1.0f
+
+                if ((isShelfSelected || isShelfAligned) && partitionOutlineBuilder != null) {
                     val pRim = 4f
                     val dOut0 = shelfD1 - 2f
                     val dOut1 = shelfD1 + 6f
