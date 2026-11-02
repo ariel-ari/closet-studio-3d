@@ -77,10 +77,10 @@ fun RoomScene(
         engine.createView().apply {
             ambientOcclusionOptions = View.AmbientOcclusionOptions().apply {
                 enabled = true
-                radius = 0.35f
-                intensity = 2.0f
-                power = 1.5f
-                bias = 0.005f
+                radius = 0.18f // Tight architectural contact radius (18 cm) instead of wide halos
+                intensity = 0.90f // Delicate realistic contact shadow, avoiding heavy dark soot
+                power = 1.0f
+                bias = 0.008f
                 quality = View.QualityLevel.HIGH
             }
             setShadowingEnabled(true)
@@ -176,21 +176,20 @@ fun RoomScene(
             autoFitContent = false,
             isOpaque = false,
         ) {
-            // Ambient fill light for overall room balance without washing out depth
+            // Eye-level ambient fill light to keep the room luminous, clean and airy
             LightNode(
                 type = LightManager.Type.POINT,
                 position = Float3(centerX, eyeY, centerZ),
-                intensity = 90_000f,
+                intensity = 130_000f,
                 color = Float4(1f, 1f, 1f, 1f),
             )
 
-            // Directional key light from ceiling angle to cast soft depth shadows under shelves & headers
+            // Directional key light to provide natural architectural orientation
             LightNode(
                 type = LightManager.Type.DIRECTIONAL,
                 direction = Float3(-0.35f, -0.85f, -0.35f),
-                intensity = 75_000f,
+                intensity = 60_000f,
                 color = Float4(1f, 1f, 1f, 1f),
-                apply = { castShadows(true) },
             )
 
             parts.forEachIndexed { index, (surface, mesh, textureKey) ->
