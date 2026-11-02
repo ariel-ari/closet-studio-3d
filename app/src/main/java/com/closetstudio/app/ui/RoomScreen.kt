@@ -3224,7 +3224,7 @@ fun RoomScreen() {
                                             )
                                             if (interiorPt != null) {
                                                 val (rawX, rawY) = interiorPt
-                                                val isOverPanel = showUnitsColumn && (dragScreenOffset.x + viewportOriginInRoot.x >= (panelOriginInRootX - 15f))
+                                                val isOverPanel = showUnitsColumn && !isDraggingUnit && (dragScreenOffset.x + viewportOriginInRoot.x >= (panelOriginInRootX - 15f))
                                                 val isInsideCloset = !isOverPanel &&
                                                     rawX >= -20f && rawX <= (target.interiorWidthMm + 20f) &&
                                                     rawY >= -20f && rawY <= (target.interiorHeightMm + 20f)
