@@ -340,12 +340,6 @@ fun RoomScene(
                                 roughness = 0.95f,
                                 reflectance = 0.05f,
                             )
-                            RoomSurface.CONTAINER_SHADOW_REVEAL -> materialLoader.createColorInstance(
-                                color = Color(0xFF141414), // Deep architectural shadow cavity behind closed doors & drawer gaps
-                                metallic = 0.0f,
-                                roughness = 0.98f,
-                                reflectance = 0.02f,
-                            )
                         }
                     }
 
