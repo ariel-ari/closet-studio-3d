@@ -277,7 +277,8 @@ object RoomGeometryBuilder {
                 }
                 val backMesh = cBackBuilder.build()
                 if (backMesh.vertexCount > 0) {
-                    parts += RoomPart(RoomSurface.CONTAINER_BACK, backMesh, textureKey = textureKey)
+                    // Backing board (fondo de placard) is independently finished in architectural warm white/linen
+                    parts += RoomPart(RoomSurface.CONTAINER_BACK, backMesh, textureKey = null)
                 }
             }
 

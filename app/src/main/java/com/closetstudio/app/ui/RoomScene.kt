@@ -242,8 +242,7 @@ fun RoomScene(
                                     reflectance = 0.08f,
                                 )
                                 RoomSurface.CONTAINER_BODY,
-                                RoomSurface.CONTAINER_SIDE_PANEL,
-                                RoomSurface.CONTAINER_BACK -> materialLoader.createTextureInstance(
+                                RoomSurface.CONTAINER_SIDE_PANEL -> materialLoader.createTextureInstance(
                                     texture = loadedTexture,
                                     isOpaque = true,
                                     metallic = 0.0f,
@@ -330,10 +329,10 @@ fun RoomScene(
                                 reflectance = 0.85f,
                             )
                             RoomSurface.CONTAINER_BACK -> materialLoader.createColorInstance(
-                                color = Color(0xFFF3EAD8), // Warm cream interior backing board recessed 600mm deep
+                                color = Color(0xFFF5EFE6), // Architectural warm white linen backing board (fondo de placard)
                                 metallic = 0.0f,
-                                roughness = 0.92f,
-                                reflectance = 0.06f,
+                                roughness = 0.95f,
+                                reflectance = 0.05f,
                             )
                         }
                     }
