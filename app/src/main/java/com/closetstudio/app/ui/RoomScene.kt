@@ -151,10 +151,12 @@ fun RoomScene(
                         0.05, 50.0,
                     )
                 } else {
+                    // Natural human vision perspective (35mm-50mm architectural focal equivalent)
+                    // avoiding aggressive wide-angle / fisheye edge distortion
                     val (fov, direction) = if (aspect >= 1.0) {
-                        48.0 to Camera.Fov.VERTICAL
+                        32.0 to Camera.Fov.VERTICAL
                     } else {
-                        58.0 to Camera.Fov.HORIZONTAL
+                        42.0 to Camera.Fov.HORIZONTAL
                     }
                     cameraNode.setProjection(
                         fov,
