@@ -178,4 +178,44 @@ class RoomGeometryTest {
             }
         }
     }
+
+    @Test
+    fun `closet with doors generates dark shadow reveal cavity behind closed doors`() {
+        val room = RoomSpec(
+            clearWidthMm = 3000f,
+            clearHeightMm = 2400f,
+            clearDepthMm = 3000f,
+        ).withAddedContainer(
+            wall = com.closetstudio.core.model.WallIndex.NORTH,
+            id = "c1",
+            defaultWidthMm = 1200f,
+            defaultHeightMm = 2000f,
+            defaultDepthMm = 600f,
+        )
+
+        val container = room.containers.single()
+        val withDoors = room.copy(
+            containers = listOf(
+                container.copy(
+                    cabinetDoors = listOf(
+                        com.closetstudio.core.model.CabinetDoorsSpec(
+                            id = "door1",
+                            bayIndex = 0,
+                            elevationYMm = 0f,
+                            heightMm = 1800f,
+                            doorCount = 2,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val parts = RoomGeometryBuilder.build(withDoors, showDoors = true)
+        val shadow = assertNotNull(parts.find { it.surface == RoomSurface.CONTAINER_SHADOW_REVEAL })
+        assertTrue(shadow.mesh.vertexCount > 0)
+
+        // When showDoors is false (editing interior), shadow reveal cavity should NOT be generated
+        val partsWithoutDoors = RoomGeometryBuilder.build(withDoors, showDoors = false)
+        assertEquals(null, partsWithoutDoors.find { it.surface == RoomSurface.CONTAINER_SHADOW_REVEAL })
+    }
 }

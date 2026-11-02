@@ -24,6 +24,7 @@ enum class RoomSurface {
     CONTAINER_BACK,
     CONTAINER_SELECTED_OUTLINE,
     PARTITION_SELECTED_OUTLINE,
+    CONTAINER_SHADOW_REVEAL,
 }
 
 data class RoomPart(
@@ -248,6 +249,7 @@ object RoomGeometryBuilder {
                 val cVertPanelsBuilder = MeshBuilder(containerScaleMm, rotateUv90 = grainRotated)
                 val cFrontEdgesBuilder = MeshBuilder(containerScaleMm, rotateUv90 = grainRotated)
                 val cBackBuilder = MeshBuilder(containerScaleMm, rotateUv90 = grainRotated)
+                val cShadowRevealBuilder = MeshBuilder(containerScaleMm)
 
                 addContainerToBuilders(
                     room = room,
@@ -260,6 +262,7 @@ object RoomGeometryBuilder {
                     selectedPartitionId = selectedPartitionId,
                     partitionOutlineBuilder = partitionOutlineBuilder,
                     handleBuilder = handleBuilder,
+                    shadowRevealBuilder = cShadowRevealBuilder,
                     showDoors = showDoors,
                 )
 
@@ -279,6 +282,10 @@ object RoomGeometryBuilder {
                 if (backMesh.vertexCount > 0) {
                     // Backing board (fondo de placard) is independently finished in architectural warm white/linen
                     parts += RoomPart(RoomSurface.CONTAINER_BACK, backMesh, textureKey = null)
+                }
+                val shadowMesh = cShadowRevealBuilder.build()
+                if (shadowMesh.vertexCount > 0) {
+                    parts += RoomPart(RoomSurface.CONTAINER_SHADOW_REVEAL, shadowMesh, textureKey = null)
                 }
             }
 
@@ -681,6 +688,7 @@ object RoomGeometryBuilder {
         selectedPartitionId: String? = null,
         partitionOutlineBuilder: MeshBuilder? = null,
         handleBuilder: MeshBuilder? = null,
+        shadowRevealBuilder: MeshBuilder? = null,
         showDoors: Boolean = true,
     ) {
         val nw = room.vertexNW
@@ -1028,6 +1036,23 @@ object RoomGeometryBuilder {
                 val fS1 = (drawerS1 - 2f).coerceAtLeast(fS0)
                 val fD0 = drawerD1 - 18f
                 val fD1 = drawerD1
+
+                // Deep interior shadow cavity behind drawer front so perimeter gaps show realistic dark shadows
+                if (shadowRevealBuilder != null) {
+                    val sBaffle0 = (drawerS0 - 2f).coerceAtLeast(s0)
+                    val sBaffle1 = (drawerS1 + 2f).coerceAtMost(s1)
+                    val yBaffle0 = (drawerY0 - 2f).coerceAtLeast(0f)
+                    val yBaffle1 = (drawerY1 + 2f).coerceAtMost(totalH)
+                    val dBaffle0 = (fD0 - 6f).coerceAtLeast(wallGap)
+                    val dBaffle1 = (fD0 - 1f).coerceAtLeast(wallGap)
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = sBaffle0, s1 = sBaffle1,
+                        y0 = yBaffle0, y1 = yBaffle1,
+                        d0 = dBaffle0, d1 = dBaffle1,
+                    )
+                }
 
                 if (drawer.frontType == DrawerFrontType.NOTCH) {
                     // Finger pull notch cutout in top center
@@ -1454,6 +1479,23 @@ object RoomGeometryBuilder {
 
                 val d0 = (wallGap + totalD - doors.thicknessMm + 2f).coerceAtLeast(0f)
                 val d1 = wallGap + totalD + 2f
+
+                // Deep interior shadow cavity behind closed doors so perimeter gaps and leaf splits show realistic dark shadows
+                if (shadowRevealBuilder != null) {
+                    val sBaffle0 = (bayS0 - t * 0.5f).coerceAtLeast(s0)
+                    val sBaffle1 = (bayS1 + t * 0.5f).coerceAtMost(s1)
+                    val yBaffle0 = (doorY0 - t * 0.5f).coerceAtLeast(0f)
+                    val yBaffle1 = (doorY1 + t * 0.5f).coerceAtMost(totalH)
+                    val dBaffle0 = (d0 - 6f).coerceAtLeast(wallGap)
+                    val dBaffle1 = (d0 - 1f).coerceAtLeast(wallGap)
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = sBaffle0, s1 = sBaffle1,
+                        y0 = yBaffle0, y1 = yBaffle1,
+                        d0 = dBaffle0, d1 = dBaffle1,
+                    )
+                }
 
                 val leaves = if (doors.doorCount == 1) {
                     listOf(s0Leaf to s1Leaf)
