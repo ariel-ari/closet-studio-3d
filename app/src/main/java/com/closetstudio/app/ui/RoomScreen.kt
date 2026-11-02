@@ -3578,7 +3578,6 @@ fun RoomScreen() {
                                         .fillMaxHeight()
                                         .graphicsLayer {
                                             alpha = if (isDraggingUnit) 0f else 1f
-                                            translationX = if (isDraggingUnit) unitsColumnWidthPx else 0f
                                         }
                                         .onGloballyPositioned { coordinates ->
                                             panelOriginInRootX = coordinates.positionInRoot().x
