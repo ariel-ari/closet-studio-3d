@@ -75,6 +75,11 @@ fun RoomScene(
     val engine = rememberEngine()
     val view = rememberView(engine) {
         engine.createView().apply {
+            antiAliasing = View.AntiAliasing.FXAA
+            multiSampleAntiAliasingOptions = View.MultiSampleAntiAliasingOptions().apply {
+                enabled = true
+                sampleCount = 4
+            }
             ambientOcclusionOptions = View.AmbientOcclusionOptions().apply {
                 enabled = true
                 radius = 0.18f // Tight architectural contact radius (18 cm) instead of wide halos

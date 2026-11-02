@@ -1052,6 +1052,34 @@ object RoomGeometryBuilder {
                         y0 = yBaffle0, y1 = yBaffle1,
                         d0 = dBaffle0, d1 = dBaffle1,
                     )
+
+                    // Front reveal shadow grooves in perimeter gaps around drawer front so lines stay crisp and solid at oblique angles
+                    val dRev0 = fD0
+                    val dRev1 = fD1 - 0.8f
+                    // Left drawer reveal
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = drawerS0 - 1f, s1 = fS0 + 0.3f,
+                        y0 = drawerY0, y1 = drawerY1,
+                        d0 = dRev0, d1 = dRev1,
+                    )
+                    // Right drawer reveal
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = fS1 - 0.3f, s1 = drawerS1 + 1f,
+                        y0 = drawerY0, y1 = drawerY1,
+                        d0 = dRev0, d1 = dRev1,
+                    )
+                    // Top drawer reveal
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = drawerS0 - 1f, s1 = drawerS1 + 1f,
+                        y0 = drawerY1 - 0.3f, y1 = drawerY1 + 2f,
+                        d0 = dRev0, d1 = dRev1,
+                    )
                 }
 
                 if (drawer.frontType == DrawerFrontType.NOTCH) {
@@ -1509,6 +1537,58 @@ object RoomGeometryBuilder {
                         )
                     } else {
                         listOf(s0Leaf to s1Leaf)
+                    }
+                }
+
+                // Front reveal shadow grooves in perimeter gaps and center split so lines stay crisp and solid at oblique angles
+                if (shadowRevealBuilder != null) {
+                    val dRev0 = d0
+                    val dRev1 = d1 - 0.8f
+
+                    // Top perimeter door reveal
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = bayS0 - 1f, s1 = bayS1 + 1f,
+                        y0 = y1Leaf - 0.3f, y1 = doorY1 + 1f,
+                        d0 = dRev0, d1 = dRev1,
+                    )
+                    // Bottom perimeter door reveal
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = bayS0 - 1f, s1 = bayS1 + 1f,
+                        y0 = doorY0 - 1f, y1 = y0Leaf + 0.3f,
+                        d0 = dRev0, d1 = dRev1,
+                    )
+                    // Left perimeter door reveal
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = bayS0 - 1f, s1 = s0Leaf + 0.3f,
+                        y0 = y0Leaf, y1 = y1Leaf,
+                        d0 = dRev0, d1 = dRev1,
+                    )
+                    // Right perimeter door reveal
+                    addWallAlignedBox(
+                        builder = shadowRevealBuilder,
+                        pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                        s0 = s1Leaf - 0.3f, s1 = bayS1 + 1f,
+                        y0 = y0Leaf, y1 = y1Leaf,
+                        d0 = dRev0, d1 = dRev1,
+                    )
+
+                    // Center door split reveal between 2 leaves
+                    if (leaves.size >= 2) {
+                        val leaf1End = leaves[0].second
+                        val leaf2Start = leaves[1].first
+                        addWallAlignedBox(
+                            builder = shadowRevealBuilder,
+                            pStart = pStart, ux = ux, uz = uz, nx = nx, nz = nz,
+                            s0 = leaf1End - 0.3f, s1 = leaf2Start + 0.3f,
+                            y0 = y0Leaf, y1 = y1Leaf,
+                            d0 = dRev0, d1 = dRev1,
+                        )
                     }
                 }
 
