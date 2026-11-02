@@ -772,10 +772,10 @@ private fun computeTapRayMm(
         dirZ = fz
     } else {
         val (halfTanX, halfTanY) = if (aspect >= 1f) {
-            val tanV = kotlin.math.tan(Math.toRadians(24.0)).toFloat()
+            val tanV = kotlin.math.tan(Math.toRadians(16.0)).toFloat()
             (tanV * aspect) to tanV
         } else {
-            val tanH = kotlin.math.tan(Math.toRadians(29.0)).toFloat()
+            val tanH = kotlin.math.tan(Math.toRadians(21.0)).toFloat()
             tanH to (tanH / aspect.coerceAtLeast(0.1f))
         }
         val dx = fx + normalizedX * halfTanX * rx + normalizedY * halfTanY * ux
@@ -820,7 +820,7 @@ private fun pickContainerAtScreenTap(
         isOrtho = isOrtho,
         orthoSize = orthoSize,
     )
-    return room.pickContainerByRayMm(
+    val hit = room.pickContainerByRayMm(
         rayOriginX = orig[0],
         rayOriginY = orig[1],
         rayOriginZ = orig[2],
@@ -828,6 +828,7 @@ private fun pickContainerAtScreenTap(
         rayDirY = dir[1],
         rayDirZ = dir[2],
     )
+    return hit
 }
 
 private fun pickPartitionAtScreenTap(
@@ -858,7 +859,7 @@ private fun pickPartitionAtScreenTap(
         isOrtho = isOrtho,
         orthoSize = orthoSize,
     )
-    return room.pickPartitionByRayMm(
+    val hit = room.pickPartitionByRayMm(
         rayOriginX = orig[0],
         rayOriginY = orig[1],
         rayOriginZ = orig[2],
@@ -867,6 +868,7 @@ private fun pickPartitionAtScreenTap(
         rayDirZ = dir[2],
         includeDoors = includeDoors,
     )
+    return hit
 }
 
 private fun projectScreenToContainerInterior(
@@ -3568,12 +3570,15 @@ fun RoomScreen() {
                                     },
                                     onClose = {
                                         showUnitsColumn = false
+                                        isEditingContainerInPanel = false
+                                        isEditingPartitionInPanel = false
                                     },
                                     modifier = Modifier
                                         .width(unitsColumnWidth)
                                         .fillMaxHeight()
                                         .graphicsLayer {
-                                            alpha = if (isDraggingUnit) 0.65f else 1f
+                                            alpha = if (isDraggingUnit) 0f else 1f
+                                            translationX = if (isDraggingUnit) unitsColumnWidthPx else 0f
                                         }
                                         .onGloballyPositioned { coordinates ->
                                             panelOriginInRootX = coordinates.positionInRoot().x
@@ -4269,11 +4274,11 @@ private fun RightSideUnitsAndInspectorColumn(
 ) {
     Surface(
         modifier = modifier.graphicsLayer {
-            alpha = if (isDragging) 0.65f else 1f
+            alpha = if (isDragging) 0f else 1f
         },
         color = Color.White,
         tonalElevation = 0.dp,
-        shadowElevation = if (isDragging) 4.dp else 14.dp,
+        shadowElevation = if (isDragging) 0.dp else 14.dp,
         shape = RoundedCornerShape(0.dp),
     ) {
         Column(
@@ -4320,12 +4325,10 @@ private fun RightSideUnitsAndInspectorColumn(
 
                     IconButton(
                         onClick = {
-                            if (showModuleInspector) {
-                                onClosePartition()
-                                onTogglePartitionEditMode(false)
-                            } else {
-                                onClose()
-                            }
+                            onTogglePartitionEditMode(false)
+                            onToggleEditMode(false)
+                            onClosePartition()
+                            onClose()
                         },
                         modifier = Modifier.size(36.dp),
                     ) {

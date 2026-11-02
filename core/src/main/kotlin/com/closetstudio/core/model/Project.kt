@@ -2737,8 +2737,8 @@ data class RoomSpec(
                 val bay = bays.getOrElse(shelf.bayIndex) { bays.last() }
                 val shelfS0 = s0Inner + bay.startXMm - 20f
                 val shelfS1 = s0Inner + bay.endXMm + 20f
-                val shelfY0 = plinthH + t + shelf.elevationYMm - 45f
-                val shelfY1 = plinthH + t + shelf.elevationYMm + shelf.thicknessMm + 45f
+                val shelfY0 = plinthH + t + shelf.elevationYMm - 70f
+                val shelfY1 = plinthH + t + shelf.elevationYMm + shelf.thicknessMm + 70f
                 val shelfD0 = 0f
                 val shelfD1 = wallGap + backT + shelf.effectiveDepth(c.interiorDepthMm) + 30f
 
