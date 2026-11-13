@@ -72,7 +72,15 @@ dependencies {
 
     implementation(libs.sceneview)
 
+    testImplementation(kotlin("test"))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.jupiter.launcher)
+
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }
 
 tasks.configureEach {

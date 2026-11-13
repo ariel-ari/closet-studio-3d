@@ -11,9 +11,11 @@ import java.util.UUID
  * Local JSON file-backed repository for saving, creating, opening, and deleting projects,
  * persisting all room measurements, door settings, corner angles, and locks (`candados`).
  */
-class ProjectStorage(context: Context) {
+class ProjectStorage private constructor(storageRoot: File) {
 
-    private val storageDir = File(context.filesDir, "closet_studio_projects").apply { mkdirs() }
+    constructor(context: Context) : this(File(context.filesDir, "closet_studio_projects"))
+
+    private val storageDir = storageRoot.absoluteFile.apply { mkdirs() }
     private val indexFile = File(storageDir, "projects.json")
     private val activeMetaFile = File(storageDir, "active_project_id.txt")
     private val languageFile = File(storageDir, "app_language.txt")
@@ -102,9 +104,11 @@ class ProjectStorage(context: Context) {
     }
 
     private fun persistAll(projects: List<SavedProject>) {
-        runCatching {
-            indexFile.writeText(ProjectCodec.encodeProjects(projects))
-        }
+        indexFile.writeText(ProjectCodec.encodeProjects(projects))
+    }
+
+    internal companion object {
+        fun forStorageDirectory(directory: File): ProjectStorage = ProjectStorage(directory)
     }
 }
 
