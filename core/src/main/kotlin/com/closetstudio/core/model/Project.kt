@@ -2489,6 +2489,41 @@ data class RoomSpec(
         return copy(containers = synced)
     }
 
+    /** Moves a closet along its current wall without resizing it or moving its neighbors. */
+    fun withMovedContainer(id: String, targetOffsetMm: Float): RoomSpec {
+        val moving = containers.firstOrNull { it.id == id } ?: return this
+        val detached = moving.copy(fuseStartCorner = false, fuseEndCorner = false)
+        val maxOffset = (wallLengthMm(detached.wall) - detached.widthMm).coerceAtLeast(0f)
+        val requestedOffset = targetOffsetMm.coerceIn(0f, maxOffset)
+        val movingRight = requestedOffset >= moving.offsetMm
+        var allowedOffset = requestedOffset
+
+        containers.asSequence()
+            .filter { it.id != id && it.wall == detached.wall }
+            .sortedBy { it.offsetMm }
+            .forEach { other ->
+                val otherStart = other.offsetMm
+                val otherEnd = other.offsetMm + other.widthMm
+                val overlaps = if (movingRight) {
+                    otherStart >= moving.offsetMm + moving.widthMm && allowedOffset + detached.widthMm > otherStart
+                } else {
+                    otherEnd <= moving.offsetMm && allowedOffset < otherEnd
+                }
+                val targetOverlaps = allowedOffset < otherEnd && allowedOffset + detached.widthMm > otherStart
+                if (overlaps || targetOverlaps) {
+                    allowedOffset = if (movingRight) {
+                        minOf(allowedOffset, (otherStart - detached.widthMm).coerceAtLeast(0f))
+                    } else {
+                        maxOf(allowedOffset, otherEnd.coerceAtMost(maxOffset))
+                    }
+                }
+            }
+
+        return copy(containers = containers.map { container ->
+            if (container.id == id) clampContainer(detached.copy(offsetMm = allowedOffset)) else container
+        })
+    }
+
     /** Duplicates an existing container by [id], shifting it slightly along the wall if space allows. */
     fun withDuplicatedContainer(
         sourceId: String,

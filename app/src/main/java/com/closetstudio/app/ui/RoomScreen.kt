@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Palette
@@ -547,6 +548,9 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
     onTap: (tapPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Unit = { _, _, _ -> },
     canDragPartitionAt: (downPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Boolean = { _, _, _ -> false },
     onDragPartition: (pointerPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Unit = { _, _, _ -> },
+    canDragContainerAt: (downPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Boolean = { _, _, _ -> false },
+    onDragContainer: (pointerPos: Offset, viewportWidthPx: Float, viewportHeightPx: Float) -> Unit = { _, _, _ -> },
+    isContainerMovementLocked: Boolean = false,
     isPanelOpen: Boolean = false,
     panelWidthPx: Float = 0f,
 ) {
@@ -559,7 +563,11 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
             // Touch started inside the open catalog / inspector panel: ignore in 3D viewport
             return@awaitEachGesture
         }
-        val isPartitionDrag = canDragPartitionAt(downPos, vw, vh)
+        val dragTarget = resolveRoomDragTarget(
+            isContainerMovementLocked = isContainerMovementLocked,
+            canDragPartitionAt = { canDragPartitionAt(downPos, vw, vh) },
+            canDragContainerAt = { canDragContainerAt(downPos, vw, vh) },
+        )
         var lastSinglePos = downPos
         var totalMoveDistance = 0f
         var prevCentroid = Offset.Zero
@@ -581,10 +589,10 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
                     if (delta != Offset.Zero) {
                         totalMoveDistance += delta.getDistance()
                         if (totalMoveDistance > 8f) {
-                            if (isPartitionDrag) {
-                                onDragPartition(pointer.position, vw, vh)
-                            } else {
-                                onOrbit(delta.x, delta.y)
+                            when (dragTarget) {
+                                RoomDragTarget.PARTITION -> onDragPartition(pointer.position, vw, vh)
+                                RoomDragTarget.CONTAINER -> onDragContainer(pointer.position, vw, vh)
+                                RoomDragTarget.CAMERA -> onOrbit(delta.x, delta.y)
                             }
                             pointer.consume()
                         }
@@ -624,6 +632,22 @@ private suspend fun PointerInputScope.detectRoomInspectionGestures(
             )
         }
     }
+}
+
+internal enum class RoomDragTarget {
+    CAMERA,
+    PARTITION,
+    CONTAINER,
+}
+
+internal fun resolveRoomDragTarget(
+    isContainerMovementLocked: Boolean,
+    canDragPartitionAt: () -> Boolean,
+    canDragContainerAt: () -> Boolean,
+): RoomDragTarget {
+    if (canDragPartitionAt()) return RoomDragTarget.PARTITION
+    if (!isContainerMovementLocked && canDragContainerAt()) return RoomDragTarget.CONTAINER
+    return RoomDragTarget.CAMERA
 }
 
 /**
@@ -999,6 +1023,7 @@ fun RoomScreen() {
     var isEditingPartitionInPanel by remember { mutableStateOf(false) }
     var selectedContainerId by remember { mutableStateOf<String?>(null) }
     var selectedPartitionId by remember { mutableStateOf<String?>(null) }
+    var containerDragGrabOffsetMm by remember { mutableFloatStateOf(0f) }
     var selectedPartitionIsVertical by remember { mutableStateOf(true) }
     var showCategoryMenu by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
@@ -1009,6 +1034,7 @@ fun RoomScreen() {
     var showWallLabels by remember { mutableStateOf(true) }
     var showClosetDoors by remember { mutableStateOf(true) }
     var showClosetDimensions by remember { mutableStateOf(false) }
+    var isContainerMovementLocked by remember { mutableStateOf(false) }
     var splitDoorWall by remember { mutableStateOf(false) }
     var viewportWidthPx by remember { mutableFloatStateOf(1f) }
     var viewportHeightPx by remember { mutableFloatStateOf(1f) }
@@ -1249,8 +1275,10 @@ fun RoomScreen() {
         LocalAppLanguage provides appLanguage,
         LocalAppUnitSystem provides appUnitSystem,
     ) {
+        Box(modifier = Modifier.fillMaxSize()) {
         ModalNavigationDrawer(
             drawerState = drawerState,
+            gesturesEnabled = false,
             drawerContent = {
                 ModalDrawerSheet(
                     modifier = Modifier.width(300.dp),
@@ -1330,7 +1358,7 @@ fun RoomScreen() {
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                         )
                                     }
-                                }
+                            }
                             }
                         },
                         icon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
@@ -1425,7 +1453,7 @@ fun RoomScreen() {
                                         color = Color.White,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                     )
-                                }
+                            }
                             }
                         },
                         icon = { Icon(Icons.Default.Language, contentDescription = null) },
@@ -1456,7 +1484,7 @@ fun RoomScreen() {
                                         color = Color.White,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                     )
-                                }
+                            }
                             }
                         },
                         icon = { Icon(Icons.Default.Straighten, contentDescription = null) },
@@ -1478,6 +1506,7 @@ fun RoomScreen() {
                     .background(Color(0xFFEDEAE4)),
             ) {
                 val isLandscape = maxWidth > maxHeight
+                val isCompactWidth = maxWidth < 600.dp
                 val screenWidth = maxWidth
 
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -1525,7 +1554,7 @@ fun RoomScreen() {
                                         contentDescription = null,
                                         tint = Color.White,
                                     )
-                                }
+                            }
 
                                 DropdownMenu(
                                     expanded = showCategoryMenu,
@@ -1573,7 +1602,7 @@ fun RoomScreen() {
                                             switchTo3DView()
                                         },
                                     )
-                                }
+                            }
                             }
 
                             Spacer(modifier = Modifier.weight(1f))
@@ -1599,7 +1628,7 @@ fun RoomScreen() {
                                     } else {
                                         recenterCurrentWall()
                                     }
-                                },
+                            },
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ViewInAr,
@@ -1608,69 +1637,71 @@ fun RoomScreen() {
                                 )
                             }
 
-                            // Toggle Wall Labels (A, B, C, D)
-                            IconButton(
-                                onClick = {
-                                    showWallLabels = !showWallLabels
-                                    coroutineScope.launch {
-                                        messageHostState.showSnackbar(
-                                            if (showWallLabels) s.wallLabelsShownToast else s.wallLabelsHiddenToast
-                                        )
-                                    }
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = if (showWallLabels) Icons.AutoMirrored.Filled.Label else Icons.AutoMirrored.Filled.LabelOff,
-                                    contentDescription = s.toggleWallLabels,
-                                    tint = if (showWallLabels) Color.White else Color.White.copy(alpha = 0.55f),
-                                )
+                            if (!isCompactWidth) {
+                                // Toggle Wall Labels (A, B, C, D)
+                                IconButton(
+                                    onClick = {
+                                        showWallLabels = !showWallLabels
+                                        coroutineScope.launch {
+                                            messageHostState.showSnackbar(
+                                                if (showWallLabels) s.wallLabelsShownToast else s.wallLabelsHiddenToast
+                                            )
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = if (showWallLabels) Icons.AutoMirrored.Filled.Label else Icons.AutoMirrored.Filled.LabelOff,
+                                        contentDescription = s.toggleWallLabels,
+                                        tint = if (showWallLabels) Color.White else Color.White.copy(alpha = 0.55f),
+                                    )
                             }
 
-                            // Toggle Closet Doors Visibility
-                            IconButton(
-                                onClick = {
-                                    showClosetDoors = !showClosetDoors
-                                    coroutineScope.launch {
-                                        messageHostState.showSnackbar(
-                                            if (showClosetDoors) s.doorsShownToast else s.doorsHiddenToast
-                                        )
-                                    }
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.DoorFront,
-                                    contentDescription = s.toggleDoorsVisibility,
-                                    tint = if (showClosetDoors) Color.White else Color.White.copy(alpha = 0.55f),
-                                )
+                                // Toggle Closet Doors Visibility
+                                IconButton(
+                                    onClick = {
+                                        showClosetDoors = !showClosetDoors
+                                        coroutineScope.launch {
+                                            messageHostState.showSnackbar(
+                                                if (showClosetDoors) s.doorsShownToast else s.doorsHiddenToast
+                                            )
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DoorFront,
+                                        contentDescription = s.toggleDoorsVisibility,
+                                        tint = if (showClosetDoors) Color.White else Color.White.copy(alpha = 0.55f),
+                                    )
                             }
 
-                            // Toggle Closet Dimensions Visibility
-                            IconButton(
-                                onClick = {
-                                    showClosetDimensions = !showClosetDimensions
-                                    coroutineScope.launch {
-                                        messageHostState.showSnackbar(
-                                            if (showClosetDimensions) s.closetDimensionsShownToast else s.closetDimensionsHiddenToast
-                                        )
-                                    }
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Straighten,
-                                    contentDescription = s.toggleClosetDimensions,
-                                    tint = if (showClosetDimensions) Color(0xFFB388FF) else Color.White.copy(alpha = 0.55f),
-                                )
+                                // Toggle Closet Dimensions Visibility
+                                IconButton(
+                                    onClick = {
+                                        showClosetDimensions = !showClosetDimensions
+                                        coroutineScope.launch {
+                                            messageHostState.showSnackbar(
+                                                if (showClosetDimensions) s.closetDimensionsShownToast else s.closetDimensionsHiddenToast
+                                            )
+                                        }
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Straighten,
+                                        contentDescription = s.toggleClosetDimensions,
+                                        tint = if (showClosetDimensions) Color(0xFFB388FF) else Color.White.copy(alpha = 0.55f),
+                                    )
                             }
 
-                            // Info (ⓘ)
-                            IconButton(
-                                onClick = { showInfoDialog = true },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = s.roomInfo,
-                                    tint = Color.White,
-                                )
+                                // Info (ⓘ)
+                                IconButton(
+                                    onClick = { showInfoDialog = true },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = s.roomInfo,
+                                        tint = Color.White,
+                                    )
+                            }
                             }
 
                             // More Options (⋮)
@@ -1683,7 +1714,7 @@ fun RoomScreen() {
                                         contentDescription = null,
                                         tint = Color.White,
                                     )
-                                }
+                            }
 
                                 DropdownMenu(
                                     expanded = showOverflowMenu,
@@ -1737,6 +1768,16 @@ fun RoomScreen() {
                                             showMaterialsDialog = true
                                         },
                                     )
+                                    if (isCompactWidth) {
+                                        DropdownMenuItem(
+                                            text = { Text(s.roomInfo) },
+                                            leadingIcon = { Icon(Icons.Default.Info, null) },
+                                            onClick = {
+                                                showOverflowMenu = false
+                                                showInfoDialog = true
+                                            },
+                                        )
+                                    }
                                     DropdownMenuItem(
                                         text = {
                                             Row(
@@ -1876,7 +1917,7 @@ fun RoomScreen() {
                                             }
                                         },
                                     )
-                                }
+                            }
                             }
                         }
                     }
@@ -1916,7 +1957,7 @@ fun RoomScreen() {
                                         activeContainer.cabinetDoors.any { it.id == selectedPartitionId }
                                 if (!exists) {
                                     selectedPartitionId = null
-                                }
+                            }
                             }
                         }
 
@@ -1928,7 +1969,7 @@ fun RoomScreen() {
                                     viewportOriginInRoot = coordinates.positionInRoot()
                                     viewportWidthPx = coordinates.size.width.toFloat().coerceAtLeast(1f)
                                     viewportHeightPx = coordinates.size.height.toFloat().coerceAtLeast(1f)
-                                },
+                            },
                         ) {
                             val isOrthoMode = currentViewMode == RoomViewMode.FRONT_2D || currentViewMode == RoomViewMode.TOP_DOWN
                             RoomViewport(
@@ -1946,6 +1987,7 @@ fun RoomScreen() {
                                 showDoors = showClosetDoors,
                                 isPanelOpen = showUnitsColumn,
                                 panelWidthPx = unitsColumnWidthPx,
+                                isContainerMovementLocked = isContainerMovementLocked,
                                 onOrbit = { deltaX, deltaY ->
                                     currentViewMode = RoomViewMode.PERSPECTIVE_3D
                                     coroutineScope.launch {
@@ -1953,7 +1995,7 @@ fun RoomScreen() {
                                         val newPitch = (pitchAnim.value - deltaY * 0.18f).coerceIn(-88f, 25f)
                                         pitchAnim.snapTo(newPitch)
                                     }
-                                },
+                            },
                                 onPan = { panX, panY ->
                                     val yawRad = Math.toRadians(yawAnim.value.toDouble()).toFloat()
                                     val pitchRad = Math.toRadians(pitchAnim.value.toDouble()).toFloat()
@@ -1975,7 +2017,7 @@ fun RoomScreen() {
                                         targetYAnim.snapTo(targetYAnim.value + deltaY)
                                         targetZAnim.snapTo(targetZAnim.value + deltaZ)
                                     }
-                                },
+                            },
                                 onZoom = { zoomFactor ->
                                     coroutineScope.launch {
                                         if (isOrthoMode) {
@@ -1986,7 +2028,7 @@ fun RoomScreen() {
                                             distanceAnim.snapTo(newDist)
                                         }
                                     }
-                                },
+                            },
                                 onTap = { tapPos, vw, vh ->
                                     val partHit = pickPartitionAtScreenTap(
                                         room = room,
@@ -2032,7 +2074,7 @@ fun RoomScreen() {
                                             showUnitsColumn = false
                                         }
                                     }
-                                },
+                            },
                                 canDragPartitionAt = { downPos, vw, vh ->
                                     val hit = pickPartitionAtScreenTap(
                                         room = room,
@@ -2103,7 +2145,7 @@ fun RoomScreen() {
                                     } else {
                                         false
                                     }
-                                },
+                            },
                                 onDragPartition = { pointerPos, vw, vh ->
                                     val partId = selectedPartitionId
                                     val c = activeContainer
@@ -2145,7 +2187,39 @@ fun RoomScreen() {
                                             updateRoom(updatedRoom)
                                         }
                                     }
-                                },
+                            },
+                                canDragContainerAt = { downPos, vw, vh ->
+                                    val id = pickContainerAtScreenTap(
+                                        room = room, tapPos = downPos, viewportWidthPx = vw, viewportHeightPx = vh,
+                                        targetX = targetXAnim.value, targetY = targetYAnim.value, targetZ = targetZAnim.value,
+                                        yawDeg = yawAnim.value, pitchDeg = pitchAnim.value, distanceM = distanceAnim.value,
+                                        isOrtho = isOrthoMode, orthoSize = orthoSizeAnim.value,
+                                    )
+                                    val container = room.containers.firstOrNull { it.id == id } ?: return@RoomViewport false
+                                    selectedContainerId = id
+                                    selectedPartitionId = null
+                                    val local = projectScreenToContainerInterior(
+                                        room, container, downPos, vw, vh, targetXAnim.value, targetYAnim.value,
+                                        targetZAnim.value, yawAnim.value, pitchAnim.value, distanceAnim.value,
+                                        isOrthoMode, orthoSizeAnim.value,
+                                    ) ?: return@RoomViewport false
+                                    containerDragGrabOffsetMm = local.first
+                                    true
+                            },
+                                onDragContainer = { pointerPos, vw, vh ->
+                                    val container = room.containers.firstOrNull { it.id == selectedContainerId }
+                                    if (container != null) {
+                                        val local = projectScreenToContainerInterior(
+                                            room, container, pointerPos, vw, vh, targetXAnim.value, targetYAnim.value,
+                                            targetZAnim.value, yawAnim.value, pitchAnim.value, distanceAnim.value,
+                                            isOrthoMode, orthoSizeAnim.value,
+                                        )
+                                        if (local != null) {
+                                            val wallPosition = container.offsetMm + container.effectivePanelThicknessMm + local.first
+                                            updateRoom(room.withMovedContainer(container.id, wallPosition - containerDragGrabOffsetMm))
+                                        }
+                                    }
+                            },
                                 modifier = Modifier.fillMaxSize(),
                             )
 
@@ -2155,11 +2229,11 @@ fun RoomScreen() {
                                 val currentWallContainers = room.containers.filter { it.wall == currentFocusedWall }
                                 val containersToDimension = if (activeContainer != null) {
                                     listOf(activeContainer)
-                                } else if (currentWallContainers.isNotEmpty()) {
+                            } else if (currentWallContainers.isNotEmpty()) {
                                     currentWallContainers
-                                } else {
+                            } else {
                                     room.containers
-                                }
+                            }
 
                                 val purpleColor = Color(0xFF7038FF)
                                 val strokeWidthPx = with(LocalDensity.current) { 2.dp.toPx() }
@@ -2178,7 +2252,7 @@ fun RoomScreen() {
                                         color = android.graphics.Color.WHITE
                                         textAlign = android.graphics.Paint.Align.CENTER
                                     }
-                                }
+                            }
                                 val fillPaint = remember {
                                     android.graphics.Paint().apply {
                                         isAntiAlias = true
@@ -2188,7 +2262,7 @@ fun RoomScreen() {
                                         color = android.graphics.Color.BLACK
                                         textAlign = android.graphics.Paint.Align.CENTER
                                     }
-                                }
+                            }
 
                                 Canvas(modifier = Modifier.fillMaxSize()) {
                                     val yawDeg = yawAnim.value
@@ -2317,7 +2391,7 @@ fun RoomScreen() {
                                             }
                                         }
                                     }
-                                }
+                            }
                             }
 
                             // Floating Wall Labels (A, B, C, D)
@@ -2365,7 +2439,7 @@ fun RoomScreen() {
                                             )
                                         }
                                     }
-                                } else {
+                            } else {
                                     val anchors = remember(room, splitDoorWall) { getWallAnchors(room, splitDoorWall) }
                                     val currentFocusedWall = wallIndexFromStep(wallStep.intValue, splitDoorWall)
                                     val isTopDown = currentViewMode == RoomViewMode.TOP_DOWN
@@ -2473,7 +2547,31 @@ fun RoomScreen() {
                                             }
                                         }
                                     }
-                                }
+                            }
+                            }
+
+                            FilledIconButton(
+                                onClick = {
+                                    isContainerMovementLocked = !isContainerMovementLocked
+                                    val statusMessage = if (isContainerMovementLocked) {
+                                        tr(appLanguage, "El arrastre mueve la cámara", "Drag to move the camera")
+                                    } else {
+                                        tr(appLanguage, "El arrastre mueve el closet", "Drag to move the closet")
+                                    }
+                                    coroutineScope.launch { messageHostState.showSnackbar(statusMessage) }
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(12.dp),
+                            ) {
+                                Icon(
+                                    imageVector = if (isContainerMovementLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+                                    contentDescription = if (isContainerMovementLocked) {
+                                        tr(appLanguage, "Desbloquear movimiento del closet", "Unlock closet movement")
+                                    } else {
+                                        tr(appLanguage, "Bloquear movimiento del closet", "Lock closet movement")
+                                    },
+                                )
                             }
 
                             // Left Navigation Button (<)
@@ -2724,7 +2822,7 @@ fun RoomScreen() {
                                             )
                                         }
                                     }
-                                }
+                            }
                             }
 
                             // Right Navigation Button (>)
@@ -2815,7 +2913,7 @@ fun RoomScreen() {
                                             color = MaterialTheme.colorScheme.onSurface,
                                         )
                                     }
-                                }
+                            }
                             }
 
                             // Bottom-Right Floating Actions: Corner Fusion/Split action + "+" Add Units FAB
@@ -2953,7 +3051,7 @@ fun RoomScreen() {
                                             modifier = Modifier.size(28.dp),
                                         )
                                     }
-                                }
+                            }
                             }
 
                             // Right-Side Units / Components Column (partial width in both Tablet and Phone modes)
@@ -3617,7 +3715,7 @@ fun RoomScreen() {
                                         DraggedUnitType.SHOE_RACK -> ShoeRack3DGraphic(modifier = Modifier.fillMaxSize())
                                         DraggedUnitType.CABINET_DOORS -> CabinetDoors3DGraphic(modifier = Modifier.fillMaxSize())
                                     }
-                                }
+                            }
                             }
                         }
                     } else {
@@ -3734,51 +3832,61 @@ fun RoomScreen() {
                                         color = Color(0xFF2C55B5),
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                     )
-                                }
+                            }
                             }
                         },
                         dismissButton = {
                             if (currentProjectId != null) {
                                 TextButton(
                                     onClick = {
-                                        val saved = projectStorage.saveProject(
-                                            id = null,
-                                            name = nameDraft.trim().ifEmpty { "${s.copyOfPrefix} $currentProjectName" },
-                                            room = room,
-                                        )
-                                        savedProjects = projectStorage.loadAllProjects()
-                                        currentProjectId = saved.id
-                                        currentProjectName = saved.name
-                                        showSaveDialog = false
-                                        coroutineScope.launch {
-                                            messageHostState.showSnackbar("${s.savedAsNewToast}: ${saved.name}")
+                                        runCatching {
+                                            projectStorage.saveProject(
+                                                id = null,
+                                                name = nameDraft.trim().ifEmpty { "${s.copyOfPrefix} $currentProjectName" },
+                                                room = room,
+                                            )
+                                        }.onSuccess { saved ->
+                                            savedProjects = projectStorage.loadAllProjects()
+                                            currentProjectId = saved.id
+                                            currentProjectName = saved.name
+                                            showSaveDialog = false
+                                            coroutineScope.launch {
+                                                messageHostState.showSnackbar("${s.savedAsNewToast}: ${saved.name}")
+                                            }
+                                        }.onFailure {
+                                            coroutineScope.launch { messageHostState.showSnackbar(s.projectStorageError) }
                                         }
                                     },
                                 ) {
                                     Text(s.saveAsCopyButton)
-                                }
+                            }
                             } else {
                                 TextButton(onClick = { showSaveDialog = false }) {
                                     Text(s.cancelButton)
-                                }
+                            }
                             }
                         },
                         confirmButton = {
                             TextButton(
                                 onClick = {
-                                    val saved = projectStorage.saveProject(
-                                        id = currentProjectId,
-                                        name = nameDraft,
-                                        room = room,
-                                    )
-                                    savedProjects = projectStorage.loadAllProjects()
-                                    currentProjectId = saved.id
-                                    currentProjectName = saved.name
-                                    showSaveDialog = false
-                                    coroutineScope.launch {
-                                        messageHostState.showSnackbar("${s.projectSavedToast}: ${saved.name}")
+                                    runCatching {
+                                        projectStorage.saveProject(
+                                            id = currentProjectId,
+                                            name = nameDraft,
+                                            room = room,
+                                        )
+                                    }.onSuccess { saved ->
+                                        savedProjects = projectStorage.loadAllProjects()
+                                        currentProjectId = saved.id
+                                        currentProjectName = saved.name
+                                        showSaveDialog = false
+                                        coroutineScope.launch {
+                                            messageHostState.showSnackbar("${s.projectSavedToast}: ${saved.name}")
+                                        }
+                                    }.onFailure {
+                                        coroutineScope.launch { messageHostState.showSnackbar(s.projectStorageError) }
                                     }
-                                },
+                            },
                             ) {
                                 Text(s.saveButton, fontWeight = FontWeight.Bold)
                             }
@@ -3821,20 +3929,25 @@ fun RoomScreen() {
                             TextButton(
                                 onClick = {
                                     val freshRoom = RoomSpec()
-                                    val created = projectStorage.saveProject(
-                                        id = null,
-                                        name = newNameDraft.trim().ifEmpty { "${s.defaultProjectPrefix} $nextIndex" },
-                                        room = freshRoom,
-                                    )
-                                    savedProjects = projectStorage.loadAllProjects()
-                                    currentProjectId = created.id
-                                    currentProjectName = created.name
-                                    updateRoom(freshRoom)
-                                    showCreateNewDialog = false
-                                    coroutineScope.launch {
-                                        messageHostState.showSnackbar("${s.projectCreatedToast}: ${created.name}")
+                                    runCatching {
+                                        projectStorage.saveProject(
+                                            id = null,
+                                            name = newNameDraft.trim().ifEmpty { "${s.defaultProjectPrefix} $nextIndex" },
+                                            room = freshRoom,
+                                        )
+                                    }.onSuccess { created ->
+                                        savedProjects = projectStorage.loadAllProjects()
+                                        currentProjectId = created.id
+                                        currentProjectName = created.name
+                                        updateRoom(freshRoom)
+                                        showCreateNewDialog = false
+                                        coroutineScope.launch {
+                                            messageHostState.showSnackbar("${s.projectCreatedToast}: ${created.name}")
+                                        }
+                                    }.onFailure {
+                                        coroutineScope.launch { messageHostState.showSnackbar(s.projectStorageError) }
                                     }
-                                },
+                            },
                             ) {
                                 Text(s.createButton, fontWeight = FontWeight.Bold)
                             }
@@ -3954,7 +4067,7 @@ fun RoomScreen() {
                                             }
                                         }
                                     }
-                                }
+                            }
                             }
                         },
                         confirmButton = {
@@ -4052,7 +4165,7 @@ fun RoomScreen() {
                                             }
                                         }
                                     }
-                                }
+                            }
                             }
                         },
                         confirmButton = {
@@ -4150,7 +4263,7 @@ fun RoomScreen() {
                                             }
                                         }
                                     }
-                                }
+                            }
                             }
                         },
                         confirmButton = {
@@ -4179,6 +4292,15 @@ fun RoomScreen() {
                 )
             }
         }
+            if (drawerState.isOpen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(start = 300.dp)
+                        .clickable { coroutineScope.launch { drawerState.close() } },
+                )
+            }
+        }
     }
 }
 
@@ -4199,16 +4321,19 @@ private fun RoomViewport(
     showDoors: Boolean = true,
     isPanelOpen: Boolean = false,
     panelWidthPx: Float = 0f,
+    isContainerMovementLocked: Boolean = false,
     onOrbit: (Float, Float) -> Unit,
     onPan: (Float, Float) -> Unit,
     onZoom: (Float) -> Unit,
     onTap: (Offset, Float, Float) -> Unit = { _, _, _ -> },
     canDragPartitionAt: (Offset, Float, Float) -> Boolean = { _, _, _ -> false },
     onDragPartition: (Offset, Float, Float) -> Unit = { _, _, _ -> },
+    canDragContainerAt: (Offset, Float, Float) -> Boolean = { _, _, _ -> false },
+    onDragContainer: (Offset, Float, Float) -> Unit = { _, _, _ -> },
 ) {
     Box(
         modifier = modifier
-            .pointerInput(selectedPartitionId, selectedContainerId, isPanelOpen, panelWidthPx) {
+            .pointerInput(selectedPartitionId, selectedContainerId, isPanelOpen, panelWidthPx, isContainerMovementLocked) {
                 detectRoomInspectionGestures(
                     onOrbit = onOrbit,
                     onPan = onPan,
@@ -4216,6 +4341,9 @@ private fun RoomViewport(
                     onTap = onTap,
                     canDragPartitionAt = canDragPartitionAt,
                     onDragPartition = onDragPartition,
+                    canDragContainerAt = canDragContainerAt,
+                    onDragContainer = onDragContainer,
+                    isContainerMovementLocked = isContainerMovementLocked,
                     isPanelOpen = isPanelOpen,
                     panelWidthPx = panelWidthPx,
                 )
@@ -4401,7 +4529,7 @@ private fun RightSideUnitsAndInspectorColumn(
                                         )
                                     }
                                     onSelectContainer(clamped.copy(wall = wIdx))
-                                },
+                            },
                                 label = { Text(label, fontWeight = FontWeight.Bold) },
                             )
                         }
@@ -4465,7 +4593,7 @@ private fun RightSideUnitsAndInspectorColumn(
                                     },
                                 ) {
                                     Text(s.centerOnWallButton, style = MaterialTheme.typography.labelSmall)
-                                }
+                            }
                             }
                             Text(
                                 text = "${clamped.offsetMm.roundToInt()} mm / max ${maxOff.roundToInt()} mm",
@@ -4477,7 +4605,7 @@ private fun RightSideUnitsAndInspectorColumn(
                                 value = clamped.offsetMm.coerceIn(0f, maxOff.coerceAtLeast(1f)),
                                 onValueChange = { newOff ->
                                     onUpdateContainer(clamped.id) { it.copy(offsetMm = newOff) }
-                                },
+                            },
                                 valueRange = 0f..maxOff.coerceAtLeast(1f),
                                 enabled = maxOff > 1f,
                             )
@@ -4533,15 +4661,24 @@ private fun RightSideUnitsAndInspectorColumn(
                 var verticalPoleRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var shoeRackRootOffset by remember { mutableStateOf(Offset.Zero) }
                 var cabinetDoorsRootOffset by remember { mutableStateOf(Offset.Zero) }
+                val thumbnailSlotHeight = 96.dp
+                val thumbnailHeight = 84.dp
+                val thumbnailShape = RoundedCornerShape(10.dp)
+
+                fun thumbnailModifier(widthFraction: Float): Modifier = Modifier
+                    .fillMaxWidth(widthFraction)
+                    .height(thumbnailHeight)
+                    .clip(thumbnailShape)
+                    .background(Color(0xFFFAF8F5), thumbnailShape)
 
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(vertical = 18.dp),
+                        .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     // 1st Unit: Closet Container (Carcass)
                     Box(
@@ -4549,7 +4686,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(145.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 carcassRootOffset = coordinates.positionInRoot()
                             }
@@ -4568,9 +4705,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         ClosetContainer3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.86f)
-                                .height(140.dp),
+                            modifier = thumbnailModifier(0.78f),
                         )
                     }
 
@@ -4582,7 +4717,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(135.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 dividerRootOffset = coordinates.positionInRoot()
                             }
@@ -4601,9 +4736,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         VerticalDivider3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.70f)
-                                .height(130.dp),
+                            modifier = thumbnailModifier(0.68f),
                         )
                     }
 
@@ -4615,7 +4748,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(125.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 shelfRootOffset = coordinates.positionInRoot()
                             }
@@ -4634,9 +4767,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         HorizontalShelf3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.78f)
-                                .height(115.dp),
+                            modifier = thumbnailModifier(0.72f),
                         )
                     }
 
@@ -4648,7 +4779,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(130.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 drawerRootOffset = coordinates.positionInRoot()
                             }
@@ -4667,9 +4798,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         Drawer3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.82f)
-                                .height(120.dp),
+                            modifier = thumbnailModifier(0.72f),
                         )
                     }
 
@@ -4681,7 +4810,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(130.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 drawerNotchRootOffset = coordinates.positionInRoot()
                             }
@@ -4700,9 +4829,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         DrawerNotch3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.82f)
-                                .height(120.dp),
+                            modifier = thumbnailModifier(0.72f),
                         )
                     }
 
@@ -4714,7 +4841,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(90.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 clothesRailRootOffset = coordinates.positionInRoot()
                             }
@@ -4733,9 +4860,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         ClothesRail3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .height(80.dp),
+                            modifier = thumbnailModifier(0.74f),
                         )
                     }
 
@@ -4747,7 +4872,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(130.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 verticalPoleRootOffset = coordinates.positionInRoot()
                             }
@@ -4766,9 +4891,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         VerticalPole3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.5f)
-                                .height(120.dp),
+                            modifier = thumbnailModifier(0.42f),
                         )
                     }
 
@@ -4780,7 +4903,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(130.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 shoeRackRootOffset = coordinates.positionInRoot()
                             }
@@ -4799,9 +4922,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         ShoeRack3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .height(110.dp),
+                            modifier = thumbnailModifier(0.74f),
                         )
                     }
 
@@ -4813,7 +4934,7 @@ private fun RightSideUnitsAndInspectorColumn(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
-                            .height(130.dp)
+                            .height(thumbnailSlotHeight)
                             .onGloballyPositioned { coordinates ->
                                 cabinetDoorsRootOffset = coordinates.positionInRoot()
                             }
@@ -4832,9 +4953,7 @@ private fun RightSideUnitsAndInspectorColumn(
                             },
                     ) {
                         CabinetDoors3DGraphic(
-                            modifier = Modifier
-                                .fillMaxWidth(0.85f)
-                                .height(115.dp),
+                            modifier = thumbnailModifier(0.74f),
                         )
                     }
                 }
@@ -6546,7 +6665,7 @@ private fun ModuleInspectorContent(
                             onUpdateContainer(activeContainer.id) { c ->
                                 c.withUpdatedCabinetDoors(doors.id) {
                                     it.copy(elevationYMm = fullBottom, heightMm = fullH)
-                                }
+                            }
                             }
                         },
                         label = { Text(s.doorsFullBayLabel) },
@@ -6573,7 +6692,7 @@ private fun ModuleInspectorContent(
                                             it.copy(elevationYMm = bayComps[0].bottomYMm, heightMm = bayComps[0].heightMm)
                                         }
                                     }
-                                },
+                            },
                                 label = { Text(s.doorsLowerLabel) },
                                 modifier = Modifier.weight(1f),
                             )
@@ -6585,7 +6704,7 @@ private fun ModuleInspectorContent(
                                             it.copy(elevationYMm = bayComps[1].bottomYMm, heightMm = bayComps[1].heightMm)
                                         }
                                     }
-                                },
+                            },
                                 label = { Text(s.doorsUpperLabel) },
                                 modifier = Modifier.weight(1f),
                             )
@@ -6612,7 +6731,7 @@ private fun ModuleInspectorContent(
                                             it.copy(elevationYMm = bayComps[0].bottomYMm, heightMm = bayComps[0].heightMm)
                                         }
                                     }
-                                },
+                            },
                                 label = { Text(s.doorsLowerLabel) },
                                 modifier = Modifier.weight(1f),
                             )
@@ -6624,7 +6743,7 @@ private fun ModuleInspectorContent(
                                             it.copy(elevationYMm = bayComps[1].bottomYMm, heightMm = bayComps[1].heightMm)
                                         }
                                     }
-                                },
+                            },
                                 label = { Text(s.doorsMiddleLabel) },
                                 modifier = Modifier.weight(1f),
                             )
@@ -6636,7 +6755,7 @@ private fun ModuleInspectorContent(
                                             it.copy(elevationYMm = bayComps[2].bottomYMm, heightMm = bayComps[2].heightMm)
                                         }
                                     }
-                                },
+                            },
                                 label = { Text(s.doorsUpperLabel) },
                                 modifier = Modifier.weight(1f),
                             )
@@ -6666,7 +6785,7 @@ private fun ModuleInspectorContent(
                                             it.copy(elevationYMm = span12Elev, heightMm = span12H)
                                         }
                                     }
-                                },
+                            },
                                 label = { Text("${s.doorsLowerLabel} + ${s.doorsMiddleLabel}") },
                                 modifier = Modifier.weight(1f),
                             )
@@ -6678,7 +6797,7 @@ private fun ModuleInspectorContent(
                                             it.copy(elevationYMm = span23Elev, heightMm = span23H)
                                         }
                                     }
-                                },
+                            },
                                 label = { Text("${s.doorsMiddleLabel} + ${s.doorsUpperLabel}") },
                                 modifier = Modifier.weight(1f),
                             )
