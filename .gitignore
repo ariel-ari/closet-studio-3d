@@ -8,6 +8,7 @@ local.properties
 # Reverse engineering and local toolchains
 tools/
 work/
+ANALISIS-APK.md
 
 # IDE
 .idea/
@@ -21,3 +22,8 @@ texturas/
 
 # Kotlin daemon and transient cache
 .kotlin/
+
+# Internal orchestration notes and task registries
+CONTEXTO-ENGRAM-TEMPORAL.md
+.atl/
+odd/
