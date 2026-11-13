@@ -16,3 +16,8 @@ work/
 # Temporary local asset drops
 texturas/
 
+# Local CodeGraph index and transient data
+.codegraph/
+
+# Kotlin daemon and transient cache
+.kotlin/
